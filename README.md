@@ -4,9 +4,9 @@
 
 **Open-source .NET SMTP relay — forward mail from your apps to any cloud provider**
 
-[![Build](https://github.com/CinderHillsDev/Dispatch-SMTP-Relay/actions/workflows/build.yml/badge.svg)](https://github.com/CinderHillsDev/Dispatch-SMTP-Relay/actions)
+[![Build](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions/workflows/build.yml/badge.svg)](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions)
 [![License: AGPL v3 + Commons Clause](https://img.shields.io/badge/License-AGPL_v3_%2B_Commons_Clause-blue.svg)](LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/CinderHillsDev/Dispatch-SMTP-Relay)](https://github.com/CinderHillsDev/Dispatch-SMTP-Relay/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/chrismuench/Dispatch-SMTP-Relay)](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](#installation)
 
 Point your applications and devices at Dispatch on port 25 or 587. Dispatch queues every message durably and forwards it to Mailgun, SendGrid, Azure Communication Services, or any SMTP smart host — with a live web dashboard to monitor, configure, and troubleshoot everything.
@@ -70,7 +70,7 @@ Your apps / scripts  →  Dispatch API  (port 8081)      ─┘
 
 ### Windows
 
-Download and run `DispatchSetup-{version}-x64.exe` from the [latest release](https://github.com/CinderHillsDev/Dispatch-SMTP-Relay/releases/latest).
+Download and run `DispatchSetup-{version}-x64.exe` from the [latest release](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest).
 
 The setup wizard:
 1. Detects any existing SQL Server instance on your machine
@@ -86,7 +86,7 @@ DispatchSetup-1.0.0-x64.exe --silent --server "localhost\SQLEXPRESS" --auth wind
 ### Linux
 
 ```bash
-curl -sSL https://github.com/CinderHillsDev/Dispatch-SMTP-Relay/releases/latest/download/install.sh | sudo bash
+curl -sSL https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest/download/install.sh | sudo bash
 ```
 
 The script detects or installs SQL Server Express, creates the database, installs the systemd service, and prints the dashboard URL when done.
@@ -177,7 +177,7 @@ All retention periods and size thresholds are configurable under **Settings → 
 | [Azure Communication Services](https://azure.microsoft.com/en-us/products/communication-services) | SDK |
 | Any SMTP smart host | SMTP via MailKit (AWS SES, Office 365, Postfix, …) |
 
-More providers planned — see [Appendix A of the spec](docs/SPEC.md) and [open issues](https://github.com/CinderHillsDev/Dispatch-SMTP-Relay/issues?q=label%3Aprovider).
+More providers planned — see [Appendix A of the spec](docs/SPEC.md) and [open issues](https://github.com/chrismuench/Dispatch-SMTP-Relay/issues?q=label%3Aprovider).
 
 ---
 
@@ -230,7 +230,7 @@ More providers planned — see [Appendix A of the spec](docs/SPEC.md) and [open 
 
 ```bash
 # Clone
-git clone https://github.com/CinderHillsDev/Dispatch-SMTP-Relay.git
+git clone https://github.com/chrismuench/Dispatch-SMTP-Relay.git
 cd dispatch
 
 # Build the React UI
@@ -294,7 +294,7 @@ Configuration and all message history are preserved across upgrades.
 
 Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 
-**Good first issues:** provider implementations, UI improvements, documentation. See the [issue tracker](https://github.com/CinderHillsDev/Dispatch-SMTP-Relay/issues?q=label%3A%22good+first+issue%22).
+**Good first issues:** provider implementations, UI improvements, documentation. See the [issue tracker](https://github.com/chrismuench/Dispatch-SMTP-Relay/issues?q=label%3A%22good+first+issue%22).
 
 **Adding a provider:** implement `IRelayProvider` in `Dispatch.Providers`, add the settings model, add the UI fields in the provider settings page, add tests. See `SendGridProvider.cs` as the reference implementation.
 
@@ -302,7 +302,7 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 ## Security
 
-The admin web UI is **HTTPS-only** — the bootstrap generates a self-signed certificate if you don't have one. The HTTP ingestion API supports both HTTP and HTTPS, since many internal devices (printers, scanners, legacy apps) can't do HTTPS. All listeners enforce access via configurable IP/CIDR allow-lists at the application layer; denied connections are logged with the source IP. Credentials are stored AES-256 encrypted (API keys, provider secrets) or bcrypt-hashed (SMTP sender passwords) in SQL Server. If you find a security issue please report it privately via [GitHub Security Advisories](https://github.com/CinderHillsDev/Dispatch-SMTP-Relay/security/advisories/new) rather than a public issue.
+The admin web UI is **HTTPS-only** — the bootstrap generates a self-signed certificate if you don't have one. The HTTP ingestion API supports both HTTP and HTTPS, since many internal devices (printers, scanners, legacy apps) can't do HTTPS. All listeners enforce access via configurable IP/CIDR allow-lists at the application layer; denied connections are logged with the source IP. Credentials are stored AES-256 encrypted (API keys, provider secrets) or bcrypt-hashed (SMTP sender passwords) in SQL Server. If you find a security issue please report it privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new) rather than a public issue.
 
 ---
 
