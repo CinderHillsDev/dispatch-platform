@@ -1,0 +1,25 @@
+# .NET build output
+bin/
+obj/
+out/
+*.user
+*.suo
+.vs/
+
+# Node / React UI
+node_modules/
+dist/
+*.log
+
+# Local config & secrets
+appsettings.Development.json
+appsettings.Local.json
+*.pfx
+
+# Spool / runtime data
+spool/
+*.eml
+
+# OS
+.DS_Store
+Thumbs.db
