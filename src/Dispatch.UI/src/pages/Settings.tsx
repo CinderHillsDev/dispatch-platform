@@ -140,38 +140,99 @@ export function Settings() {
         {msg && <span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span>}
       </div>
 
-      {sysConfig && (
-        <div className="panel" style={{ maxWidth: 620, marginTop: 18 }}>
-          <h2>System configuration</h2>
-          <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
-            Listener, HTTP API and Web UI settings. Read-only here — these are applied at startup, so changes
-            require a service restart. (Retry, retention and logging above take effect live.)
-          </p>
-          <dl className="kv" style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "6px 12px", margin: 0, fontSize: 13 }}>
-            <Row label="SMTP ports">{sysConfig.listener.ports.join(", ")}</Row>
-            <Row label="SMTP server name">{sysConfig.listener.serverName}</Row>
-            <Row label="SMTP allow-list">{sysConfig.listener.allowedCidrs.join(", ")}</Row>
-            <Row label="SMTP require AUTH">{sysConfig.listener.requireAuth ? "yes" : "no"}</Row>
-            <Row label="SMTP STARTTLS">{sysConfig.listener.tlsEnabled ? `enabled (${sysConfig.listener.tlsCertPath})` : "disabled"}</Row>
-            <Row label="SMTP max size">{sysConfig.listener.maxMessageBytes > 0 ? `${sysConfig.listener.maxMessageBytes} bytes` : "no limit"}</Row>
-            <Row label="API port">{sysConfig.api.port}</Row>
-            <Row label="API allow-list">{sysConfig.api.allowedCidrs.join(", ")}</Row>
-            <Row label="API rate limit / key">{sysConfig.api.rateLimitPerKey}/min</Row>
-            <Row label="API max size">{sysConfig.api.maxMessageBytes > 0 ? `${sysConfig.api.maxMessageBytes} bytes` : "no limit"}</Row>
-            <Row label="Web UI port">{sysConfig.webui.port}</Row>
-            <Row label="Web UI HTTPS">{sysConfig.webui.requireHttps ? "required" : "not required"}</Row>
-          </dl>
-        </div>
-      )}
+      {sysConfig && <SystemConfigEditor initial={sysConfig} />}
     </>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+const csvNums = (s: string) => s.split(",").map((x) => Number(x.trim())).filter((n) => Number.isFinite(n));
+const csvStrs = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+
+function SystemConfigEditor({ initial }: { initial: SystemConfig }) {
+  const [listener, setListener] = useState(initial.listener);
+  const [apiCfg, setApiCfg] = useState(initial.api);
+  const [webui, setWebui] = useState(initial.webui);
+  const [spool, setSpool] = useState(initial.spool);
+  const [portsText, setPortsText] = useState(initial.listener.ports.join(", "));
+  const [lCidrText, setLCidrText] = useState(initial.listener.allowedCidrs.join(", "));
+  const [aCidrText, setACidrText] = useState(initial.api.allowedCidrs.join(", "));
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save(fn: () => Promise<unknown>) {
+    setBusy(true); setMsg(null);
+    try { await fn(); setMsg("Saved. Live settings apply now; ports/TLS/spool apply after a restart."); }
+    catch (e) { setMsg(`Error: ${(e as Error).message}`); }
+    finally { setBusy(false); }
+  }
+
   return (
-    <>
-      <dt className="muted">{label}</dt>
-      <dd style={{ margin: 0, wordBreak: "break-word" }}>{children}</dd>
-    </>
+    <div className="panel" style={{ maxWidth: 620, marginTop: 18 }}>
+      <h2>System configuration</h2>
+      <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
+        Stored in the SQL config table (spec §12). Allow-lists, message-size limits and the API rate limit
+        apply live; ports, TLS, server name, require-AUTH and spool settings apply on the next service restart.
+      </p>
+
+      <h3>SMTP listener</h3>
+      <Txt label="Ports (restart) — comma-separated, e.g. 25, 587, 2525" value={portsText} onChange={setPortsText} />
+      <Txt label="Server name (restart)" value={listener.serverName} onChange={(v) => setListener({ ...listener, serverName: v })} />
+      <Txt label="Allow-list (live) — comma-separated CIDRs" value={lCidrText} onChange={setLCidrText} />
+      <Num label="Max message bytes (live)" value={listener.maxMessageBytes} onChange={(v) => setListener({ ...listener, maxMessageBytes: v })} />
+      <Chk label="Require SMTP AUTH (restart)" checked={listener.requireAuth} onChange={(v) => setListener({ ...listener, requireAuth: v })} />
+      <Txt label="STARTTLS cert path (restart)" value={listener.tlsCertPath} onChange={(v) => setListener({ ...listener, tlsCertPath: v })} />
+      <button disabled={busy} onClick={() => save(() => api.settings.putListener({
+        ports: csvNums(portsText), serverName: listener.serverName, allowedCidrs: csvStrs(lCidrText),
+        maxMessageBytes: listener.maxMessageBytes, requireAuth: listener.requireAuth, tlsCertPath: listener.tlsCertPath,
+      }))}>Save listener</button>
+
+      <h3 style={{ marginTop: 18 }}>HTTP API</h3>
+      <Num label="Port (restart)" value={apiCfg.port} onChange={(v) => setApiCfg({ ...apiCfg, port: v })} />
+      <Txt label="Allow-list (live) — comma-separated CIDRs" value={aCidrText} onChange={setACidrText} />
+      <Num label="Max message bytes (live)" value={apiCfg.maxMessageBytes} onChange={(v) => setApiCfg({ ...apiCfg, maxMessageBytes: v })} />
+      <Num label="Rate limit / key per min (live)" value={apiCfg.rateLimitPerKey} onChange={(v) => setApiCfg({ ...apiCfg, rateLimitPerKey: v })} />
+      <button disabled={busy} onClick={() => save(() => api.settings.putApi({
+        port: apiCfg.port, allowedCidrs: csvStrs(aCidrText), maxMessageBytes: apiCfg.maxMessageBytes, rateLimitPerKey: apiCfg.rateLimitPerKey,
+      }))}>Save API</button>
+
+      <h3 style={{ marginTop: 18 }}>Web UI</h3>
+      <Num label="Port (restart)" value={webui.port} onChange={(v) => setWebui({ ...webui, port: v })} />
+      <Chk label="Require HTTPS (restart)" checked={webui.requireHttps} onChange={(v) => setWebui({ ...webui, requireHttps: v })} />
+      <button disabled={busy} onClick={() => save(() => api.settings.putWebui({ port: webui.port, requireHttps: webui.requireHttps }))}>Save Web UI</button>
+
+      <h3 style={{ marginTop: 18 }}>Spool (restart)</h3>
+      <Txt label="Directory" value={spool.directory} onChange={(v) => setSpool({ ...spool, directory: v })} />
+      <Num label="Worker count" value={spool.workerCount} onChange={(v) => setSpool({ ...spool, workerCount: v })} />
+      <button disabled={busy} onClick={() => save(() => api.settings.putSpool({ directory: spool.directory, workerCount: spool.workerCount }))}>Save spool</button>
+
+      {msg && <div style={{ marginTop: 12 }}><span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span></div>}
+    </div>
+  );
+}
+
+function Txt({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <label style={{ display: "block", margin: "8px 0" }}>
+      <div style={{ fontSize: 13 }}>{label}</div>
+      <input type="text" value={value} onChange={(e) => onChange(e.target.value)} style={{ width: 320 }} />
+    </label>
+  );
+}
+
+function Num({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <label style={{ display: "block", margin: "8px 0" }}>
+      <div style={{ fontSize: 13 }}>{label}</div>
+      <input type="number" value={value} min={0} onChange={(e) => onChange(Math.max(0, Number(e.target.value)))} style={{ width: 160 }} />
+    </label>
+  );
+}
+
+function Chk({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0", fontSize: 13 }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ width: "auto" }} />
+      {label}
+    </label>
   );
 }

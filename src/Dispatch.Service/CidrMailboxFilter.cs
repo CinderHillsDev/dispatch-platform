@@ -24,8 +24,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
     /// <summary>Session property key holding the SIZE= declared in MAIL FROM (int; 0 if not declared).</summary>
     internal const string DeclaredSizeKey = "Dispatch.DeclaredSize";
 
-    private readonly IPNetwork[] _allowed;
-    private readonly long _maxBytes;
+    private readonly ConfigCache _config;
     private readonly ICounterRepository _counters;
     private readonly IRelayResolver _routing;
     private readonly IntakeState _intake;
@@ -33,8 +32,13 @@ public sealed class CidrMailboxFilter : IMailboxFilter
     private readonly ILoggingSettings _loggingSettings;
     private readonly ILogger<CidrMailboxFilter> _log;
 
+    // Memoised CIDR parse — reparsed only when the allow-list changes in the config table (spec §12.5 live).
+    private readonly Lock _cidrLock = new();
+    private string? _cidrKey;
+    private IPNetwork[] _cidrNetworks = [];
+
     public CidrMailboxFilter(
-        IOptions<ListenerOptions> options,
+        ConfigCache config,
         ICounterRepository counters,
         IRelayResolver routing,
         IntakeState intake,
@@ -42,19 +46,27 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         ILoggingSettings loggingSettings,
         ILogger<CidrMailboxFilter> log)
     {
-        var o = options.Value;
-        _allowed = o.EffectiveAllowedCidrs
-            .Select(c => IPNetwork.TryParse(c, out var n) ? (IPNetwork?)n : null)
-            .Where(n => n.HasValue)
-            .Select(n => n!.Value)
-            .ToArray();
-        _maxBytes = o.MaxMessageBytes;
+        _config = config;
         _counters = counters;
         _routing = routing;
         _intake = intake;
         _logRepo = logRepo;
         _loggingSettings = loggingSettings;
         _log = log;
+    }
+
+    private IPNetwork[] AllowedNetworks(string[] cidrs)
+    {
+        var key = string.Join(",", cidrs);
+        lock (_cidrLock)
+        {
+            if (key == _cidrKey) return _cidrNetworks;
+            _cidrNetworks = cidrs
+                .Select(c => IPNetwork.TryParse(c, out var n) ? (IPNetwork?)n : null)
+                .Where(n => n.HasValue).Select(n => n!.Value).ToArray();
+            _cidrKey = key;
+            return _cidrNetworks;
+        }
     }
 
     public async Task<bool> CanAcceptFromAsync(
@@ -76,32 +88,36 @@ public sealed class CidrMailboxFilter : IMailboxFilter
                 break;
         }
 
+        // Live settings from the config cache (spec §12.5): edits in the web UI apply on the next connection.
+        var listener = _config.Listener();
+
         // Capture the declared SIZE= for the per-relay check at RCPT TO (spec §14.2).
         context.Properties[DeclaredSizeKey] = size;
 
-        if (_maxBytes > 0 && size > _maxBytes)
+        if (listener.MaxMessageBytes > 0 && size > listener.MaxMessageBytes)
         {
             await DenyAsync(context, from.AsAddress(), null,
-                $"Declared size {size} exceeds global limit {_maxBytes}", cancellationToken);
+                $"Declared size {size} exceeds global limit {listener.MaxMessageBytes}", cancellationToken);
             _log.LogWarning("Rejecting MAIL FROM {From}: size {Size} exceeds limit {Limit}",
-                from.AsAddress(), size, _maxBytes);
+                from.AsAddress(), size, listener.MaxMessageBytes);
             return false;
         }
 
+        var allowed = AllowedNetworks(listener.EffectiveAllowedCidrs);
         var ip = RemoteIp(context);
-        if (ip is null || _allowed.Length == 0)
+        if (ip is null || allowed.Length == 0)
             return true;   // no endpoint info or no allow-list configured → allow
 
         var test = ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
-        var allowed = _allowed.Any(n => n.Contains(test) || n.Contains(ip));
+        var permitted = allowed.Any(n => n.Contains(test) || n.Contains(ip));
 
-        if (!allowed)
+        if (!permitted)
         {
             await DenyAsync(context, from.AsAddress(), null, $"Source IP {ip} not in allow-list", cancellationToken);
             _log.LogWarning("Denied connection from {Ip} (not in allow-list)", ip);
         }
 
-        return allowed;
+        return permitted;
     }
 
     public async Task<bool> CanDeliverToAsync(

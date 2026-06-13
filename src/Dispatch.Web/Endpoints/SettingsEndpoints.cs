@@ -20,18 +20,16 @@ public static class SettingsEndpoints
 {
     public static void MapSettings(this RouteGroupBuilder group)
     {
-        // Read-only effective listener / HTTP-API / web-UI configuration for the System/About page (spec §9.2,
-        // §9.3 GET /api/config). These are sourced from appsettings and applied at startup, so they require a
-        // service restart to change — they are surfaced here for visibility, with the TLS passphrase redacted.
-        group.MapGet("/config", (
-            IOptions<ListenerOptions> listener, IOptions<ApiOptions> api, IOptions<WebUiOptions> webui) =>
+        // Effective listener / HTTP-API / web-UI configuration from the SQL config cache (spec §9.3 GET
+        // /api/config, §12.5). Allow-lists/sizes/rate-limit apply live; ports/spool/TLS apply on restart.
+        group.MapGet("/config", (ConfigCache cache) =>
         {
-            var l = listener.Value;
-            var a = api.Value;
-            var w = webui.Value;
+            var l = cache.Listener();
+            var a = cache.Api();
+            var w = cache.WebUi();
+            var sp = cache.Spool();
             return Results.Ok(new
             {
-                editableViaRestartOnly = true,
                 listener = new
                 {
                     ports = l.EffectivePorts,
@@ -41,7 +39,7 @@ public static class SettingsEndpoints
                     requireAuth = l.RequireAuth,
                     tlsEnabled = !string.IsNullOrWhiteSpace(l.TlsCertPath),
                     tlsCertPath = l.TlsCertPath,
-                    tlsCertPassword = string.IsNullOrEmpty(l.TlsCertPassword) ? null : "********",
+                    appliesOnRestart = new[] { "ports", "serverName", "requireAuth", "tlsCertPath" },
                 },
                 api = new
                 {
@@ -49,13 +47,55 @@ public static class SettingsEndpoints
                     allowedCidrs = a.EffectiveAllowedCidrs,
                     maxMessageBytes = a.MaxMessageBytes,
                     rateLimitPerKey = a.RateLimitPerKey,
+                    appliesOnRestart = new[] { "port" },
                 },
-                webui = new
-                {
-                    port = w.Port,
-                    requireHttps = w.RequireHttps,
-                },
+                webui = new { port = w.Port, requireHttps = w.RequireHttps, appliesOnRestart = new[] { "port", "requireHttps" } },
+                spool = new { directory = sp.Directory, workerCount = sp.WorkerCount, appliesOnRestart = new[] { "directory", "workerCount" } },
             });
+        });
+
+        // PUT /api/config/{section} (spec §9.3, §12.5): persist the section's keys to SQL and refresh the
+        // ConfigCache so live settings take effect within this request. Restart-bound keys (ports, spool,
+        // TLS) are stored now and applied on the next restart.
+        group.MapPut("/config/listener", async (ListenerConfigDto d, IConfigRepository config, ConfigCache cache, CancellationToken ct) =>
+        {
+            if (d.Ports is { } ports) await config.SetAsync(ConfigKeys.ListenerPorts, JsonSerializer.Serialize(ports), false, ct);
+            if (d.ServerName is { } sn) await config.SetAsync(ConfigKeys.ListenerServerName, sn, false, ct);
+            if (d.AllowedCidrs is { } c) await config.SetAsync(ConfigKeys.ListenerAllowedCidrs, JsonSerializer.Serialize(c), false, ct);
+            if (d.MaxMessageBytes is { } m) await config.SetAsync(ConfigKeys.ListenerMaxMessageBytes, m.ToString(CultureInfo.InvariantCulture), false, ct);
+            if (d.RequireAuth is { } ra) await config.SetAsync(ConfigKeys.ListenerRequireAuth, ra ? "true" : "false", false, ct);
+            if (d.TlsCertPath is { } tp) await config.SetAsync(ConfigKeys.ListenerTlsCertPath, tp, false, ct);
+            if (d.TlsCertPassword is { } tpw) await config.SetAsync(ConfigKeys.ListenerTlsCertPassword, tpw, encrypted: true, ct);
+            await cache.LoadAsync(config, ct);
+            return Results.Ok(new { ok = true });
+        });
+
+        group.MapPut("/config/api", async (ApiConfigDto d, IConfigRepository config, ConfigCache cache, CancellationToken ct) =>
+        {
+            if (d.Port is { } p) await config.SetAsync(ConfigKeys.ApiPort, p.ToString(CultureInfo.InvariantCulture), false, ct);
+            if (d.AllowedCidrs is { } c) await config.SetAsync(ConfigKeys.ApiAllowedCidrs, JsonSerializer.Serialize(c), false, ct);
+            if (d.MaxMessageBytes is { } m) await config.SetAsync(ConfigKeys.ApiMaxMessageBytes, m.ToString(CultureInfo.InvariantCulture), false, ct);
+            if (d.RateLimitPerKey is { } r) await config.SetAsync(ConfigKeys.ApiRateLimitPerKey, r.ToString(CultureInfo.InvariantCulture), false, ct);
+            await cache.LoadAsync(config, ct);
+            return Results.Ok(new { ok = true });
+        });
+
+        group.MapPut("/config/webui", async (WebUiConfigDto d, IConfigRepository config, ConfigCache cache, CancellationToken ct) =>
+        {
+            if (d.Port is { } p) await config.SetAsync(ConfigKeys.WebUiPort, p.ToString(CultureInfo.InvariantCulture), false, ct);
+            if (d.AllowedCidrs is { } c) await config.SetAsync(ConfigKeys.WebUiAllowedCidrs, JsonSerializer.Serialize(c), false, ct);
+            if (d.RequireHttps is { } rh) await config.SetAsync(ConfigKeys.WebUiRequireHttps, rh ? "true" : "false", false, ct);
+            if (d.SessionTimeoutMinutes is { } s) await config.SetAsync(ConfigKeys.WebUiSessionTimeoutMinutes, s.ToString(CultureInfo.InvariantCulture), false, ct);
+            await cache.LoadAsync(config, ct);
+            return Results.Ok(new { ok = true });
+        });
+
+        group.MapPut("/config/spool", async (SpoolConfigDto d, IConfigRepository config, ConfigCache cache, CancellationToken ct) =>
+        {
+            if (d.Directory is { } dir) await config.SetAsync(ConfigKeys.SpoolDirectory, dir, false, ct);
+            if (d.WorkerCount is { } w) await config.SetAsync(ConfigKeys.SpoolWorkerCount, w.ToString(CultureInfo.InvariantCulture), false, ct);
+            await cache.LoadAsync(config, ct);
+            return Results.Ok(new { ok = true });
         });
 
         group.MapGet("/settings", async (
@@ -173,4 +213,11 @@ public static class SettingsEndpoints
         int? CapturedRetentionDays,
         double? SizeTriggerGb,
         double? SizeTargetGb);
+
+    private sealed record ListenerConfigDto(
+        int[]? Ports, string? ServerName, string[]? AllowedCidrs, long? MaxMessageBytes,
+        bool? RequireAuth, string? TlsCertPath, string? TlsCertPassword);
+    private sealed record ApiConfigDto(int? Port, string[]? AllowedCidrs, long? MaxMessageBytes, int? RateLimitPerKey);
+    private sealed record WebUiConfigDto(int? Port, string[]? AllowedCidrs, bool? RequireHttps, int? SessionTimeoutMinutes);
+    private sealed record SpoolConfigDto(string? Directory, int? WorkerCount);
 }

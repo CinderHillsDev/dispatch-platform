@@ -70,4 +70,25 @@ public class SettingsApiTests(WebTestHost host)
         Assert.Equal(100, json.GetProperty("api").GetProperty("rateLimitPerKey").GetInt32());
         Assert.True(json.GetProperty("webui").TryGetProperty("port", out _));
     }
+
+    [Fact]
+    public async Task Put_config_listener_persists_to_sql_and_refreshes_cache()
+    {
+        var put = await host.Web.PutAsJsonAsync("/api/config/listener", new
+        {
+            allowedCidrs = new[] { "10.0.0.0/8" },
+            maxMessageBytes = 123456L,
+            requireAuth = true,
+        });
+        put.EnsureSuccessStatusCode();
+
+        var res = await host.Web.GetAsync("/api/config");
+        res.EnsureSuccessStatusCode();
+        var listener = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("listener");
+
+        Assert.Equal(123456, listener.GetProperty("maxMessageBytes").GetInt64());
+        Assert.True(listener.GetProperty("requireAuth").GetBoolean());
+        Assert.Contains("10.0.0.0/8",
+            listener.GetProperty("allowedCidrs").EnumerateArray().Select(e => e.GetString()));
+    }
 }

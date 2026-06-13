@@ -153,14 +153,14 @@ export interface AppSettings {
 }
 
 export interface SystemConfig {
-  editableViaRestartOnly: boolean;
   listener: {
     ports: number[]; serverName: string; allowedCidrs: string[];
     maxMessageBytes: number; requireAuth: boolean;
-    tlsEnabled: boolean; tlsCertPath: string; tlsCertPassword: string | null;
+    tlsEnabled: boolean; tlsCertPath: string; appliesOnRestart: string[];
   };
-  api: { port: number; allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number };
-  webui: { port: number; requireHttps: boolean };
+  api: { port: number; allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number; appliesOnRestart: string[] };
+  webui: { port: number; requireHttps: boolean; appliesOnRestart: string[] };
+  spool: { directory: string; workerCount: number; appliesOnRestart: string[] };
 }
 
 async function getJson<T>(url: string): Promise<T> {
@@ -245,6 +245,14 @@ export const api = {
   settings: {
     get: () => getJson<AppSettings>("/api/settings"),
     config: () => getJson<SystemConfig>("/api/config"),
+    putListener: (d: Partial<{ ports: number[]; serverName: string; allowedCidrs: string[]; maxMessageBytes: number; requireAuth: boolean; tlsCertPath: string; tlsCertPassword: string }>) =>
+      sendJson<{ ok: boolean }>("/api/config/listener", "PUT", d),
+    putApi: (d: Partial<{ port: number; allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number }>) =>
+      sendJson<{ ok: boolean }>("/api/config/api", "PUT", d),
+    putWebui: (d: Partial<{ port: number; allowedCidrs: string[]; requireHttps: boolean; sessionTimeoutMinutes: number }>) =>
+      sendJson<{ ok: boolean }>("/api/config/webui", "PUT", d),
+    putSpool: (d: Partial<{ directory: string; workerCount: number }>) =>
+      sendJson<{ ok: boolean }>("/api/config/spool", "PUT", d),
     saveLogging: (logging: AppSettings["logging"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { logging }),
     saveRetry: (retry: AppSettings["retry"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retry }),
     saveRetention: (retention: AppSettings["retention"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retention }),

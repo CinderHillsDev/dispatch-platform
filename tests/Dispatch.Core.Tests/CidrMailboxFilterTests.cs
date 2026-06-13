@@ -91,8 +91,13 @@ public class CidrMailboxFilterTests
         {
             Config = new RelayConfig { Id = 1, Name = "small-relay", MaxMessageBytes = relayMaxBytes },
         });
+        var cache = new ConfigCache();
+        cache.LoadFrom(new Dictionary<string, string>
+        {
+            [ConfigKeys.ListenerAllowedCidrs] = "[\"0.0.0.0/0\",\"::/0\"]",
+        });
         return new CidrMailboxFilter(
-            Options.Create(new ListenerOptions { AllowedCidrs = ["0.0.0.0/0", "::/0"] }),
+            cache,
             new InMemoryCounterRepository(),
             resolver,
             intake ?? new IntakeState(),

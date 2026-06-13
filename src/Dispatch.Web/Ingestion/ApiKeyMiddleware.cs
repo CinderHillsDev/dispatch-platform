@@ -15,14 +15,15 @@ namespace Dispatch.Web.Ingestion;
 public sealed class ApiKeyMiddleware(
     IApiKeyRepository keys,
     RateLimiter limiter,
-    IOptions<ApiOptions> options,
+    ConfigCache config,
     ILogger<ApiKeyMiddleware> log) : IMiddleware
 {
     public const string ApiKeyItem = "ApiKey";
 
     public async Task InvokeAsync(HttpContext ctx, RequestDelegate next)
     {
-        var o = options.Value;
+        // Live API settings from the config cache (spec §12.5): allow-list/rate-limit edits apply at once.
+        var o = config.Api();
         if (ctx.Connection.LocalPort != o.Port)
         {
             await next(ctx);   // not the ingestion port — leave it to the dashboard pipeline

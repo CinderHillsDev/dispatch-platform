@@ -6,6 +6,7 @@ using Dispatch.Core.Relays;
 using Dispatch.Core.Routing;
 using Dispatch.Core.Spool;
 using Dispatch.Data;
+using Dispatch.Data.Repositories;
 using Dispatch.Providers;
 using Dispatch.Service;
 using Dispatch.Web;
@@ -26,24 +27,59 @@ try
     var builder = WebApplication.CreateBuilder(args);
     builder.Host.UseSerilog();
 
-    var apiOptions = builder.Configuration.GetSection(ApiOptions.SectionName).Get<ApiOptions>() ?? new ApiOptions();
-    var webOptions = builder.Configuration.GetSection(WebUiOptions.SectionName).Get<WebUiOptions>() ?? new WebUiOptions();
+    // --- Bootstrap (spec §12.1, §12.6, §12.8) -------------------------------------------------
+    // appsettings.json holds ONLY the DB connection string and the Web UI TLS cert. Everything else lives
+    // in the SQL config table. SQL must be reachable at startup: initialise the schema, seed default config
+    // on first run, and load the ConfigCache — the single source of truth — before configuring listeners.
+    var connectionString = builder.Configuration.GetConnectionString("DispatchLog")
+        ?? throw new InvalidOperationException("ConnectionStrings:DispatchLog is not configured.");
 
-    // Kestrel: dashboard/read API on the web port, ingestion API on the API port.
+    var bootstrapFactory = new SqlConnectionFactory(connectionString);
+    var bootstrapRepo = new SqlConfigRepository(bootstrapFactory);
+    var configCache = new ConfigCache();
+    try
+    {
+        await new DatabaseInitializer(bootstrapFactory,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseInitializer>.Instance).InitializeAsync();
+        await ConfigDefaults.SeedAsync(bootstrapRepo);
+        await configCache.LoadAsync(bootstrapRepo);
+    }
+    catch (Exception ex)
+    {
+        // §12.8: without config there is nothing safe to do — log clearly and exit non-zero so the
+        // service manager retries on its configured restart interval.
+        Log.Fatal(ex, "Dispatch cannot start: the SQL configuration database is unreachable.");
+        return 1;
+    }
+
+    var listenerSnapshot = configCache.Listener();
+    var apiSnapshot = configCache.Api();
+    var webSnapshot = configCache.WebUi();
+    var spoolSnapshot = configCache.Spool();
+    // The Web UI TLS cert is the one setting that stays in appsettings (spec §12.1/§12.2).
+    builder.Configuration.GetSection(WebUiOptions.SectionName).Bind(webSnapshot);
+
+    // Kestrel: dashboard/read API on the web port, ingestion API on the API port (from SQL config).
     builder.WebHost.ConfigureKestrel(k =>
     {
-        k.ListenAnyIP(webOptions.Port);
-        k.ListenAnyIP(apiOptions.Port);
+        k.ListenAnyIP(webSnapshot.Port);
+        k.ListenAnyIP(apiSnapshot.Port);
     });
 
-    // Configuration sections (stand-in for the SQL config table for non-secret settings).
-    builder.Services.Configure<SpoolOptions>(builder.Configuration.GetSection(SpoolOptions.SectionName));
-    builder.Services.Configure<ListenerOptions>(builder.Configuration.GetSection(ListenerOptions.SectionName));
-    builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection(RetryOptions.SectionName));
-    builder.Services.Configure<DefaultRelayOptions>(builder.Configuration.GetSection(DefaultRelayOptions.SectionName));
-    builder.Services.Configure<ApiOptions>(builder.Configuration.GetSection(ApiOptions.SectionName));
-    builder.Services.Configure<WebUiOptions>(builder.Configuration.GetSection(WebUiOptions.SectionName));
-    builder.Services.Configure<PurgeOptions>(builder.Configuration.GetSection(PurgeOptions.SectionName));
+    // ConfigCache is the runtime source of truth (spec §12.5). Section snapshots are exposed as IOptions for
+    // the startup-bound consumers (listener ports, spool dir/workers) that only apply at (re)start anyway;
+    // live consumers (size/CIDR/rate-limit filters) read ConfigCache directly.
+    builder.Services.AddSingleton(configCache);
+    builder.Services.AddSingleton(Options.Create(listenerSnapshot));
+    builder.Services.AddSingleton(Options.Create(apiSnapshot));
+    builder.Services.AddSingleton(Options.Create(webSnapshot));
+    builder.Services.AddSingleton(Options.Create(spoolSnapshot));
+
+    // Retry/purge/default-relay defaults come from the typed Options classes; the SQL-backed settings
+    // providers (SqlRetrySettings/SqlPurgeSettings) read live values from the config table on top of them.
+    builder.Services.Configure<RetryOptions>(_ => { });
+    builder.Services.Configure<PurgeOptions>(_ => { });
+    builder.Services.Configure<DefaultRelayOptions>(_ => { });
 
     // Core singletons.
     builder.Services.AddSingleton(sp =>
@@ -62,12 +98,10 @@ try
     builder.Services.AddSingleton<ConfiguredUserAuthenticator>();
 
     // SQL persistence (relay_log, relay_counters, relays, config, api_keys, message-log queries).
-    var connectionString = builder.Configuration.GetConnectionString("DispatchLog")
-        ?? throw new InvalidOperationException("ConnectionStrings:DispatchLog is not configured.");
     builder.Services.AddDispatchData(connectionString);
 
     // Web/ingestion services (SignalR, live feed, rate limiter, API-key middleware) — must follow AddDispatchData.
-    builder.Services.AddDispatchWeb(webOptions.RequireHttps);
+    builder.Services.AddDispatchWeb(webSnapshot.RequireHttps);
 
     // Hosted services: relay worker pool + SMTP listener.
     builder.Services.AddHostedService<SpoolWorkerPool>();
@@ -77,25 +111,9 @@ try
 
     var app = builder.Build();
 
-    // Apply migrations before serving traffic.
-    await app.Services.GetRequiredService<DatabaseInitializer>().InitializeAsync();
-
-    // Seed the default relay's provider/credentials from appsettings on first run; afterwards SQL is authoritative.
+    // Schema + default config were applied during bootstrap (before listeners were configured). The default
+    // relay is seeded "Unconfigured" by the schema migration; an administrator selects its provider in the UI.
     var configRepo = app.Services.GetRequiredService<IConfigRepository>();
-    if (await configRepo.GetAsync("relay:1:provider") is null)
-    {
-        var def = app.Services.GetRequiredService<IOptions<DefaultRelayOptions>>().Value;
-        if (def.Provider != RelayProviderType.Unconfigured)
-        {
-            var relayRepo = app.Services.GetRequiredService<IRelayRepository>();
-            var defaultRelay = await relayRepo.GetDefaultAsync();
-            if (defaultRelay is not null)
-                await relayRepo.UpdateAsync(defaultRelay.Id, defaultRelay.Name, def.Provider, enabled: true,
-                    defaultRelay.MaxConcurrency, defaultRelay.MaxMessageBytes);
-            await app.Services.GetRequiredService<IRelaySettingsStore>().SaveAsync(defaultRelay?.Id ?? 1,
-                new RelaySettings(def.Provider, def.Settings.ToDictionary(k => k.Key, v => (string?)v.Value)));
-        }
-    }
 
     // Seed the admin password from install config on first run (the installer supplies AdminPassword).
     // If none is supplied, the web UI presents a one-time first-run setup screen instead.
@@ -108,16 +126,16 @@ try
         Log.Information("Seeded admin password from install configuration");
     }
 
-    app.UseSecurityHeaders(webOptions.Port, webOptions.RequireHttps);
-    app.UseEmbeddedUi(webOptions.Port);
+    app.UseSecurityHeaders(webSnapshot.Port, webSnapshot.RequireHttps);
+    app.UseEmbeddedUi(webSnapshot.Port);
     app.UseAuthentication();
     app.UseMiddleware<Dispatch.Web.Auth.WebAuthMiddleware>();
     app.UseMiddleware<ApiKeyMiddleware>();
-    app.MapIngestionApi(apiOptions.Port);
-    app.MapDashboardApi(webOptions.Port);
+    app.MapIngestionApi(apiSnapshot.Port);
+    app.MapDashboardApi(webSnapshot.Port);
     app.MapHub<LogHub>("/hub/logs");
     app.MapHub<TestProviderHub>("/hub/test-provider");
-    app.MapEmbeddedUiFallback(webOptions.Port);
+    app.MapEmbeddedUiFallback(webSnapshot.Port);
 
     await app.RunAsync();
     return 0;

@@ -13,4 +13,12 @@ public sealed class WebUiOptions
     /// still works when the dashboard is reached over plain HTTP during local development.
     /// </summary>
     public bool RequireHttps { get; set; }
+
+    /// <summary>
+    /// Path to a PFX certificate for the dashboard HTTPS listener. This is the one exception to the
+    /// "everything in SQL" rule (spec §12.1/§12.2): ASP.NET Core needs it to start the HTTPS listener
+    /// before SQL is reachable, so it (and its password) live in appsettings.json, not the config table.
+    /// </summary>
+    public string TlsCertPath { get; set; } = "";
+    public string TlsCertPassword { get; set; } = "";
 }

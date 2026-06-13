@@ -63,6 +63,23 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton(Spool);
         Intake = new Dispatch.Core.Maintenance.IntakeState();
         builder.Services.AddSingleton(Intake);
+
+        // ConfigCache is the runtime source of truth (spec §12.5). Seed defaults into the fake config repo —
+        // overriding the ports the test host actually listens on so ApiKeyMiddleware (which reads api.port
+        // live) routes correctly — then load the cache from it. Seeding the repo (not just the cache) means a
+        // PUT /api/config that reloads the cache reconstructs every key, not only the ones it wrote.
+        var fakeConfig = new FakeConfigRepository();
+        var seed = new Dictionary<string, string>(ConfigDefaults.Defaults, StringComparer.OrdinalIgnoreCase)
+        {
+            [ConfigKeys.ApiPort] = ApiPort.ToString(),
+            [ConfigKeys.ApiRateLimitPerKey] = "100",
+            [ConfigKeys.WebUiPort] = WebPort.ToString(),
+        };
+        foreach (var (k, v) in seed) await fakeConfig.SetAsync(k, v);
+        var configCache = new ConfigCache();
+        await configCache.LoadAsync(fakeConfig);
+        builder.Services.AddSingleton(configCache);
+        builder.Services.AddSingleton<IConfigRepository>(fakeConfig);
         builder.Services.AddSingleton<MinuteCounterRing>();
         builder.Services.AddSingleton<RelayConcurrencyTracker>();
         builder.Services.AddSingleton<ICounterReader, InMemoryCounterRepository>();
@@ -71,7 +88,6 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton<IRelayRepository, FakeRelayRepository>();
         builder.Services.AddSingleton<IRelaySettingsStore, FakeRelaySettingsStore>();
         builder.Services.AddSingleton<IRoutingRuleRepository, FakeRoutingRuleRepository>();
-        builder.Services.AddSingleton<IConfigRepository, FakeConfigRepository>();
         builder.Services.AddSingleton<IDatabaseHealth, FakeDatabaseHealth>();
         builder.Services.AddSingleton<ILogMaintenance, FakeLogMaintenance>();
         builder.Services.AddSingleton<ISmtpCredentialRepository, FakeSmtpCredentialRepository>();
