@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Dispatch.Core/Dispatch.Core.csproj" />
+    <Project Path="src/Dispatch.Data/Dispatch.Data.csproj" />
+    <Project Path="src/Dispatch.Providers/Dispatch.Providers.csproj" />
+    <Project Path="src/Dispatch.Service/Dispatch.Service.csproj" />
+    <Project Path="src/Dispatch.Web/Dispatch.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Dispatch.Core.Tests/Dispatch.Core.Tests.csproj" />
+    <Project Path="tests/Dispatch.Data.Tests/Dispatch.Data.Tests.csproj" />
+    <Project Path="tests/Dispatch.Providers.Tests/Dispatch.Providers.Tests.csproj" />
+    <Project Path="tests/Dispatch.Web.Tests/Dispatch.Web.Tests.csproj" />
+  </Folder>
+</Solution>

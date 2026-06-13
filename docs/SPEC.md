@@ -33,9 +33,9 @@
 
 ## 1. Project Overview
 
-Dispatch is a lightweight, open-source SMTP relay server built on .NET 9. It accepts inbound messages over **SMTP** (ports 25/587) and a **developer-friendly HTTP API** (port 8081), then forwards every message to a configurable upstream provider such as Mailgun, SendGrid, or Azure Communication Services.
+Dispatch is a lightweight, open-source SMTP relay server built on .NET 10. It accepts inbound messages over **SMTP** (ports 25/587) and a **developer-friendly HTTP API** (port 8421), then forwards every message to a configurable upstream provider such as Mailgun, SendGrid, or Azure Communication Services.
 
-A small embedded web UI — served directly from the process on port 8080 — lets administrators view live message logs, manage API keys, and configure all settings from any browser without installing separate software. No Electron, no Avalonia, no external web server required.
+A small embedded web UI — served directly from the process on port 8420 — lets administrators view live message logs, manage API keys, and configure all settings from any browser without installing separate software. No Electron, no Avalonia, no external web server required.
 
 **Key design goals:**
 
@@ -51,13 +51,13 @@ A small embedded web UI — served directly from the process on port 8080 — le
 
 ## 2. Architecture Overview
 
-Dispatch runs as a single .NET 9 process. The design principle is simple: **the hot path never touches a database**. `250 OK` is returned as soon as a message hits the spool directory. Everything else — provider dispatch, retry, logging — happens asynchronously afterwards.
+Dispatch runs as a single .NET 10 process. The design principle is simple: **the hot path never touches a database**. `250 OK` is returned as soon as a message hits the spool directory. Everything else — provider dispatch, retry, logging — happens asynchronously afterwards.
 
 **SMTP Listener Layer**
 Accepts inbound connections on port 25 and/or 587. Built on the `SmtpServer` NuGet library (v11.x). When a `DATA` command completes successfully, the raw message bytes are written atomically to a `.eml` file in the spool `incoming/` directory and `250 OK` is returned immediately. No database, no parsing, no network call — just a file write.
 
 **HTTP Ingestion API Layer**
-A second ASP.NET Core listener on port 8081 (default, separate from the web UI port). Accepts `POST /api/v1/messages` with `multipart/form-data` or JSON. API keys are required (managed in the web UI). On receipt, MimeKit builds a `MimeMessage` from the POST fields, serialises it to RFC 5322 bytes, and writes it to `spool/incoming/` — identical to the SMTP path. Returns `202 Accepted` immediately.
+A second ASP.NET Core listener on port 8421 (default, separate from the web UI port). Accepts `POST /api/v1/messages` with `multipart/form-data` or JSON. API keys are required (managed in the web UI). On receipt, MimeKit builds a `MimeMessage` from the POST fields, serialises it to RFC 5322 bytes, and writes it to `spool/incoming/` — identical to the SMTP path. Returns `202 Accepted` immediately.
 
 **Spool Directory (Durable Queue)**
 The spool directory on the local filesystem is the source of truth for all in-flight messages. It has three subdirectories:
@@ -84,19 +84,19 @@ SQL Server is only written to **after** the provider responds. If SQL Server is 
 SQL Server Express holds `relay_log` (event history, configurable suppression), `relay_counters` (daily aggregates, always written), the `config` table, and the schema version table.
 
 **Embedded Web UI Layer**
-ASP.NET Core minimal API hosts a React/Vite SPA on port 8080 (default). The UI reads `relay_log` for the Message Log, reads `spool/` directory counts for the queue depth widget, and streams live events via SignalR.
+ASP.NET Core minimal API hosts a React/Vite SPA on port 8420 (default). The UI reads `relay_log` for the Message Log, reads `spool/` directory counts for the queue depth widget, and streams live events via SignalR.
 
 | Component | Technology |
 |---|---|
 | SMTP listener | SmtpServer 11.x (NuGet) |
-| **HTTP ingestion API** | **ASP.NET Core minimal API — second listener on port 8081** |
+| **HTTP ingestion API** | **ASP.NET Core minimal API — second listener on port 8421** |
 | Message parsing | MimeKit 4.x (NuGet) |
 | Relay dispatch | MailKit SmtpClient + provider SDKs |
 | **Durable queue** | **Local spool directory — `.eml` files, atomic directory moves** |
 | Worker wake signal | `FileSystemWatcher` + `Channel<string>` (filename only) |
 | Relay event log | SQL Server Express — `relay_log` (configurable) + `relay_counters` (always) |
 | Log ORM | Microsoft.Data.SqlClient + Dapper |
-| Web host | ASP.NET Core 9 minimal API |
+| Web host | ASP.NET Core 10 minimal API |
 | Real-time log push | SignalR (Microsoft.AspNetCore.SignalR) |
 | Web UI framework | React 18 + Vite (compiled, embedded in assembly) |
 | Configuration store | SQL Server `config` table (connection string only in `appsettings.json`) |
@@ -845,9 +845,9 @@ CREATE TABLE schema_version (
 
 ### 7.1 Purpose
 
-In addition to accepting mail over SMTP, Dispatch exposes an HTTP API on a dedicated port (default **8081**) that lets developers submit messages with a simple `POST` request — no SMTP client, no MX configuration, no email library required. The API is intentionally similar to Mailgun's `/messages` endpoint so it is familiar to developers already using cloud email providers.
+In addition to accepting mail over SMTP, Dispatch exposes an HTTP API on a dedicated port (default **8421**) that lets developers submit messages with a simple `POST` request — no SMTP client, no MX configuration, no email library required. The API is intentionally similar to Mailgun's `/messages` endpoint so it is familiar to developers already using cloud email providers.
 
-The HTTP API and the web UI run on **different ports** with **different authentication**. The web UI (8080) uses optional username/password. The API (8081) uses API keys issued from the web UI.
+The HTTP API and the web UI run on **different ports** with **different authentication**. The web UI (8420) uses optional username/password. The API (8421) uses API keys issued from the web UI.
 
 All messages received via the HTTP API follow exactly the same path as SMTP messages — written atomically to `spool/incoming/` and `202 Accepted` returned before any database or network call.
 
@@ -855,7 +855,7 @@ All messages received via the HTTP API follow exactly the same path as SMTP mess
 
 | Setting | Default | Config key |
 |---|---|---|
-| API port | 8081 | `api.port` |
+| API port | 8421 | `api.port` |
 | Bind address | 0.0.0.0 (all interfaces) | — (fixed, not configurable) |
 | Allowed source IPs / CIDRs | `127.0.0.1/32` | `api.allowed_cidrs` |
 | Max message size (global ceiling) | No limit (0) | `api.max_message_bytes` |
@@ -902,7 +902,7 @@ Accepts `multipart/form-data` (for attachments) or `application/json` (simple me
 
 **Example (curl):**
 ```bash
-curl -X POST http://localhost:8081/api/v1/messages \
+curl -X POST http://localhost:8421/api/v1/messages \
   -H "Authorization: Bearer dsp_live_a1b2c3d4e5f6" \
   -F from="Dispatch <noreply@myapp.com>" \
   -F to="user@example.com" \
@@ -1106,18 +1106,18 @@ Added to the `config` table:
 | Key | Default | Encrypted |
 |---|---|---|
 | `api.enabled` | `true` | No |
-| `api.port` | `8081` | No |
+| `api.port` | `8421` | No |
 
 | `api.max_message_bytes` | `0` (no limit) | No |
 | `api.rate_limit_per_key` | `100` | No |
 
 ### 7.10 Firewall Rule (Windows MSI)
 
-The MSI creates a firewall rule that opens port 8081 to all addresses. Scope is intentionally `any` — the firewall is a port-opener only. Access control (which IPs may actually use the API) is enforced by the application-layer CIDR allow-list (`api.allowed_cidrs`), which is configurable in the web UI without touching firewall rules.
+The MSI creates a firewall rule that opens port 8421 to all addresses. Scope is intentionally `any` — the firewall is a port-opener only. Access control (which IPs may actually use the API) is enforced by the application-layer CIDR allow-list (`api.allowed_cidrs`), which is configurable in the web UI without touching firewall rules.
 
 | Rule name | Direction | Protocol | Port | Scope |
 |---|---|---|---|---|
-| `Dispatch API` | Inbound | TCP | 8081 | `any` |
+| `Dispatch API` | Inbound | TCP | 8421 | `any` |
 
 This matches the design of the SMTP rules (25, 587) — the OS firewall opens the port, the application decides which source IPs are allowed. Denied connections are logged and visible in the UI.
 
@@ -1186,7 +1186,7 @@ A no-op provider that accepts and discards all messages, logging them as if deli
 
 | Layer | Technology |
 |---|---|
-| Backend host | ASP.NET Core 9 minimal API (in same process as relay) |
+| Backend host | ASP.NET Core 10 minimal API (in same process as relay) |
 | Real-time updates | SignalR WebSocket hub |
 | Frontend framework | React 18 + TypeScript |
 | Build tool | Vite (output embedded via EmbeddedFileProvider) |
@@ -1356,7 +1356,7 @@ Controls which events are written to the `relay_log` database table. Counters (`
 #### Settings — HTTP API
 
 - Enable/disable the HTTP API
-- API port (default 8081)
+- API port (default 8421)
 - Allowed source IPs / CIDRs — same format as SMTP listener; default `127.0.0.1/32`
 - TLS certificate path + passphrase (enables HTTPS; required warning shown when CIDR is wider than localhost without TLS)
 - Global rate limit per key (requests per minute; per-key overrides set on the API Keys page)
@@ -1364,7 +1364,7 @@ Controls which events are written to the `relay_log` database table. Counters (`
 
 #### Settings — Web UI
 
-- Web UI port (default 8080)
+- Web UI port (default 8420)
 - Allowed source IPs / CIDRs — default `127.0.0.1/32`; set to `0.0.0.0/0` for access from any machine
 - TLS certificate path + passphrase (enables HTTPS; required warning shown when auth is on without TLS)
 - Enable/disable UI password protection (username + bcrypt-hashed password)
@@ -2019,13 +2019,13 @@ Values marked `encrypted = 1` are stored AES-256 encrypted using a machine-speci
 
 > Relay credentials use the key prefix `relay:{id}:` where `{id}` is the relay's integer primary key from the `relays` table. This allows independent credentials per named relay.
 | `api.enabled` | bool | `true` | No |
-| `api.port` | int | `8081` | No |
+| `api.port` | int | `8421` | No |
 | `api.allowed_cidrs` | JSON array | `["127.0.0.1/32"]` | No |
 | `api.tls_cert_path` | string | `` | No |
 | `api.tls_cert_password` | string | `` | **Yes** |
 | `api.max_message_bytes` | int | `0` (no limit) | No |
 | `api.rate_limit_per_key` | int | `100` | No |
-| `webui.port` | int | `8080` | No |
+| `webui.port` | int | `8420` | No |
 | `webui.allowed_cidrs` | JSON array | `["127.0.0.1/32"]` | No |
 | `webui.tls_cert_path` | string | `` | No |
 | `webui.tls_cert_password` | string | `` | **Yes** |
@@ -2504,7 +2504,7 @@ Users always run `DispatchSetup.exe`. The MSI is never run directly in normal us
 
 ### 15.2 Bootstrap Installer (`DispatchSetup.exe`)
 
-The bootstrap is a standalone .NET 9 WinForms application (single-file, self-contained, no .NET prerequisite needed — compiled to native via NativeAOT or published as a single-file executable). It presents a simple wizard UI and handles all pre-flight setup before the MSI runs.
+The bootstrap is a standalone .NET 10 WinForms application (single-file, self-contained, no .NET prerequisite needed — compiled to native via NativeAOT or published as a single-file executable). It presents a simple wizard UI and handles all pre-flight setup before the MSI runs.
 
 #### Bootstrap Wizard Flow
 
@@ -2644,7 +2644,7 @@ Authored with WiX Toolset v5. Targets x64 Windows 10 / Server 2019 and later. Th
 - Copy binaries to `C:\Program Files\Dispatch\`
 - Ensure `C:\ProgramData\Dispatch\` exists (preserves existing `appsettings.json`)
 - Register Dispatch as a Windows Service via `ServiceInstall` / `ServiceControl` elements
-- Create Start Menu shortcut that opens `https://localhost:8080`
+- Create Start Menu shortcut that opens `https://localhost:8420`
 - Create Windows Firewall rules for all required ports (see Section 11.3a)
 - Register Add/Remove Programs entry with version, publisher, and uninstall support
 
@@ -2665,8 +2665,8 @@ The MSI creates inbound firewall rules for every port Dispatch listens on. Rules
 | `Dispatch SMTP` | Inbound | TCP | 25 | Any | App-layer CIDR (`listener.allowed_cidrs`) |
 | `Dispatch SMTP Submission` | Inbound | TCP | 587 | Any | App-layer CIDR (`listener.allowed_cidrs`) |
 | `Dispatch SMTPS` | Inbound | TCP | 465 | Any | App-layer CIDR (`listener.allowed_cidrs`) |
-| `Dispatch Admin UI` | Inbound | TCP | 8080 | Any | App-layer CIDR (`webui.allowed_cidrs`) |
-| `Dispatch API` | Inbound | TCP | 8081 | Any | App-layer CIDR (`api.allowed_cidrs`) |
+| `Dispatch Admin UI` | Inbound | TCP | 8420 | Any | App-layer CIDR (`webui.allowed_cidrs`) |
+| `Dispatch API` | Inbound | TCP | 8421 | Any | App-layer CIDR (`api.allowed_cidrs`) |
 
 **WiX source (`firewall.wxs`):**
 
@@ -2702,15 +2702,15 @@ The MSI creates inbound firewall rules for every port Dispatch listens on. Rules
         <fw:FirewallException
           Id="FwAdminUI"
           Name="Dispatch Admin UI"
-          Description="Dispatch web administration dashboard (port 8080)"
-          Port="8080" Protocol="tcp" Scope="any" Profile="all" />
+          Description="Dispatch web administration dashboard (port 8420)"
+          Port="8420" Protocol="tcp" Scope="any" Profile="all" />
       </Component>
       <Component Id="FirewallRuleAPI" Guid="...">
         <fw:FirewallException
           Id="FwAPI"
           Name="Dispatch API"
-          Description="Dispatch HTTP ingestion API (port 8081)"
-          Port="8081" Protocol="tcp" Scope="any" Profile="all" />
+          Description="Dispatch HTTP ingestion API (port 8421)"
+          Port="8421" Protocol="tcp" Scope="any" Profile="all" />
       </Component>
     </ComponentGroup>
   </Fragment>
@@ -2725,8 +2725,8 @@ The MSI has no access to the SQL config table at install time. To set non-defaul
 |---|---|---|
 | `SMTP_PORT` | `25` | Port for the `Dispatch SMTP` firewall rule |
 | `SUBMISSION_PORT` | `587` | Port for the `Dispatch SMTP Submission` rule |
-| `ADMINUI_PORT` | `8080` | Port for the `Dispatch Admin UI` rule |
-| `API_PORT` | `8081` | Port for the `Dispatch API` rule |
+| `ADMINUI_PORT` | `8420` | Port for the `Dispatch Admin UI` rule |
+| `API_PORT` | `8421` | Port for the `Dispatch API` rule |
 
 All firewall rules use `Scope="any"` — access control is managed at the application layer. Scope is not configurable at MSI install time.
 
@@ -2898,8 +2898,8 @@ The bootstrap accepts the following CLI flags for unattended mode:
 | `--no-launch-msi` | Run database setup only; do not launch the MSI |
 | `--smtp-port <n>` | Override SMTP firewall rule port passed to MSI (default 25) |
 | `--submission-port <n>` | Override submission firewall rule port passed to MSI (default 587) |
-| `--adminui-port <n>` | Override Admin UI firewall rule port passed to MSI (default 8080) |
-| `--api-port <n>` | Override API firewall rule port passed to MSI (default 8081) |
+| `--adminui-port <n>` | Override Admin UI firewall rule port passed to MSI (default 8420) |
+| `--api-port <n>` | Override API firewall rule port passed to MSI (default 8421) |
 
 ---
 
@@ -2985,7 +2985,7 @@ Installing Dispatch service...
 
 =============================================
   Setup complete!
-  Dashboard: https://localhost:8080
+  Dashboard: https://localhost:8420
   (Accept the self-signed certificate warning in your browser,
    or run: sudo dispatch --trust-cert to add it to the system store)
 =============================================
@@ -3122,13 +3122,13 @@ Starting dispatch service...             ✓
 
 =============================================
   Upgrade complete!  v1.0.0 → v1.1.0
-  Dashboard: https://localhost:8080
+  Dashboard: https://localhost:8420
 =============================================
 ```
 
 #### 12.6.2 Queue Drain
 
-Before stopping the service, `install.sh` calls `curl -sk -X POST https://localhost:8080/api/service/drain` (`-k` skips cert verification for self-signed certs) and polls until the response confirms zero `Processing` rows, or 60 seconds elapse. Any rows still in `Processing` after the timeout are reset to `Pending` before the service is stopped.
+Before stopping the service, `install.sh` calls `curl -sk -X POST https://localhost:8420/api/service/drain` (`-k` skips cert verification for self-signed certs) and polls until the response confirms zero `Processing` rows, or 60 seconds elapse. Any rows still in `Processing` after the timeout are reset to `Pending` before the service is stopped.
 
 #### 12.6.3 Database Schema Migration
 
@@ -3207,7 +3207,7 @@ The web UI exposes all credentials, provider API keys, routing rules, and API ke
 **Behaviour without a certificate configured:**
 
 - The web UI process starts and the SMTP listener works normally
-- Any HTTP request to port 8080 returns a single page: a setup notice explaining that a TLS certificate must be configured, with instructions for generating a self-signed certificate or pointing to an existing one
+- Any HTTP request to port 8420 returns a single page: a setup notice explaining that a TLS certificate must be configured, with instructions for generating a self-signed certificate or pointing to an existing one
 - No credentials, config, or log data are served over plain HTTP under any circumstance
 
 **Certificate configuration:**
@@ -3224,7 +3224,7 @@ Users will see a browser "Your connection is not private" warning when first acc
 
 #### HTTP API — HTTP and HTTPS
 
-The HTTP API (port 8081) supports both plain HTTP and HTTPS:
+The HTTP API (port 8421) supports both plain HTTP and HTTPS:
 
 - **HTTP is supported** because many internal senders (legacy apps, printers, scanners, IoT devices, scripts) cannot do HTTPS
 - **HTTPS is supported** for senders that can use it — configured via `api.tls_cert_path` (optional, same cert as web UI or separate)
@@ -3503,7 +3503,7 @@ Build projects in this order to avoid circular dependency issues:
 
 1. **Dispatch.Core** — `SpoolDirectory`, `SpoolMessageStore`, `SpoolMeta`, `SpoolWorkerPool`, `RelaySemaphorePool`, `IRelayProvider`, `IRelayProviderFactory`, `RoutingEngine`, `IRoutingRuleRepository`, `IRelayRepository`, `ILogRepository`, `ICounterRepository`, `MinuteCounterRing`, `IConfigRepository`, `IApiKeyRepository`, `ConfigCache`, `RelayLogEntry`, in-memory ring buffer
 2. **Dispatch.Providers** — `NoneProvider`, `SmtpProvider` (MailKit), `SendGridProvider`, `MailgunProvider`, `AzureProvider`
-3. **Dispatch.Web** — ASP.NET Core host (port 8080 web UI + port 8081 API on separate listener), REST endpoints, `ApiMessageHandler`, `ApiKeyMiddleware`, SignalR hub, `EmbeddedFileProvider`, `LogRepository`, `ConfigRepository`, `ApiKeyRepository`
+3. **Dispatch.Web** — ASP.NET Core host (port 8420 web UI + port 8421 API on separate listener), REST endpoints, `ApiMessageHandler`, `ApiKeyMiddleware`, SignalR hub, `EmbeddedFileProvider`, `LogRepository`, `ConfigRepository`, `ApiKeyRepository`
 4. **Dispatch.UI** — React SPA; wire Vite build into Dispatch.Web via MSBuild `EmbeddedResource`
 5. **Dispatch.Service** — `Program.cs`; wire `SpoolWorkerPool` + `PurgeWorker` as `IHostedService`
 6. **Dispatch.Bootstrap.Windows** — WinForms setup wizard (SQL detect/install, schema migration, MSI launch)
@@ -3813,7 +3813,7 @@ var result   = await provider.SendAsync(message, ct);
 
 ### 19.8 Bootstrap Installer Implementation (Windows)
 
-`Dispatch.Bootstrap.Windows` is a .NET 9 WinForms project published as a self-contained single-file EXE. It has no .NET runtime prerequisite — use `PublishSingleFile=true` with `SelfContained=true`.
+`Dispatch.Bootstrap.Windows` is a .NET 10 WinForms project published as a self-contained single-file EXE. It has no .NET runtime prerequisite — use `PublishSingleFile=true` with `SelfContained=true`.
 
 **SQL Server detection:**
 

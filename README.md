@@ -24,7 +24,7 @@ Most applications need to send email. Wiring every app directly to a cloud provi
 ```
 Your apps / devices  →  Dispatch SMTP (port 25/587)   ─┐
                                                          ├→  Mailgun / SendGrid / Azure / SMTP
-Your apps / scripts  →  Dispatch API  (port 8081)      ─┘
+Your apps / scripts  →  Dispatch API  (port 8421)      ─┘
          ↑                       ↕
     202 / 250 OK instantly   spool directory
     (before any DB or        (durable in-flight queue)
@@ -32,7 +32,7 @@ Your apps / scripts  →  Dispatch API  (port 8081)      ─┘
                               relay_log in SQL
                               (after-the-fact history)
                                     ↕
-                             Web UI (port 8080)
+                             Web UI (port 8420)
                          Configure · Monitor · Debug
 ```
 
@@ -49,7 +49,7 @@ Your apps / scripts  →  Dispatch API  (port 8081)      ─┘
 | | |
 |---|---|
 | 📨 **SMTP listener** | Accepts on ports 25 and 587; STARTTLS, AUTH; app-layer CIDR allow-list; denied connections logged |
-| 🌐 **HTTP ingestion API** | `POST /api/v1/messages` on port 8081; multipart or JSON; API key auth; Mailgun-compatible |
+| 🌐 **HTTP ingestion API** | `POST /api/v1/messages` on port 8421; multipart or JSON; API key auth; Mailgun-compatible |
 | ⚡ **Instant 250 OK** | Message written to spool directory before acknowledging sender — no DB or network on the hot path |
 | 📁 **Spool queue** | Local `.eml` files are the durable queue; survive crashes, restarts, and SQL outages |
 | 🔀 **Relay routing** | Named relay configs; domain/subdomain routing rules; default relay catch-all; simulate tool |
@@ -101,7 +101,7 @@ sudo journalctl -u dispatch -f
 
 ## Quick Start
 
-1. Open the dashboard at **https://localhost:8080** (accept the self-signed certificate warning on first visit, or replace the cert with one from your internal CA)
+1. Open the dashboard at **https://localhost:8420** (accept the self-signed certificate warning on first visit, or replace the cert with one from your internal CA)
 2. Go to **Settings → Relay Provider** and enter your provider credentials
 3. Click **Send Test Email** to verify the credentials work — watch the live relay log
 4. Click **Save Settings**
@@ -111,11 +111,11 @@ That's it. Dispatch handles everything from there.
 
 ### Sending via HTTP API
 
-If you prefer HTTP over SMTP, use the ingestion API on port 8081:
+If you prefer HTTP over SMTP, use the ingestion API on port 8421:
 
 ```bash
 # Create an API key in the web UI first (Settings → API Keys), then:
-curl -X POST http://localhost:8081/api/v1/messages \
+curl -X POST http://localhost:8421/api/v1/messages \
   -H "Authorization: Bearer dsp_live_your_key_here" \
   -F from="App <noreply@myapp.com>" \
   -F to="user@example.com" \
@@ -135,7 +135,7 @@ All settings are managed through the web UI and stored in SQL Server. The only t
 
 ### Getting to the UI
 
-Open **http://localhost:8080** after installation. On first run, all settings have sensible defaults. The only required step is entering your relay provider credentials under **Settings → Relay Provider**.
+Open **http://localhost:8420** after installation. On first run, all settings have sensible defaults. The only required step is entering your relay provider credentials under **Settings → Relay Provider**.
 
 ### SMTP Listener
 
@@ -217,7 +217,7 @@ More providers planned — see [Appendix A of the spec](docs/SPEC.md) and [open 
 
 ### Windows
 - Windows 10 / Windows Server 2019 or later (x64)
-- .NET 9 runtime (bundled in the installer)
+- .NET 10 runtime (bundled in the installer)
 - SQL Server Express 2019+ or any SQL Server edition (installer can download and set up Express for you)
 
 ### Linux
@@ -246,7 +246,7 @@ dotnet run --project src/Dispatch.Service
 dotnet test
 ```
 
-The web UI is served at `http://localhost:8080` and the SMTP listener starts on ports 25 and 587.
+The web UI is served at `http://localhost:8420` and the SMTP listener starts on ports 25 and 587.
 
 > **Note:** You need SQL Server Express (or any SQL Server instance) running locally and a connection string in `src/Dispatch.Service/appsettings.Development.json` before the service will start.
 

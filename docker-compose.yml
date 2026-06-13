@@ -1,0 +1,18 @@
+# Local development dependencies for Dispatch.
+# Azure SQL Edge is arm64-native, so it runs without emulation on Apple Silicon.
+# Start with:  docker compose up -d
+services:
+  sql:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    container_name: dispatch-sql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Dispatch_Dev_Pass123"
+    ports:
+      - "1433:1433"
+    volumes:
+      - dispatch-sql-data:/var/opt/mssql
+    restart: unless-stopped
+
+volumes:
+  dispatch-sql-data:
