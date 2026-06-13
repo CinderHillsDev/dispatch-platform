@@ -108,7 +108,8 @@ jobs:
           Write-Host "Dispatch /health OK"
 
   linux-installer:
-    runs-on: ubuntu-latest
+    # 22.04: SQL Server 2022 isn't supported on Ubuntu 24.04 (noble ships libldap 2.6, mssql needs 2.5).
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
