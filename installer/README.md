@@ -31,7 +31,7 @@ cd installer\windows
 dotnet publish ..\..\src\Dispatch.Service -c Release -o publish      # (build + embed the UI first)
 wix build Dispatch.wxs -d PublishDir=publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
 dotnet build sql-express\SqlExpressLauncher.csproj -c Release        # -> InstallSqlExpress.exe
-wix build bundle\Bundle.wxs -ext WixToolset.Bal.wixext -ext WixToolset.Util.wixext `
+wix build bundle\Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext `
   -bindpath:SqlLauncher=sql-express\bin\Release\net472 -bindpath:Msi=. -o DispatchSetup.exe
 ```
 

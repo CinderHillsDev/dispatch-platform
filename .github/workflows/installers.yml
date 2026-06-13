@@ -19,6 +19,8 @@ on:
 env:
   DOTNET_NOLOGO: "true"
   DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  # The actions/* @v4 run on Node 20 (deprecated); opt them into Node 24 now (forced default 2026-06-16).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   windows-installer:
@@ -57,8 +59,9 @@ jobs:
         run: |
           dotnet tool install --global wix --version $env:WIX_VERSION
           # Extensions must match the toolset major version (the unpinned latest is v7, incompatible with v6).
+          # In WiX v6 the bundle/Bal extension dll is shipped as WixToolset.BootstrapperApplications.wixext.
           wix extension add -g "WixToolset.Firewall.wixext/$env:WIX_VERSION"
-          wix extension add -g "WixToolset.Bal.wixext/$env:WIX_VERSION"
+          wix extension add -g "WixToolset.BootstrapperApplications.wixext/$env:WIX_VERSION"
           wix extension add -g "WixToolset.Util.wixext/$env:WIX_VERSION"
 
       - name: Build the MSI
@@ -72,7 +75,7 @@ jobs:
         working-directory: installer/windows
         shell: pwsh
         run: |
-          wix build bundle/Bundle.wxs -ext WixToolset.Bal.wixext -ext WixToolset.Util.wixext `
+          wix build bundle/Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext `
             -bindpath:SqlLauncher=sql-express/bin/Release/net472 -bindpath:Msi=. -o DispatchSetup.exe
 
       - name: Upload installer artifacts

@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+env:
+  # The actions/* @v4 run on Node 20 (deprecated); opt them into Node 24 now (forced default 2026-06-16).
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
