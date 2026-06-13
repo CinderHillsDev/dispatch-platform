@@ -76,6 +76,8 @@ export interface RelayStat {
   received: number; delivered: number; failed: number; inFlight: number;
 }
 
+export interface AppSettings { logging: { delivered: boolean; retrying: boolean; denied: boolean }; }
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -139,5 +141,10 @@ export const api = {
     list: () => getJson<SmtpCredential[]>("/api/smtp-credentials"),
     add: (username: string, password: string) => sendJson<{ ok: boolean }>("/api/smtp-credentials", "POST", { username, password }),
     remove: (username: string) => sendJson<{ ok: boolean }>(`/api/smtp-credentials/${encodeURIComponent(username)}`, "DELETE", {}),
+  },
+
+  settings: {
+    get: () => getJson<AppSettings>("/api/settings"),
+    saveLogging: (logging: AppSettings["logging"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { logging }),
   },
 };

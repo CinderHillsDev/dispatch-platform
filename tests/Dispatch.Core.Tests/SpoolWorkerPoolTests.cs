@@ -96,6 +96,29 @@ public class SpoolWorkerPoolTests
         Assert.Contains(log.Entries, e => e.Event == "Delivered" && e.Status == "OK");
     }
 
+    private sealed class SuppressDeliveredSettings : Dispatch.Core.Logging.ILoggingSettings
+    {
+        public ValueTask<bool> LogDeliveredAsync(CancellationToken ct = default) => ValueTask.FromResult(false);
+        public ValueTask<bool> LogRetryingAsync(CancellationToken ct = default) => ValueTask.FromResult(true);
+        public ValueTask<bool> LogDeniedAsync(CancellationToken ct = default) => ValueTask.FromResult(true);
+    }
+
+    [Fact]
+    public async Task Delivered_log_is_suppressed_but_counter_still_increments()
+    {
+        using var t = new TempSpool();
+        var counters = new InMemoryCounterRepository();
+        var log = new CapturingLogRepository();
+        var pool = TestData.BuildPool(t.Spool, DelegateProvider.AlwaysSucceeds(), log, counters,
+            loggingSettings: new SuppressDeliveredSettings());
+
+        var (emlPath, _) = TestData.Seed(t.Spool.ProcessingDir, t.Spool);
+        await pool.ProcessAsync(emlPath, Relay(), CancellationToken.None);
+
+        Assert.Equal(1, counters.Get(1, CounterField.Delivered));            // counter always written
+        Assert.DoesNotContain(log.Entries, e => e.Event == "Delivered");      // log row suppressed
+    }
+
     [Fact]
     public async Task ProcessAsync_transient_failure_requeues_with_backoff()
     {

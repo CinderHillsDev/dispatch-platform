@@ -67,13 +67,14 @@ public static class TestData
         ICounterRepository counters,
         RelayConfig? relay = null,
         RetryOptions? retry = null,
-        int workerCount = 4)
+        int workerCount = 4,
+        ILoggingSettings? loggingSettings = null)
     {
         relay ??= new RelayConfig { Id = 1, Name = "default", Provider = RelayProviderType.Local };
         var resolver = new StubRelayResolver(new ResolvedRelay { Config = relay });
         var factory = new StubProviderFactory(provider);
         return new SpoolWorkerPool(
-            spool, resolver, factory, logRepo, counters, new MinuteCounterRing(), new RelayConcurrencyTracker(),
+            spool, resolver, factory, logRepo, loggingSettings ?? new AlwaysLogSettings(), counters, new MinuteCounterRing(), new RelayConcurrencyTracker(),
             Options.Create(new SpoolOptions { WorkerCount = workerCount }),
             Options.Create(retry ?? new RetryOptions { MaxRetries = 3, DelaysSeconds = [0.01, 0.02, 0.03] }),
             NullLogger<SpoolWorkerPool>.Instance);

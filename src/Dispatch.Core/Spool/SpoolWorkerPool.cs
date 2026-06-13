@@ -24,6 +24,7 @@ public sealed class SpoolWorkerPool : BackgroundService
     private readonly IRelayResolver _routing;
     private readonly IRelayProviderFactory _providerFactory;
     private readonly ILogRepository _logRepo;
+    private readonly ILoggingSettings _loggingSettings;
     private readonly ICounterRepository _counters;
     private readonly MinuteCounterRing _minuteRing;
     private readonly RelayConcurrencyTracker _concurrency;
@@ -39,6 +40,7 @@ public sealed class SpoolWorkerPool : BackgroundService
         IRelayResolver routing,
         IRelayProviderFactory providerFactory,
         ILogRepository logRepo,
+        ILoggingSettings loggingSettings,
         ICounterRepository counters,
         MinuteCounterRing minuteRing,
         RelayConcurrencyTracker concurrency,
@@ -50,6 +52,7 @@ public sealed class SpoolWorkerPool : BackgroundService
         _routing = routing;
         _providerFactory = providerFactory;
         _logRepo = logRepo;
+        _loggingSettings = loggingSettings;
         _counters = counters;
         _minuteRing = minuteRing;
         _concurrency = concurrency;
@@ -255,7 +258,8 @@ public sealed class SpoolWorkerPool : BackgroundService
             // Counters are always accurate; the relay_log row is best-effort.
             await SafeIncrement(relay.Id, CounterField.Delivered, ct);
             _minuteRing.RecordDelivered();
-            await SafeLog(new RelayLogEntry
+            if (await _loggingSettings.LogDeliveredAsync(ct))
+                await SafeLog(new RelayLogEntry
             {
                 Event = "Delivered",
                 Status = "OK",
@@ -288,7 +292,8 @@ public sealed class SpoolWorkerPool : BackgroundService
         catch (Exception ex) when (IsTransient(ex) && meta.RetryCount < _retry.MaxRetries)
         {
             await SafeIncrement(relay.Id, CounterField.Retried, ct);
-            await SafeLog(BuildErrorEntry("Retrying", meta, relay, ex, meta.RetryCount + 1), ct);
+            if (await _loggingSettings.LogRetryingAsync(ct))
+                await SafeLog(BuildErrorEntry("Retrying", meta, relay, ex, meta.RetryCount + 1), ct);
 
             meta.RetryCount++;
             var delay = RetryDelay(meta.RetryCount);

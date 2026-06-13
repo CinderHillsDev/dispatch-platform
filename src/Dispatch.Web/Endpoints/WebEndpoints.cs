@@ -138,6 +138,7 @@ public static class WebEndpoints
         });
 
         group.MapAuth();            // /api/auth/* (see AuthEndpoints)
+        group.MapSettings();        // /api/settings (see SettingsEndpoints)
         group.MapServiceOps();      // /api/service/* (see ServiceEndpoints)
         group.MapRelayRouting();    // /api/relays/* and /api/routing/* (see RoutingEndpoints)
         group.MapLocalInbox();      // /api/local/messages (see LocalInboxEndpoints)

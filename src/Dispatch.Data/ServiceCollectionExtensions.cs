@@ -34,6 +34,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILogMaintenance, SqlLogMaintenance>();
         services.AddSingleton<IDatabaseHealth, SqlDatabaseHealth>();
         services.AddSingleton<ISmtpCredentialRepository, SqlSmtpCredentialRepository>();
+        services.AddSingleton<ILoggingSettings, SqlLoggingSettings>();
 
         return services;
     }
