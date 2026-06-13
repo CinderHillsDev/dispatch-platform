@@ -78,7 +78,15 @@ JSON
 # because the file is root/dispatch-only, but you may remove the AdminPassword line afterwards.
 chown -R dispatch:dispatch "$INSTALL_DIR" "$DATA_DIR" "$LOG_DIR" "$CONFIG_DIR"
 chmod 600 "$CONFIG_DIR/appsettings.json"
-chmod 700 "$DATA_DIR/spool"
+
+# Spool file security (spec §14.5). The spool directory and its incoming/processing/failed
+# subdirectories are owned by dispatch:dispatch with mode 700. The .eml/.meta files written into
+# them by the service contain raw message content, so they must be created with mode 600 — the
+# service is started with `UMask=0177` (see dispatch.service) so every spool file inherits
+# rw------- (600). We pre-create the subdirectories here so their mode is correct from first start.
+mkdir -p "$DATA_DIR/spool/incoming" "$DATA_DIR/spool/processing" "$DATA_DIR/spool/failed"
+chown -R dispatch:dispatch "$DATA_DIR/spool"
+chmod 700 "$DATA_DIR/spool" "$DATA_DIR/spool/incoming" "$DATA_DIR/spool/processing" "$DATA_DIR/spool/failed"
 
 echo "==> Installing systemd unit"
 install -m 644 "$SOURCE_DIR/installer/linux/dispatch.service" /etc/systemd/system/dispatch.service

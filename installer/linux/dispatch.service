@@ -16,6 +16,11 @@ RestartSec=5
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+# Spool .eml/.meta files contain message content (spec §14.5): force mode 600 (rw-------) on every
+# file the service creates so message bodies are never group/world-readable.
+UMask=0177
 ReadWritePaths=/var/lib/dispatch /var/log/dispatch /etc/dispatch
 
 [Install]

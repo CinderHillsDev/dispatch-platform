@@ -54,8 +54,8 @@ public static class AuthEndpoints
             var hasPassword = !string.IsNullOrEmpty(await config.GetAsync(PasswordHashKey, ctx.RequestAborted));
             if (hasPassword && !(ctx.User.Identity?.IsAuthenticated ?? false))
                 return Results.Unauthorized();
-            if (string.IsNullOrWhiteSpace(req.Password) || req.Password.Length < 8)
-                return Results.BadRequest(new { error = "Password must be at least 8 characters." });
+            if (ValidatePassword(req.Password) is { } error)
+                return Results.BadRequest(new { error });
 
             await config.SetAsync(PasswordHashKey, BCrypt.Net.BCrypt.HashPassword(req.Password, 12), encrypted: false, ctx.RequestAborted);
 
@@ -67,6 +67,31 @@ public static class AuthEndpoints
             }
             return Results.Ok(new { ok = true });
         });
+    }
+
+    // A small built-in list of the most common weak passwords (spec §17.3 calls for a common-password
+    // list check). Compared case-insensitively.
+    private static readonly HashSet<string> CommonPasswords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "password", "password1", "password123", "passw0rd", "12345678", "123456789", "1234567890",
+        "qwerty123", "qwertyuiop", "letmein1", "iloveyou1", "admin123", "welcome1", "abc12345",
+        "1q2w3e4r", "1qaz2wsx", "zaq12wsx", "trustno1", "dragon123", "monkey123", "football1",
+    };
+
+    /// <summary>
+    /// Enforces the web-UI password policy (spec §17.3): minimum 8 characters with at least one
+    /// uppercase letter, one lowercase letter and one digit, and not in the common-password list.
+    /// Returns a human-readable error message when the password is rejected, or <c>null</c> when it passes.
+    /// </summary>
+    internal static string? ValidatePassword(string? password)
+    {
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+            return "Password must be at least 8 characters.";
+        if (!password.Any(char.IsUpper) || !password.Any(char.IsLower) || !password.Any(char.IsDigit))
+            return "Password must contain at least one uppercase letter, one lowercase letter and one digit.";
+        if (CommonPasswords.Contains(password))
+            return "Password is too common; choose a less predictable password.";
+        return null;
     }
 
     private sealed record LoginRequest(string Password);
