@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dispatch SMTP Relay — Windows bundle (WiX v4 Burn), adapted from the FluxDeploy installer pattern.
+
+  Chains: (1) install SQL Server Express (named instance DISPATCHSQL + DispatchLog DB) via the
+  InstallSqlExpress.exe bootstrap, then (2) the Dispatch MSI, which writes appsettings.json pointing at
+  that local instance and registers/starts the service. The dashboard admin password is set on first run.
+
+  Build (Windows, WiX v6 toolset):
+    1) dotnet publish ..\..\..\src\Dispatch.Service -c Release -o ..\publish
+    2) wix build ..\Dispatch.wxs -d PublishDir=..\publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
+    3) dotnet build ..\sql-express\SqlExpressLauncher.csproj -c Release   (-> InstallSqlExpress.exe)
+    4) wix build Bundle.wxs -ext WixToolset.Bal.wixext -ext WixToolset.Util.wixext ^
+         -bindpath:SqlLauncher=..\sql-express\bin\Release\net472 -bindpath:Msi=. ^
+         -o DispatchSetup.exe
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Bundle Name="Dispatch SMTP Relay"
+          Version="1.0.0"
+          Manufacturer="CinderHills"
+          UpgradeCode="3f2a7c10-9b4e-4d2a-8e51-7c0d1a2b3c4d"
+          Compressed="yes">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" SuppressOptionsUI="yes" />
+    </BootstrapperApplication>
+
+    <!-- Skip the SQL Express step if the DISPATCHSQL instance already exists. -->
+    <util:RegistrySearch Id="SqlExpressInstalled"
+                         Root="HKLM"
+                         Key="SYSTEM\CurrentControlSet\Services\MSSQL$DISPATCHSQL"
+                         Value="ImagePath"
+                         Variable="SqlExpressInstalled"
+                         Result="exists" />
+
+    <Chain>
+      <!-- 1) SQL Server Express (before the MSI so msiserver isn't held). Permanent: uninstalling
+              Dispatch leaves SQL Express in place. -->
+      <ExePackage Id="InstallSqlExpress"
+                  SourceFile="!(bindpath.SqlLauncher)\InstallSqlExpress.exe"
+                  InstallArguments="DispatchLog"
+                  PerMachine="yes"
+                  Vital="yes"
+                  Permanent="yes"
+                  DetectCondition="SqlExpressInstalled">
+        <Payload SourceFile="!(bindpath.SqlLauncher)\InstallSqlExpress.ps1" />
+      </ExePackage>
+
+      <!-- 2) Dispatch MSI. SQLCONN defaults to the local DISPATCHSQL instance inside the MSI.
+              ARPSYSTEMCOMPONENT=1 hides the MSI so only the bundle shows in Add/Remove Programs. -->
+      <MsiPackage Id="DispatchMsi" SourceFile="!(bindpath.Msi)\Dispatch.msi" Vital="yes">
+        <MsiProperty Name="ARPSYSTEMCOMPONENT" Value="1" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+</Wix>

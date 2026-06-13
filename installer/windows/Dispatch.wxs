@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Dispatch SMTP Relay — WiX v5 MSI source (reference).
+  Dispatch SMTP Relay — WiX v5 MSI source.
 
   Build on Windows after publishing the service:
     dotnet publish ..\..\src\Dispatch.Service -c Release -o publish
     wix build Dispatch.wxs -d PublishDir=publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
 
-  The admin password + SQL connection are intended to be collected by the bootstrap wizard
-  (installer/windows, future WinForms app) or the scripted install.ps1, which writes
-  %ProgramData%\Dispatch\appsettings.json before the service first starts. This MSI installs the
-  binaries + service + firewall rules; it does not itself prompt for those values.
+  Connection string: the MSI writes %ProgramData%\Dispatch\appsettings.json (spec §12.1 — connection
+  string + Web UI TLS cert only) via the WriteAppSettings custom action, defaulting SQLCONN to the local
+  SQL Server Express instance installed by the bundle (bundle\Bundle.wxs chains sql-express\ first). The
+  dashboard admin password is set on first run via the web UI, so it is not collected here. Override for an
+  existing SQL Server:  msiexec /i Dispatch.msi SQLCONN="Server=...;Database=DispatchLog;User Id=...;..."
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
@@ -22,6 +23,11 @@
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of Dispatch is already installed." />
     <MediaTemplate EmbedCab="yes" />
+
+    <!-- Connection string written to appsettings.json. Defaults to the local SQL Express instance the
+         bundle installs (Windows auth as LocalSystem). Override via msiexec for an existing SQL Server. -->
+    <Property Id="SQLCONN" Secure="yes"
+              Value="Server=.\DISPATCHSQL;Database=DispatchLog;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=True" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Dispatch" />
@@ -37,6 +43,8 @@
     <Component Id="ServiceComponent" Directory="INSTALLFOLDER" Guid="b1f2c3d4-0001-4a2b-9c3d-aa11bb22cc33">
       <File Id="DispatchServiceExe" Source="$(var.PublishDir)\Dispatch.Service.exe" KeyPath="yes" />
 
+      <!-- LocalSystem so Windows-auth (Trusted_Connection) to the local SQL Express instance works; the
+           SQL bootstrap grants NT AUTHORITY\SYSTEM sysadmin. Override SQLCONN for SQL-auth to an existing server. -->
       <ServiceInstall Id="DispatchService"
                       Name="Dispatch"
                       DisplayName="Dispatch SMTP Relay"
@@ -44,17 +52,33 @@
                       Type="ownProcess"
                       Start="auto"
                       ErrorControl="normal"
-                      Account="NT AUTHORITY\NetworkService"
+                      Account="LocalSystem"
                       Arguments=" --contentRoot &quot;[CommonAppDataFolder]Dispatch&quot;" />
       <ServiceControl Id="DispatchServiceControl"
                       Name="Dispatch"
                       Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+
+      <!-- Service environment: point the log dir at ProgramData (the service CWD is system32). -->
+      <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\Dispatch" Name="Environment"
+                     Type="multiString" Value="DISPATCH_LOG_DIR=[CommonAppDataFolder]Dispatch\logs[~]DOTNET_ENVIRONMENT=Production" />
 
       <fw:FirewallException Id="FwSmtp25" Name="Dispatch SMTP 25" Port="25" Protocol="tcp" Scope="any" />
       <fw:FirewallException Id="FwSmtp587" Name="Dispatch SMTP 587" Port="587" Protocol="tcp" Scope="any" />
       <fw:FirewallException Id="FwHttp" Name="Dispatch Dashboard" Port="8420" Protocol="tcp" Scope="any" />
       <fw:FirewallException Id="FwApi" Name="Dispatch API" Port="8421" Protocol="tcp" Scope="any" />
     </Component>
+
+    <!-- Write appsettings.json before the service first starts (spec §12.1). Deferred + impersonate=no so
+         it runs with elevation; the immediate Set CA passes the connection string + data dir as data. -->
+    <CustomAction Id="SetWriteAppSettingsData" Property="WriteAppSettingsCA"
+                  Value="[SQLCONN]|[CommonAppDataFolder]Dispatch" />
+    <CustomAction Id="WriteAppSettingsCA" Script="jscript" ScriptSourceFile="WriteAppSettings.js"
+                  Execute="deferred" Impersonate="no" Return="check" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetWriteAppSettingsData" Before="WriteAppSettingsCA" Condition="NOT REMOVE" />
+      <Custom Action="WriteAppSettingsCA" Before="StartServices" Condition="NOT REMOVE" />
+    </InstallExecuteSequence>
 
     <Feature Id="Main">
       <ComponentGroupRef Id="AppFiles" />
