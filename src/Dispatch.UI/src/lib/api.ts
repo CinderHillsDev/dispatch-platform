@@ -163,6 +163,15 @@ export interface SystemConfig {
   spool: { directory: string; workerCount: number; appliesOnRestart: string[] };
 }
 
+export interface SystemInfo {
+  version: string;
+  uptimeSeconds: number;
+  startedAtUtc: string;
+  os: string;
+  framework: string;
+  logDirectory: string;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -256,5 +265,11 @@ export const api = {
     saveLogging: (logging: AppSettings["logging"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { logging }),
     saveRetry: (retry: AppSettings["retry"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retry }),
     saveRetention: (retention: AppSettings["retention"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retention }),
+  },
+
+  system: {
+    about: () => getJson<SystemInfo>("/api/system"),
+    restart: () => sendJson<{ restarting: boolean }>("/api/service/restart", "POST", {}),
+    logDownloadUrl: "/api/logs/download",
   },
 };

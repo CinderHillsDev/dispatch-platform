@@ -357,6 +357,18 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         Assert.Equal(2, byRule.Rows.Count);
         Assert.All(byRule.Rows, r => Assert.Equal(spoolId, r.SpoolId));
 
+        // Subject substring filter: matches case-insensitively; LIKE wildcards in the value are literal.
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = Guid.NewGuid().ToString("N"), Subject = "Invoice #4242 ready",
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@" + domain], ToDomain = domain, RelayName = "alpha",
+        });
+        var bySubject = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Subject = "invoice" });
+        Assert.Single(bySubject.Rows);
+        Assert.Contains("Invoice", bySubject.Rows[0].Subject);
+        var noSubject = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Subject = "%nope%" });
+        Assert.Empty(noSubject.Rows);
+
         // GetByIdAsync includes the full attempt timeline for the spool id, oldest first.
         var detail = await query.GetByIdAsync(byRule.Rows[0].Id);
         Assert.NotNull(detail);

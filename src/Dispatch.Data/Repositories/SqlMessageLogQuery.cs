@@ -30,6 +30,13 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         if (!string.IsNullOrWhiteSpace(filter.ToDomain)) { where.Append(" AND to_domain = @ToDomain"); p.Add("ToDomain", filter.ToDomain); }
         if (!string.IsNullOrWhiteSpace(filter.RelayName)) { where.Append(" AND relay_name = @RelayName"); p.Add("RelayName", filter.RelayName); }
         if (!string.IsNullOrWhiteSpace(filter.RoutingRuleName)) { where.Append(" AND routing_rule_name = @RoutingRuleName"); p.Add("RoutingRuleName", filter.RoutingRuleName); }
+        // Subject substring match. Escape LIKE wildcards in the user value so they're treated literally.
+        if (!string.IsNullOrWhiteSpace(filter.Subject))
+        {
+            where.Append(" AND subject LIKE @SubjectPattern ESCAPE '\\'");
+            var escaped = filter.Subject.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+            p.Add("SubjectPattern", "%" + escaped + "%");
+        }
         if (filter.ApiKeyId is { } apiKeyId) { where.Append(" AND api_key_id = @ApiKeyId"); p.Add("ApiKeyId", apiKeyId); }
         // Tag: tags is a JSON array string (e.g. ["a","b"]); match the parameterised pattern %"tag"% — the value
         // stays a Dapper parameter, only the LIKE wildcards are literal (no interpolation of user input).

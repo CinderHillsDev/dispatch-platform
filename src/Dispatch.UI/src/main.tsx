@@ -11,6 +11,7 @@ import { Failed } from "./pages/Failed";
 import { SmtpAuth } from "./pages/SmtpAuth";
 import { ApiKeys } from "./pages/ApiKeys";
 import { Settings } from "./pages/Settings";
+import { System } from "./pages/System";
 import { AuthGate, logout } from "./auth";
 import "./index.css";
 
@@ -29,6 +30,7 @@ function Layout() {
           <NavLink to="/api-keys">API Keys</NavLink>
           <NavLink to="/inbox">Local Inbox</NavLink>
           <NavLink to="/settings">Settings</NavLink>
+          <NavLink to="/system">System</NavLink>
         </nav>
         <button onClick={logout} style={{ marginTop: 18, width: "100%" }}>Sign out</button>
       </aside>
@@ -50,6 +52,7 @@ const router = createBrowserRouter([
       { path: "/api-keys", element: <ApiKeys /> },
       { path: "/inbox", element: <LocalInbox /> },
       { path: "/settings", element: <Settings /> },
+      { path: "/system", element: <System /> },
     ],
   },
 ]);

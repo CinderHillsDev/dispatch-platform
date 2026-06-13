@@ -14,6 +14,7 @@ public sealed class MessageLogFilter
     public string? ToDomain { get; init; }
     public string? RelayName { get; init; }
     public string? RoutingRuleName { get; init; }  // restrict to messages routed by a named rule (§9.2)
+    public string? Subject { get; init; }          // case-insensitive substring match on subject (§9.2)
     public string? Tag { get; init; }
     public int? ApiKeyId { get; init; }            // restrict to one API key (per-key list, §7.4)
     public int Limit { get; init; } = 50;

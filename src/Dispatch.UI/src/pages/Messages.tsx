@@ -19,6 +19,7 @@ interface Filters {
   source: string;
   relay: string;
   rule: string;
+  subject: string;
   fromDomain: string;
   toDomain: string;
   tag: string;
@@ -26,7 +27,7 @@ interface Filters {
   to: string;
 }
 
-const EMPTY: Filters = { status: "", source: "", relay: "", rule: "", fromDomain: "", toDomain: "", tag: "", from: "", to: "" };
+const EMPTY: Filters = { status: "", source: "", relay: "", rule: "", subject: "", fromDomain: "", toDomain: "", tag: "", from: "", to: "" };
 
 function toParams(f: Filters): URLSearchParams {
   const p = new URLSearchParams();
@@ -35,6 +36,7 @@ function toParams(f: Filters): URLSearchParams {
   if (f.source) p.set("source", f.source);
   if (f.relay) p.set("relay", f.relay);
   if (f.rule) p.set("rule", f.rule);
+  if (f.subject) p.set("subject", f.subject);
   if (f.fromDomain) p.set("fromDomain", f.fromDomain);
   if (f.toDomain) p.set("toDomain", f.toDomain);
   if (f.tag) p.set("tag", f.tag);
@@ -55,6 +57,8 @@ export function Messages() {
   const [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<MessageDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryMsg, setRetryMsg] = useState<string | null>(null);
 
   const set = <K extends keyof Filters>(key: K, value: Filters[K]) =>
     setFilters((f) => ({ ...f, [key]: value }));
@@ -121,6 +125,7 @@ export function Messages() {
             <option value="SMTP">SMTP</option>
             <option value="API">API</option>
           </select>
+          <input placeholder="Subject contains" value={filters.subject} onChange={(e) => set("subject", e.target.value)} />
           <input placeholder="Sender domain" value={filters.fromDomain} onChange={(e) => set("fromDomain", e.target.value)} />
           <input placeholder="Recipient domain" value={filters.toDomain} onChange={(e) => set("toDomain", e.target.value)} />
           <input placeholder="Tag ⚠" value={filters.tag} onChange={(e) => set("tag", e.target.value)} />
@@ -214,6 +219,21 @@ export function Messages() {
                 </Field>
               )}
             </dl>
+          )}
+          {detail && (detail.event === "Failed" || detail.status === "Error") && (
+            <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                disabled={retrying}
+                onClick={async () => {
+                  setRetrying(true); setRetryMsg(null);
+                  try { await api.failed.retry(detail.spoolId); setRetryMsg("Re-queued for delivery."); }
+                  catch (e) { setRetryMsg(`Error: ${(e as Error).message}`); }
+                  finally { setRetrying(false); }
+                }}
+              >Retry delivery</button>
+              <button onClick={() => navigator.clipboard?.writeText(detail.spoolId)}>Copy spool ID</button>
+              {retryMsg && <span className={retryMsg.startsWith("Error") ? "badge error" : "badge ok"}>{retryMsg}</span>}
+            </div>
           )}
         </aside>
       )}

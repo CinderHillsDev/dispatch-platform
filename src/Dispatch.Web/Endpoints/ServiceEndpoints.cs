@@ -9,8 +9,21 @@ namespace Dispatch.Web.Endpoints;
 /// <summary>Operational endpoints used by upgrades/monitoring (spec §9.3, §14, §16).</summary>
 public static class ServiceEndpoints
 {
+    private static readonly DateTime StartedUtc = System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime();
+
     public static void MapServiceOps(this RouteGroupBuilder group)
     {
+        // System / About (spec §9.2): version, uptime, OS/runtime, and the log file location for the UI.
+        group.MapGet("/system", () => Results.Ok(new
+        {
+            version = typeof(ServiceEndpoints).Assembly.GetName().Version?.ToString() ?? "dev",
+            uptimeSeconds = (long)(DateTime.UtcNow - StartedUtc).TotalSeconds,
+            startedAtUtc = StartedUtc,
+            os = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            logDirectory = Path.GetFullPath(Environment.GetEnvironmentVariable("DISPATCH_LOG_DIR") ?? "logs"),
+        }));
+
         // Waits for the in-flight spool (incoming + processing) to clear, for a graceful pre-upgrade stop.
         group.MapPost("/service/drain", async (SpoolDirectory spool, HttpContext ctx) =>
         {
