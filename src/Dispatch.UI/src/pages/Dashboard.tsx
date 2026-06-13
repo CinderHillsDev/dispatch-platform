@@ -37,6 +37,20 @@ export function Dashboard() {
     <>
       <h1 className="page-title">Dashboard</h1>
 
+      {s && s.intake !== "Normal" && (
+        <div
+          className="panel"
+          style={{
+            borderColor: s.intake === "Suspended" ? "#f85149" : "#d29922",
+            color: s.intake === "Suspended" ? "#f85149" : "#d29922",
+          }}
+        >
+          {s.intake === "Suspended"
+            ? "⚠ Spool disk critically low — SMTP intake is SUSPENDED. Inbound mail is being rejected (senders will retry). Free disk space to resume."
+            : "⚠ Spool disk low — SMTP intake is THROTTLED. Inbound mail is being delayed to slow the arrival rate. Free disk space to resume normal operation."}
+        </div>
+      )}
+
       <div className="cards">
         <Card label="Received today" value={s?.received} />
         <Card label="Delivered" value={s?.delivered} tone="green" />

@@ -64,6 +64,15 @@ public sealed class SpoolWorkerPool : BackgroundService
     /// <summary>Per-relay concurrency gates. Exposed internally for tests.</summary>
     internal ConcurrentDictionary<int, SemaphoreSlim> Semaphores => _semaphores;
 
+    /// <summary>
+    /// Test hook: simulate a dropped / never-firing FileSystemWatcher by disabling it, so that files
+    /// added afterwards are discovered only via the worker-loop timeout fallback (spec §14.1).
+    /// </summary>
+    internal void DisableWatcherForTests()
+    {
+        if (_watcher is not null) _watcher.EnableRaisingEvents = false;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         RecoverOrphans();
@@ -99,13 +108,26 @@ public sealed class SpoolWorkerPool : BackgroundService
         }
     }
 
+    /// <summary>
+    /// FileSystemWatcher-fallback poll interval (spec §14.1). The OS can drop watcher events under heavy
+    /// load, so the doorbell wait times out and the worker attempts a claim anyway — files are never
+    /// stranded by a missed signal. Not latency-sensitive: it only matters when events are lost.
+    /// </summary>
+    private static readonly TimeSpan DoorbellTimeout = TimeSpan.FromSeconds(5);
+
     private async Task WorkerLoop(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                await _spool.WaitAsync(ct);
+                // Wait for a doorbell signal, but cap the wait so a dropped FileSystemWatcher event can't
+                // strand files: on timeout we fall through and still attempt a claim (fallback poll).
+                await _spool.WaitAsync(ct).AsTask().WaitAsync(DoorbellTimeout, ct);
+            }
+            catch (TimeoutException)
+            {
+                // No signal within the window — fall through to the fallback claim attempt below.
             }
             catch (OperationCanceledException)
             {

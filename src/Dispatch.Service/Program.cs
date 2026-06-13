@@ -56,6 +56,8 @@ try
     builder.Services.AddSingleton<MinuteCounterRing>();
     builder.Services.AddSingleton<RelayConcurrencyTracker>();
     builder.Services.AddSingleton<SpoolMessageStore>();
+    builder.Services.AddSingleton<IntakeState>();
+    builder.Services.AddSingleton<DiskMonitor>();
     builder.Services.AddSingleton<CidrMailboxFilter>();
     builder.Services.AddSingleton<ConfiguredUserAuthenticator>();
 
@@ -71,6 +73,7 @@ try
     builder.Services.AddHostedService<SpoolWorkerPool>();
     builder.Services.AddHostedService<SmtpListenerService>();
     builder.Services.AddHostedService<PurgeWorker>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<DiskMonitor>());
 
     var app = builder.Build();
 

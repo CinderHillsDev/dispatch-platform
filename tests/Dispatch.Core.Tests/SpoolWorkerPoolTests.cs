@@ -180,6 +180,37 @@ public class SpoolWorkerPoolTests
     }
 
     [Fact]
+    public async Task Worker_drains_file_via_timeout_fallback_when_no_signal_is_sent()
+    {
+        // Spec §14.1 FileSystemWatcher fallback: if a Created event is dropped (here, simulated by
+        // disabling the watcher), the worker's bounded doorbell wait times out (~5s) and it still
+        // attempts a claim — so a file added after startup, with no signal, is never stranded.
+        using var t = new TempSpool();
+        var counters = new InMemoryCounterRepository();
+        var pool = TestData.BuildPool(t.Spool, DelegateProvider.AlwaysSucceeds(),
+            new CapturingLogRepository(), counters, workerCount: 1);
+
+        await pool.StartAsync(CancellationToken.None);
+        try
+        {
+            pool.DisableWatcherForTests();   // simulate a dropped/never-fired FileSystemWatcher event
+
+            // Seed AFTER start, with the watcher disabled and without calling Signal: only the
+            // timeout fallback poll can discover this file.
+            TestData.Seed(t.Spool.IncomingDir, t.Spool);
+
+            var delivered = await TestData.WaitUntil(
+                () => counters.Get(1, CounterField.Delivered) == 1, timeoutMs: 12_000);
+            Assert.True(delivered, "file was not drained by the timeout fallback");
+            Assert.Equal(0, t.Count(t.Spool.IncomingDir));
+        }
+        finally
+        {
+            await pool.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task EndToEnd_started_pool_delivers_a_seeded_message()
     {
         using var t = new TempSpool();

@@ -33,7 +33,8 @@ public class PurgeWorkerTests
         File.WriteAllText(oldCaptured, "old");
         File.SetLastWriteTimeUtc(oldCaptured, DateTime.UtcNow.AddDays(-30));
 
-        var worker = new PurgeWorker(t.Spool, new NoopLogMaintenance(),
+        var disk = new DiskMonitor(t.Spool, new IntakeState(), _ => long.MaxValue, NullLogger<DiskMonitor>.Instance);
+        var worker = new PurgeWorker(t.Spool, new NoopLogMaintenance(), disk,
             Options.Create(new PurgeOptions { SpoolFailedRetentionDays = 30, CapturedRetentionDays = 7 }),
             NullLogger<PurgeWorker>.Instance);
 

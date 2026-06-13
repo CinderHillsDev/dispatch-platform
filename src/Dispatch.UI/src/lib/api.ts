@@ -1,8 +1,11 @@
 export interface SpoolCounts { incoming: number; processing: number; failed: number; }
 
+export type IntakeLevel = "Normal" | "Throttled" | "Suspended";
+
 export interface Stats {
   received: number; delivered: number; failed: number; retried: number; denied: number;
   spool: SpoolCounts;
+  intake: IntakeLevel;
 }
 
 export interface MessageRow {

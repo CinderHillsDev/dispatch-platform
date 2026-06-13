@@ -1,5 +1,6 @@
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
+using Dispatch.Core.Maintenance;
 using Dispatch.Core.Routing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,12 +26,14 @@ public sealed class CidrMailboxFilter : IMailboxFilter
     private readonly long _maxBytes;
     private readonly ICounterRepository _counters;
     private readonly IRelayResolver _routing;
+    private readonly IntakeState _intake;
     private readonly ILogger<CidrMailboxFilter> _log;
 
     public CidrMailboxFilter(
         IOptions<ListenerOptions> options,
         ICounterRepository counters,
         IRelayResolver routing,
+        IntakeState intake,
         ILogger<CidrMailboxFilter> log)
     {
         var o = options.Value;
@@ -42,12 +45,28 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         _maxBytes = o.MaxMessageBytes;
         _counters = counters;
         _routing = routing;
+        _intake = intake;
         _log = log;
     }
 
-    public Task<bool> CanAcceptFromAsync(
+    public async Task<bool> CanAcceptFromAsync(
         ISessionContext context, IMailbox from, int size, CancellationToken cancellationToken)
     {
+        // Disk back-pressure (spec §14.1): reject when suspended so senders retry; delay when throttled
+        // to slow the inbound rate. Checked first — under disk pressure we don't want to do more work.
+        switch (_intake.Level)
+        {
+            case IntakeLevel.Suspended:
+                _ = _counters.IncrementAsync(0, CounterField.Denied, cancellationToken);
+                _log.LogWarning("Rejecting MAIL FROM {From}: intake suspended (spool disk critically low)",
+                    from.AsAddress());
+                return false;
+            case IntakeLevel.Throttled:
+                try { await Task.Delay(IntakeState.ThrottleDelay, cancellationToken); }
+                catch (OperationCanceledException) { return false; }
+                break;
+        }
+
         // Capture the declared SIZE= for the per-relay check at RCPT TO (spec §14.2).
         context.Properties[DeclaredSizeKey] = size;
 
@@ -55,12 +74,12 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         {
             _log.LogWarning("Rejecting MAIL FROM {From}: size {Size} exceeds limit {Limit}",
                 from.AsAddress(), size, _maxBytes);
-            return Task.FromResult(false);
+            return false;
         }
 
         var ip = RemoteIp(context);
         if (ip is null || _allowed.Length == 0)
-            return Task.FromResult(true);   // no endpoint info or no allow-list configured → allow
+            return true;   // no endpoint info or no allow-list configured → allow
 
         var test = ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
         var allowed = _allowed.Any(n => n.Contains(test) || n.Contains(ip));
@@ -71,7 +90,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
             _log.LogWarning("Denied connection from {Ip} (not in allow-list)", ip);
         }
 
-        return Task.FromResult(allowed);
+        return allowed;
     }
 
     public async Task<bool> CanDeliverToAsync(

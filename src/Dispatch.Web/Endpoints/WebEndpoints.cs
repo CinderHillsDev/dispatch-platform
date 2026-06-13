@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Dispatch.Core.ApiKeys;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
+using Dispatch.Core.Maintenance;
 using Dispatch.Core.Providers;
 using Dispatch.Core.Relays;
 using Dispatch.Core.Spool;
@@ -98,13 +99,14 @@ public static class WebEndpoints
 
         var group = app.MapGroup("/api").RequireLocalPort(webPort);
 
-        group.MapGet("/stats", async (ICounterReader counters, SpoolDirectory spool, CancellationToken ct) =>
+        group.MapGet("/stats", async (ICounterReader counters, SpoolDirectory spool, IntakeState intake, CancellationToken ct) =>
         {
             var totals = await counters.GetTodayAsync(ct);
             return Results.Ok(new
             {
                 totals.Received, totals.Delivered, totals.Failed, totals.Retried, totals.Denied,
                 spool = SpoolCounts(spool),
+                intake = intake.Level.ToString(),   // Normal | Throttled | Suspended (spec §14.1)
             });
         });
 

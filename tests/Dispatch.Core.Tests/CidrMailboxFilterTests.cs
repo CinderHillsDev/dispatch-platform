@@ -1,8 +1,10 @@
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
+using Dispatch.Core.Maintenance;
 using Dispatch.Core.Providers;
 using Dispatch.Core.Routing;
 using Dispatch.Service;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SmtpServer.Mail;
@@ -51,7 +53,39 @@ public class CidrMailboxFilterTests
         Assert.True(await filter.CanDeliverToAsync(ctx, to, from, CancellationToken.None));
     }
 
-    private static CidrMailboxFilter Build(long relayMaxBytes)
+    [Fact]
+    public async Task CanAcceptFrom_rejects_when_intake_suspended()
+    {
+        var intake = new IntakeState();
+        intake.Apply(IntakeState.SuspendBytes - 1);   // critically low → Suspended
+        var filter = Build(relayMaxBytes: 0, intake: intake);
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Loopback, 4242));
+
+        var accepted = await filter.CanAcceptFromAsync(
+            ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None);
+
+        Assert.False(accepted);
+    }
+
+    [Fact]
+    public async Task CanAcceptFrom_delays_then_accepts_when_intake_throttled()
+    {
+        var intake = new IntakeState();
+        intake.Apply(IntakeState.ThrottleBytes - 1);   // low → Throttled
+        var filter = Build(relayMaxBytes: 0, intake: intake);
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Loopback, 4242));
+
+        var sw = Stopwatch.StartNew();
+        var accepted = await filter.CanAcceptFromAsync(
+            ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None);
+        sw.Stop();
+
+        Assert.True(accepted);
+        Assert.True(sw.Elapsed >= IntakeState.ThrottleDelay - TimeSpan.FromMilliseconds(250),
+            $"expected throttle delay, took {sw.ElapsedMilliseconds}ms");
+    }
+
+    private static CidrMailboxFilter Build(long relayMaxBytes, IntakeState? intake = null)
     {
         var resolver = new StubRelayResolver(new ResolvedRelay
         {
@@ -61,6 +95,7 @@ public class CidrMailboxFilterTests
             Options.Create(new ListenerOptions { AllowedCidrs = ["0.0.0.0/0", "::/0"] }),
             new InMemoryCounterRepository(),
             resolver,
+            intake ?? new IntakeState(),
             NullLogger<CidrMailboxFilter>.Instance);
     }
 }

@@ -16,6 +16,7 @@ namespace Dispatch.Core.Maintenance;
 public sealed class PurgeWorker(
     SpoolDirectory spool,
     ILogMaintenance logs,
+    DiskMonitor diskMonitor,
     IOptions<PurgeOptions> options,
     ILogger<PurgeWorker> log) : BackgroundService
 {
@@ -50,6 +51,10 @@ public sealed class PurgeWorker(
 
     internal async Task RunOnceAsync(PurgeOptions o, CancellationToken ct)
     {
+        // Disk back-pressure backstop (spec §14.1): the fast DiskMonitor timer is primary, but the purge
+        // cycle re-evaluates so intake state stays current even if the timer is delayed.
+        diskMonitor.Evaluate();
+
         var failed = PurgeFiles(spool.FailedDir, o.SpoolFailedRetentionDays, includeMeta: true);
         var captured = PurgeFiles(spool.CapturedDir, o.CapturedRetentionDays, includeMeta: false);
         if (failed + captured > 0)
