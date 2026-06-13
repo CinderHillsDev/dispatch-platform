@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dispatch SMTP Relay — WiX v5 MSI source (reference).
+
+  Build on Windows after publishing the service:
+    dotnet publish ..\..\src\Dispatch.Service -c Release -o publish
+    wix build Dispatch.wxs -d PublishDir=publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
+
+  The admin password + SQL connection are intended to be collected by the bootstrap wizard
+  (installer/windows, future WinForms app) or the scripted install.ps1, which writes
+  %ProgramData%\Dispatch\appsettings.json before the service first starts. This MSI installs the
+  binaries + service + firewall rules; it does not itself prompt for those values.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+
+  <Package Name="Dispatch SMTP Relay"
+           Manufacturer="CinderHills"
+           Version="1.0.0"
+           UpgradeCode="6d6a0e2c-7d1e-4f4a-9d3a-2b9b1d5e0a10"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Dispatch is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Dispatch" />
+    </StandardDirectory>
+
+    <!-- Harvest the published output (everything except the service exe, which is its own component). -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**">
+        <Exclude Files="$(var.PublishDir)\Dispatch.Service.exe" />
+      </Files>
+    </ComponentGroup>
+
+    <Component Id="ServiceComponent" Directory="INSTALLFOLDER" Guid="b1f2c3d4-0001-4a2b-9c3d-aa11bb22cc33">
+      <File Id="DispatchServiceExe" Source="$(var.PublishDir)\Dispatch.Service.exe" KeyPath="yes" />
+
+      <ServiceInstall Id="DispatchService"
+                      Name="Dispatch"
+                      DisplayName="Dispatch SMTP Relay"
+                      Description="Forwards mail from SMTP/HTTP to a configured upstream provider."
+                      Type="ownProcess"
+                      Start="auto"
+                      ErrorControl="normal"
+                      Account="NT AUTHORITY\NetworkService"
+                      Arguments=" --contentRoot &quot;[CommonAppDataFolder]Dispatch&quot;" />
+      <ServiceControl Id="DispatchServiceControl"
+                      Name="Dispatch"
+                      Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+
+      <fw:FirewallException Id="FwSmtp25" Name="Dispatch SMTP 25" Port="25" Protocol="tcp" Scope="any" />
+      <fw:FirewallException Id="FwSmtp587" Name="Dispatch SMTP 587" Port="587" Protocol="tcp" Scope="any" />
+      <fw:FirewallException Id="FwHttp" Name="Dispatch Dashboard" Port="8420" Protocol="tcp" Scope="any" />
+      <fw:FirewallException Id="FwApi" Name="Dispatch API" Port="8421" Protocol="tcp" Scope="any" />
+    </Component>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="ServiceComponent" />
+    </Feature>
+  </Package>
+</Wix>

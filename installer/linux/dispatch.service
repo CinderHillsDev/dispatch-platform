@@ -1,0 +1,22 @@
+[Unit]
+Description=Dispatch SMTP Relay
+After=network.target
+
+[Service]
+Type=simple
+User=dispatch
+Group=dispatch
+# Binaries live in /opt/dispatch; config (appsettings.json) is read from the working directory.
+WorkingDirectory=/etc/dispatch
+ExecStart=/opt/dispatch/Dispatch.Service
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=DISPATCH_LOG_DIR=/var/log/dispatch
+Restart=always
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/dispatch /var/log/dispatch /etc/dispatch
+
+[Install]
+WantedBy=multi-user.target

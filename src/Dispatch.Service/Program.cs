@@ -15,9 +15,10 @@ using Dispatch.Web.Realtime;
 using Microsoft.Extensions.Options;
 using Serilog;
 
+var logDirectory = Environment.GetEnvironmentVariable("DISPATCH_LOG_DIR") ?? "logs";
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
-    .WriteTo.File("logs/dispatch-.log", rollingInterval: RollingInterval.Day)
+    .WriteTo.File(Path.Combine(logDirectory, "dispatch-.log"), rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
 try
