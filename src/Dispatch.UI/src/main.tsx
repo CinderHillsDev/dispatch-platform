@@ -4,7 +4,8 @@ import { createBrowserRouter, RouterProvider, NavLink, Outlet } from "react-rout
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Dashboard } from "./pages/Dashboard";
 import { Messages } from "./pages/Messages";
-import { Settings } from "./pages/Settings";
+import { Relays } from "./pages/Relays";
+import { Routing } from "./pages/Routing";
 import "./index.css";
 
 function Layout() {
@@ -15,7 +16,8 @@ function Layout() {
         <nav className="nav">
           <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/messages">Message Log</NavLink>
-          <NavLink to="/settings">Settings</NavLink>
+          <NavLink to="/relays">Relays</NavLink>
+          <NavLink to="/routing">Routing</NavLink>
         </nav>
       </aside>
       <main className="main"><Outlet /></main>
@@ -29,7 +31,8 @@ const router = createBrowserRouter([
     children: [
       { path: "/", element: <Dashboard /> },
       { path: "/messages", element: <Messages /> },
-      { path: "/settings", element: <Settings /> },
+      { path: "/relays", element: <Relays /> },
+      { path: "/routing", element: <Routing /> },
     ],
   },
 ]);

@@ -43,14 +43,19 @@ export interface RelayEvent {
 }
 
 export interface RelayField { name: string; secret: boolean; required: boolean; hasValue: boolean; value: string; }
-export interface RelayConfig {
-  relayId: number;
-  name: string;
-  provider: string;
-  providers: string[];
-  fields: RelayField[];
-}
+export interface RelayListItem { id: number; name: string; provider: string; isDefault: boolean; enabled: boolean; maxConcurrency: number; }
+export interface RelayDetail extends RelayListItem { providers: string[]; fields: RelayField[]; }
 export interface TestResult { ok: boolean; provider?: string; providerMessageId?: string; detail?: string; error?: string; }
+
+export interface RuleItem {
+  id: number; priority: number; name: string;
+  recipientPattern: string | null; senderPattern: string | null;
+  relayId: number; relayName: string; enabled: boolean;
+}
+export interface SimulateResult {
+  matched: boolean; matchedRuleId: number | null; matchedRuleName: string | null;
+  relayId: number; relayName: string; provider: string;
+}
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -74,9 +79,25 @@ export const api = {
   stats: () => getJson<Stats>("/api/stats"),
   throughput: () => getJson<number[]>("/api/stats/throughput"),
   messages: (params: URLSearchParams) => getJson<MessagePage>(`/api/messages?${params}`),
-  relay: () => getJson<RelayConfig>("/api/relay"),
-  saveRelay: (provider: string, settings: Record<string, string>) =>
-    sendJson<{ ok: boolean }>("/api/relay", "PUT", { provider, settings }),
-  testRelay: (to: string, from?: string) =>
-    sendJson<TestResult>("/api/relay/test", "POST", { to, from }),
+
+  relays: {
+    list: () => getJson<RelayListItem[]>("/api/relays"),
+    get: (id: number) => getJson<RelayDetail>(`/api/relays/${id}`),
+    create: (name: string, provider: string) =>
+      sendJson<{ id: number }>("/api/relays", "POST", { name, provider }),
+    update: (id: number, body: { name: string; provider: string; enabled: boolean; maxConcurrency: number; settings: Record<string, string> }) =>
+      sendJson<{ ok: boolean }>(`/api/relays/${id}`, "PUT", body),
+    setDefault: (id: number) => sendJson<{ ok: boolean }>(`/api/relays/${id}/set-default`, "POST", {}),
+    remove: (id: number) => sendJson<{ ok: boolean }>(`/api/relays/${id}`, "DELETE", {}),
+    test: (id: number, to: string) => sendJson<TestResult>(`/api/relays/${id}/test`, "POST", { to }),
+  },
+
+  rules: {
+    list: () => getJson<RuleItem[]>("/api/routing/rules"),
+    create: (body: { name: string; recipientPattern: string | null; senderPattern: string | null; relayId: number }) =>
+      sendJson<{ id: number }>("/api/routing/rules", "POST", body),
+    remove: (id: number) => sendJson<{ ok: boolean }>(`/api/routing/rules/${id}`, "DELETE", {}),
+    reorder: (ids: number[]) => sendJson<{ ok: boolean }>("/api/routing/rules/reorder", "PUT", { ids }),
+    simulate: (from: string, to: string) => sendJson<SimulateResult>("/api/routing/simulate", "POST", { from, to }),
+  },
 };

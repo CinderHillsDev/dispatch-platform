@@ -3,6 +3,7 @@ using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
 using Dispatch.Core.Relays;
+using Dispatch.Core.Routing;
 using Dispatch.Data.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -26,6 +27,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IConfigRepository, SqlConfigRepository>();
         services.AddSingleton<IRelaySettingsStore, SqlRelaySettingsStore>();
         services.AddSingleton<IRelayRepository, SqlRelayRepository>();
+        services.AddSingleton<IRoutingRuleRepository, SqlRoutingRuleRepository>();
         services.AddSingleton<IApiKeyRepository, SqlApiKeyRepository>();
         services.AddSingleton<IMessageLogQuery, SqlMessageLogQuery>();
 

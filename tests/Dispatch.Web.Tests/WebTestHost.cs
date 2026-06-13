@@ -4,6 +4,7 @@ using Dispatch.Core.Logging;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Providers;
 using Dispatch.Core.Relays;
+using Dispatch.Core.Routing;
 using Dispatch.Core.Spool;
 using Dispatch.Web;
 using Dispatch.Web.Endpoints;
@@ -61,7 +62,9 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton<IMessageLogQuery, FakeMessageLogQuery>();
         builder.Services.AddSingleton<IRelayRepository, FakeRelayRepository>();
         builder.Services.AddSingleton<IRelaySettingsStore, FakeRelaySettingsStore>();
+        builder.Services.AddSingleton<IRoutingRuleRepository, FakeRoutingRuleRepository>();
         builder.Services.AddSingleton<IRelayProviderFactory, FakeProviderFactory>();
+        builder.Services.AddSingleton<IRelayResolver, RoutingEngine>();
         builder.Services.AddSingleton<ILogRepository, NullLogRepository>();   // decorated by AddDispatchWeb
         builder.Services.AddDispatchWeb();
 
@@ -125,6 +128,10 @@ internal sealed class FakeRelayRepository : Dispatch.Core.Relays.IRelayRepositor
     public Task<IReadOnlyList<Dispatch.Core.Relays.RelayRecord>> GetAllAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<Dispatch.Core.Relays.RelayRecord>>([Default]);
     public Task<Dispatch.Core.Relays.RelayRecord?> GetByIdAsync(int id, CancellationToken ct = default) => Task.FromResult<Dispatch.Core.Relays.RelayRecord?>(Default);
+    public Task<Dispatch.Core.Relays.RelayRecord> CreateAsync(string name, RelayProviderType provider, int maxConcurrency, long maxMessageBytes, CancellationToken ct = default) => Task.FromResult(Default);
+    public Task<bool> UpdateAsync(int id, string name, RelayProviderType provider, bool enabled, int maxConcurrency, long maxMessageBytes, CancellationToken ct = default) => Task.FromResult(true);
+    public Task<bool> DeleteAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
+    public Task<bool> SetDefaultAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
 }
 
 internal sealed class FakeRelaySettingsStore : Dispatch.Core.Relays.IRelaySettingsStore
@@ -136,6 +143,19 @@ internal sealed class FakeRelaySettingsStore : Dispatch.Core.Relays.IRelaySettin
         _settings = settings;
         return Task.CompletedTask;
     }
+}
+
+internal sealed class FakeRoutingRuleRepository : IRoutingRuleRepository
+{
+    private readonly List<RoutingRule> _rules = [];
+    public Task<IReadOnlyList<RoutingRule>> GetEnabledOrderedAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<RoutingRule>>(_rules.Where(r => r.Enabled).OrderBy(r => r.Priority).ToList());
+    public Task<IReadOnlyList<RoutingRule>> GetAllAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RoutingRule>>(_rules);
+    public Task<RoutingRule> CreateAsync(RoutingRule rule, CancellationToken ct = default) { _rules.Add(rule); return Task.FromResult(rule); }
+    public Task<bool> UpdateAsync(RoutingRule rule, CancellationToken ct = default) => Task.FromResult(true);
+    public Task<bool> DeleteAsync(int id, CancellationToken ct = default) => Task.FromResult(true);
+    public Task ReorderAsync(IReadOnlyList<int> idsInPriorityOrder, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<int> CountReferencingRelayAsync(int relayId, CancellationToken ct = default) => Task.FromResult(0);
 }
 
 internal sealed class FakeProviderFactory : Dispatch.Core.Providers.IRelayProviderFactory

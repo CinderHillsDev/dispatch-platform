@@ -71,14 +71,19 @@ try
     // Apply migrations before serving traffic.
     await app.Services.GetRequiredService<DatabaseInitializer>().InitializeAsync();
 
-    // Seed the relay's provider/credentials from appsettings on first run; afterwards SQL config is authoritative.
+    // Seed the default relay's provider/credentials from appsettings on first run; afterwards SQL is authoritative.
     var configRepo = app.Services.GetRequiredService<IConfigRepository>();
     if (await configRepo.GetAsync("relay:1:provider") is null)
     {
         var def = app.Services.GetRequiredService<IOptions<DefaultRelayOptions>>().Value;
         if (def.Provider != RelayProviderType.None)
         {
-            await app.Services.GetRequiredService<IRelaySettingsStore>().SaveAsync(1,
+            var relayRepo = app.Services.GetRequiredService<IRelayRepository>();
+            var defaultRelay = await relayRepo.GetDefaultAsync();
+            if (defaultRelay is not null)
+                await relayRepo.UpdateAsync(defaultRelay.Id, defaultRelay.Name, def.Provider, enabled: true,
+                    defaultRelay.MaxConcurrency, defaultRelay.MaxMessageBytes);
+            await app.Services.GetRequiredService<IRelaySettingsStore>().SaveAsync(defaultRelay?.Id ?? 1,
                 new RelaySettings(def.Provider, def.Settings.ToDictionary(k => k.Key, v => (string?)v.Value)));
         }
     }

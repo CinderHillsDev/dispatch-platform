@@ -5,14 +5,16 @@ using Dispatch.Core.Relays;
 namespace Dispatch.Data.Repositories;
 
 /// <summary>
-/// Reads the <c>relays</c> table with a short TTL cache so rule/relay changes propagate quickly without
-/// a SQL query per message (spec §19.7).
+/// Reads/writes the <c>relays</c> table with a short TTL cache on the default relay so the dispatch hot
+/// path avoids a SQL query per message (spec §10.2, §19.7). Writes invalidate the cache.
 /// </summary>
 public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRepository
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(5);
     private const string SelectColumns =
         "id, name, provider, is_default AS IsDefault, enabled, max_concurrency AS MaxConcurrency, max_message_bytes AS MaxMessageBytes";
+    private const string InsertedColumns =
+        "INSERTED.id, INSERTED.name, INSERTED.provider, INSERTED.is_default AS IsDefault, INSERTED.enabled, INSERTED.max_concurrency AS MaxConcurrency, INSERTED.max_message_bytes AS MaxMessageBytes";
 
     private readonly Lock _lock = new();
     private RelayRecord? _cachedDefault;
@@ -28,15 +30,10 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
 
         await using var cn = await factory.OpenAsync(ct);
         var row = await cn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(
-            $"SELECT TOP 1 {SelectColumns} FROM relays WHERE is_default = 1 AND enabled = 1",
-            cancellationToken: ct));
+            $"SELECT TOP 1 {SelectColumns} FROM relays WHERE is_default = 1 AND enabled = 1", cancellationToken: ct));
 
         var record = row?.ToRecord();
-        lock (_lock)
-        {
-            _cachedDefault = record;
-            _cachedAtUtc = DateTime.UtcNow;
-        }
+        lock (_lock) { _cachedDefault = record; _cachedAtUtc = DateTime.UtcNow; }
         return record;
     }
 
@@ -54,6 +51,86 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
         var row = await cn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(
             $"SELECT {SelectColumns} FROM relays WHERE id = @id", new { id }, cancellationToken: ct));
         return row?.ToRecord();
+    }
+
+    public async Task<RelayRecord> CreateAsync(
+        string name, RelayProviderType provider, int maxConcurrency, long maxMessageBytes, CancellationToken ct = default)
+    {
+        const string sql = $"""
+            INSERT INTO relays (name, provider, max_concurrency, max_message_bytes)
+            OUTPUT {InsertedColumns}
+            VALUES (@name, @provider, @maxConcurrency, @maxMessageBytes);
+            """;
+        await using var cn = await factory.OpenAsync(ct);
+        var row = await cn.QuerySingleAsync<Row>(new CommandDefinition(
+            sql, new { name, provider = provider.ToString(), maxConcurrency, maxMessageBytes }, cancellationToken: ct));
+        InvalidateCache();
+        return row.ToRecord();
+    }
+
+    public async Task<bool> UpdateAsync(
+        int id, string name, RelayProviderType provider, bool enabled, int maxConcurrency, long maxMessageBytes, CancellationToken ct = default)
+    {
+        const string sql = """
+            UPDATE relays SET name = @name, provider = @provider, enabled = @enabled, max_concurrency = @maxConcurrency,
+                              max_message_bytes = @maxMessageBytes, updated_at = SYSUTCDATETIME()
+            WHERE id = @id;
+            """;
+        await using var cn = await factory.OpenAsync(ct);
+        var n = await cn.ExecuteAsync(new CommandDefinition(
+            sql, new { id, name, provider = provider.ToString(), enabled, maxConcurrency, maxMessageBytes }, cancellationToken: ct));
+        InvalidateCache();
+        return n > 0;
+    }
+
+    public async Task<bool> DeleteAsync(int id, CancellationToken ct = default)
+    {
+        await using var cn = await factory.OpenAsync(ct);
+        await using var tx = await cn.BeginTransactionAsync(ct);
+        try
+        {
+            // Preserve log history (relay_name is denormalised) but clear the FK; drop counters + credentials.
+            await cn.ExecuteAsync(new CommandDefinition("UPDATE relay_log SET relay_id = NULL WHERE relay_id = @id", new { id }, tx, cancellationToken: ct));
+            await cn.ExecuteAsync(new CommandDefinition("DELETE FROM relay_counters WHERE relay_id = @id", new { id }, tx, cancellationToken: ct));
+            await cn.ExecuteAsync(new CommandDefinition("DELETE FROM config WHERE [key] LIKE @prefix", new { prefix = $"relay:{id}:%" }, tx, cancellationToken: ct));
+            var n = await cn.ExecuteAsync(new CommandDefinition("DELETE FROM relays WHERE id = @id AND is_default = 0", new { id }, tx, cancellationToken: ct));
+            await tx.CommitAsync(ct);
+            InvalidateCache();
+            return n > 0;
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    public async Task<bool> SetDefaultAsync(int id, CancellationToken ct = default)
+    {
+        await using var cn = await factory.OpenAsync(ct);
+        await using var tx = await cn.BeginTransactionAsync(ct);
+        try
+        {
+            var exists = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(
+                "SELECT 1 FROM relays WHERE id = @id", new { id }, tx, cancellationToken: ct));
+            if (exists is null) { await tx.RollbackAsync(ct); return false; }
+
+            await cn.ExecuteAsync(new CommandDefinition("UPDATE relays SET is_default = 0 WHERE is_default = 1", transaction: tx, cancellationToken: ct));
+            await cn.ExecuteAsync(new CommandDefinition("UPDATE relays SET is_default = 1, enabled = 1 WHERE id = @id", new { id }, tx, cancellationToken: ct));
+            await tx.CommitAsync(ct);
+            InvalidateCache();
+            return true;
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
+    }
+
+    private void InvalidateCache()
+    {
+        lock (_lock) { _cachedDefault = null; _cachedAtUtc = DateTime.MinValue; }
     }
 
     private sealed class Row

@@ -98,112 +98,7 @@ public static class WebEndpoints
             });
         });
 
-        group.MapGet("/relay", async (IRelayRepository relays, IRelaySettingsStore store, CancellationToken ct) =>
-        {
-            var record = await relays.GetDefaultAsync(ct);
-            var id = record?.Id ?? 1;
-            var s = await store.GetAsync(id, ct);
-            var fields = RelayProviderSchema.For(s.Provider).Select(f =>
-            {
-                var hasValue = !string.IsNullOrEmpty(s.Settings.GetValueOrDefault(f.Name));
-                return new
-                {
-                    name = f.Name,
-                    secret = f.Secret,
-                    required = f.Required,
-                    hasValue,
-                    value = f.Secret ? (hasValue ? "********" : "") : (s.Settings.GetValueOrDefault(f.Name) ?? ""),
-                };
-            });
-            return Results.Ok(new
-            {
-                relayId = id,
-                name = record?.Name ?? "default",
-                provider = s.Provider.ToString(),
-                providers = Enum.GetNames<RelayProviderType>(),
-                fields,
-            });
-        });
-
-        group.MapPut("/relay", async (UpdateRelayRequest req, IRelayRepository relays, IRelaySettingsStore store, CancellationToken ct) =>
-        {
-            if (!Enum.TryParse<RelayProviderType>(req.Provider, ignoreCase: true, out var provider))
-                return Results.BadRequest(new { error = $"Unknown provider '{req.Provider}'." });
-
-            var record = await relays.GetDefaultAsync(ct);
-            var id = record?.Id ?? 1;
-            var existing = await store.GetAsync(id, ct);
-
-            var settings = new Dictionary<string, string?>();
-            foreach (var f in RelayProviderSchema.For(provider))
-            {
-                var provided = req.Settings is not null && req.Settings.TryGetValue(f.Name, out var v) ? v : null;
-                if (f.Secret && string.IsNullOrEmpty(provided) || provided == "********")
-                    // Blank/placeholder secret → keep the existing value (only when the provider is unchanged).
-                    settings[f.Name] = provider == existing.Provider ? existing.Settings.GetValueOrDefault(f.Name) : null;
-                else
-                    settings[f.Name] = provided;
-            }
-
-            foreach (var f in RelayProviderSchema.For(provider).Where(f => f.Required))
-                if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(f.Name)))
-                    return Results.BadRequest(new { error = $"{f.Name} is required for {provider}." });
-
-            await store.SaveAsync(id, new RelaySettings(provider, settings), ct);
-            return Results.Ok(new { ok = true });
-        });
-
-        group.MapPost("/relay/test", async (
-            TestRelayRequest req, IRelayRepository relays, IRelaySettingsStore store,
-            IRelayProviderFactory factory, ILogRepository log, CancellationToken ct) =>
-        {
-            if (string.IsNullOrWhiteSpace(req.To))
-                return Results.BadRequest(new { error = "'to' is required." });
-
-            var record = await relays.GetDefaultAsync(ct);
-            var id = record?.Id ?? 1;
-            var s = await store.GetAsync(id, ct);
-
-            var from = !string.IsNullOrWhiteSpace(req.From)
-                ? req.From!
-                : s.Provider == RelayProviderType.Mailgun && !string.IsNullOrEmpty(s.Settings.GetValueOrDefault("Domain"))
-                    ? $"dispatch-test@{s.Settings["Domain"]}"
-                    : "Dispatch Test <noreply@dispatch.test>";
-
-            var mime = new MimeMessage();
-            mime.From.Add(MailboxAddress.Parse(from));
-            mime.To.Add(MailboxAddress.Parse(req.To));
-            mime.Subject = "Dispatch test email";
-            mime.Body = new TextPart("plain") { Text = "This is a test email sent from Dispatch." };
-
-            var config = new RelayConfig
-            {
-                Id = id, Name = record?.Name ?? "default", Provider = s.Provider,
-                MaxConcurrency = record?.MaxConcurrency ?? 4, Settings = s.Settings,
-            };
-            var relayMessage = new RelayMessage
-            {
-                Message = mime,
-                FromAddress = mime.From.Mailboxes.First().Address,
-                ToAddresses = [req.To],
-            };
-
-            var sw = Stopwatch.StartNew();
-            try
-            {
-                var provider = factory.Build(config);
-                var result = await provider.SendAsync(relayMessage, ct);
-                await log.InsertAsync(TestEntry("OK", id, config.Name, provider.Name, relayMessage,
-                    mime.Subject, (int)sw.ElapsedMilliseconds, result.ProviderMessageId, result.ProviderDetail, null), ct);
-                return Results.Ok(new { ok = true, provider = provider.Name, providerMessageId = result.ProviderMessageId, detail = result.ProviderDetail });
-            }
-            catch (Exception ex)
-            {
-                await log.InsertAsync(TestEntry("Error", id, config.Name, s.Provider.ToString(), relayMessage,
-                    mime.Subject, (int)sw.ElapsedMilliseconds, null, null, ex.Message), ct);
-                return Results.Ok(new { ok = false, error = ex.Message });
-            }
-        });
+        group.MapRelayRouting();   // /api/relays/* and /api/routing/* (see RoutingEndpoints)
 
         group.MapGet("/keys", async (IApiKeyRepository keys, CancellationToken ct) =>
             Results.Ok((await keys.ListAsync(includeRevoked: true, ct)).Select(Public)));
@@ -249,13 +144,13 @@ public static class WebEndpoints
 
     private static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
-    private static string Domain(string address)
+    internal static string Domain(string address)
     {
         var at = address.LastIndexOf('@');
         return at >= 0 && at < address.Length - 1 ? address[(at + 1)..] : "";
     }
 
-    private static RelayLogEntry TestEntry(
+    internal static RelayLogEntry TestEntry(
         string status, int relayId, string relayName, string provider, RelayMessage msg,
         string? subject, int durationMs, string? providerMessageId, string? detail, string? error) => new()
     {
@@ -278,6 +173,5 @@ public static class WebEndpoints
     };
 
     public sealed record CreateKeyRequest(string Name, int? RateLimitPerMinute);
-    public sealed record UpdateRelayRequest(string Provider, Dictionary<string, string?>? Settings);
     public sealed record TestRelayRequest(string To, string? From);
 }
