@@ -23,6 +23,7 @@ if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
     $extractDir = Join-Path $tempDir 'DispatchSqlSetup'
 
     Log 'Downloading SQL Server Express bootstrapper...'
+    # fwlink 2216019 resolves to aka.ms/sql2025express (the current SQL Server 2025 Express SSEI bootstrapper).
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=2216019' -OutFile $bootstrapper -UseBasicParsing
     Log "Bootstrapper: $([math]::Round((Get-Item $bootstrapper).Length / 1MB, 1)) MB"

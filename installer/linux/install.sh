@@ -69,18 +69,19 @@ install_sql_server() {
   . /etc/os-release
   echo "==> Installing SQL Server (Express) for $ID $VERSION_ID"
   if command -v apt-get >/dev/null 2>&1; then
-    # The mssql-server .list has no signed-by=, so apt uses the global trusted keyrings — install the
-    # Microsoft key into /etc/apt/trusted.gpg.d/ (not /usr/share/keyrings, which apt would ignore here).
-    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --batch --yes --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg
-    chmod a+r /etc/apt/trusted.gpg.d/microsoft.gpg
-    curl -fsSL "https://packages.microsoft.com/config/${ID}/${VERSION_ID}/mssql-server-2022.list" -o /etc/apt/sources.list.d/mssql-server-2022.list || \
-      curl -fsSL "https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list" -o /etc/apt/sources.list.d/mssql-server-2022.list
+    # SQL Server 2025 (supports Ubuntu 24.04). The 2025 .list uses signed-by=/usr/share/keyrings/microsoft-prod.gpg,
+    # so install the Microsoft key there.
+    install -d -m 0755 /usr/share/keyrings
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+    chmod a+r /usr/share/keyrings/microsoft-prod.gpg
+    curl -fsSL "https://packages.microsoft.com/config/${ID}/${VERSION_ID}/mssql-server-2025.list" -o /etc/apt/sources.list.d/mssql-server-2025.list || \
+      curl -fsSL "https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2025.list" -o /etc/apt/sources.list.d/mssql-server-2025.list
     apt-get update -y
     ACCEPT_EULA=Y MSSQL_PID=Express MSSQL_SA_PASSWORD="$SA_PASSWORD" apt-get install -y mssql-server
     apt-get install -y mssql-tools18 unixodbc-dev || true
   elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
     local PM; PM="$(command -v dnf || command -v yum)"
-    curl -fsSL "https://packages.microsoft.com/config/rhel/${VERSION_ID%%.*}/mssql-server-2022.repo" -o /etc/yum.repos.d/mssql-server-2022.repo
+    curl -fsSL "https://packages.microsoft.com/config/rhel/${VERSION_ID%%.*}/mssql-server-2025.repo" -o /etc/yum.repos.d/mssql-server-2025.repo
     ACCEPT_EULA=Y MSSQL_PID=Express MSSQL_SA_PASSWORD="$SA_PASSWORD" "$PM" install -y mssql-server
     "$PM" install -y mssql-tools18 unixODBC-devel || true
   else
