@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dispatch.Core\Dispatch.Core.csproj" />
     <ProjectReference Include="..\..\src\Dispatch.Providers\Dispatch.Providers.csproj" />
+    <ProjectReference Include="..\..\src\Dispatch.Service\Dispatch.Service.csproj" />
   </ItemGroup>
 
 </Project>

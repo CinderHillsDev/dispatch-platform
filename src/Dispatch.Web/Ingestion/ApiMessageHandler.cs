@@ -1,5 +1,6 @@
 using Dispatch.Core.ApiKeys;
 using Dispatch.Core.Configuration;
+using Dispatch.Core.Routing;
 using Dispatch.Core.Spool;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -14,7 +15,7 @@ namespace Dispatch.Web.Ingestion;
 /// builds a <see cref="MimeMessage"/>, writes the RFC5322 <c>.eml</c> plus its <c>.meta</c> sidecar to
 /// <c>spool/incoming/</c> (so the worker can claim it exactly as an SMTP message), and returns 202.
 /// </summary>
-public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions> apiOptions, ILogger<ApiMessageHandler> log)
+public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions> apiOptions, IRelayResolver routing, ILogger<ApiMessageHandler> log)
 {
     public async Task<IResult> HandleAsync(HttpContext ctx, CancellationToken ct)
     {
@@ -54,9 +55,19 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
             bytes = ms.ToArray();
         }
 
-        // Enforce the size ceiling on the serialized message (catches uploads without Content-Length).
+        // Enforce the global ceiling on the serialized message (catches uploads without Content-Length).
         if (maxBytes > 0 && bytes.Length > maxBytes)
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+        // Enforce the per-relay limit (spec §14.2): resolve the relay, reject before spooling if oversized.
+        var relay = await routing.ResolveAsync(from, to, ct);
+        var relayLimit = relay.Config.EffectiveMaxMessageBytes;
+        if (relayLimit > 0 && bytes.Length > relayLimit)
+        {
+            log.LogWarning("Rejecting API message from {From}: size {Size} exceeds relay \"{Relay}\" limit {Limit}",
+                from, bytes.Length, relay.Name, relayLimit);
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
 
         await File.WriteAllBytesAsync(emlPath, bytes, ct);
 
