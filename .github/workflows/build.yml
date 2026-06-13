@@ -6,22 +6,22 @@ on:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     services:
-      # Full SQL Server on the amd64 runner (Azure SQL Edge is retired / blocked on MCR for CI pulls).
-      # Identical wire protocol / T-SQL to the local Azure SQL Edge container; the app code is unchanged.
+      # Azure SQL Edge (arm64-native) on the self-hosted runner. Host port 14330 avoids clashing with a
+      # local dev SQL container on 1433. Same wire protocol / T-SQL as full SQL Server; app code unchanged.
       sql:
-        image: mcr.microsoft.com/mssql/server:2022-latest
+        image: mcr.microsoft.com/azure-sql-edge:latest
         env:
           ACCEPT_EULA: "Y"
           MSSQL_SA_PASSWORD: "Dispatch_Dev_Pass123"
         ports:
-          - 1433:1433
+          - 14330:1433
 
     env:
       # Drives the Dispatch.Data integration tests against the SQL service container.
-      DISPATCH_TEST_SQL: "Server=localhost,1433;User Id=sa;Password=Dispatch_Dev_Pass123;TrustServerCertificate=True;Encrypt=True"
+      DISPATCH_TEST_SQL: "Server=localhost,14330;User Id=sa;Password=Dispatch_Dev_Pass123;TrustServerCertificate=True;Encrypt=True"
       DOTNET_NOLOGO: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "true"
 
