@@ -1,9 +1,9 @@
 name: Installers
 
-# Validates the installer artifacts on self-hosted runners. Non-destructive by default: the Windows job
-# builds the MSI + Burn bundle (proving the WiX sources + net472 launcher compile) and the Linux job
-# lints install.sh. The actual SQL-Express install + service smoke test is destructive (it installs SQL
-# Server on the runner), so it only runs when manually dispatched with full_install=true.
+# Validates the installer artifacts on GitHub-hosted runners (free for this public repo). Non-destructive
+# by default: the Windows job builds the MSI + Burn bundle (proving the WiX sources + net472 launcher
+# compile) and the Linux job lints install.sh. The actual SQL-Express install + service smoke test is
+# destructive (it installs SQL Server on the runner), so it only runs when dispatched with full_install=true.
 on:
   workflow_dispatch:
     inputs:
@@ -22,7 +22,7 @@ env:
 
 jobs:
   windows-installer:
-    runs-on: [self-hosted, windows]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +92,7 @@ jobs:
           Write-Host "Dispatch /health OK"
 
   linux-installer:
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 

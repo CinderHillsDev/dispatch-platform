@@ -6,24 +6,25 @@ on:
 
 jobs:
   build-test:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     services:
-      # Azure SQL Edge (arm64-native) on the self-hosted runner. Host port 14330 avoids clashing with a
-      # local dev SQL container on 1433. Same wire protocol / T-SQL as full SQL Server; app code unchanged.
+      # SQL Server 2022 service container (GitHub-hosted runners are free for this public repo). Same wire
+      # protocol / T-SQL as the dev Azure SQL Edge container; app code is unchanged. The Data test fixture
+      # waits up to 90s for the engine to accept connections, so no container health-cmd is needed.
       sql:
-        image: mcr.microsoft.com/azure-sql-edge:latest
+        image: mcr.microsoft.com/mssql/server:2022-latest
         env:
           ACCEPT_EULA: "Y"
           # Dev-only SA password. Override by setting the MSSQL_SA_PASSWORD repo/org secret; the literal is
-          # only a fallback for forks/local act runs and grants nothing beyond the ephemeral CI container.
+          # only a fallback and grants nothing beyond the ephemeral CI container.
           MSSQL_SA_PASSWORD: ${{ secrets.MSSQL_SA_PASSWORD || 'Dispatch_Dev_Pass123' }}
         ports:
-          - 14330:1433
+          - 1433:1433
 
     env:
       # Drives the Dispatch.Data integration tests against the SQL service container.
-      DISPATCH_TEST_SQL: "Server=localhost,14330;User Id=sa;Password=${{ secrets.MSSQL_SA_PASSWORD || 'Dispatch_Dev_Pass123' }};TrustServerCertificate=True;Encrypt=True"
+      DISPATCH_TEST_SQL: "Server=localhost,1433;User Id=sa;Password=${{ secrets.MSSQL_SA_PASSWORD || 'Dispatch_Dev_Pass123' }};TrustServerCertificate=True;Encrypt=True"
       # Make the integration tests fail loudly if the connection string is ever missing, instead of skipping.
       DISPATCH_REQUIRE_SQL: "1"
       DOTNET_NOLOGO: "true"
@@ -80,7 +81,7 @@ jobs:
   release:
     needs: build-test
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     env:
       DOTNET_NOLOGO: "true"
