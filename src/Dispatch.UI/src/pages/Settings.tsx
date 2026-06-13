@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type AppSettings, type SystemConfig } from "../lib/api";
+import { api, type AppSettings, type SystemConfig, type PurgeRun } from "../lib/api";
 
 export function Settings() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -140,8 +140,61 @@ export function Settings() {
         {msg && <span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span>}
       </div>
 
+      <PurgePanel />
+
       {sysConfig && <SystemConfigEditor initial={sysConfig} />}
     </>
+  );
+}
+
+function PurgePanel() {
+  const [history, setHistory] = useState<PurgeRun[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const load = () => api.purge.history().then(setHistory).catch(() => setHistory([]));
+  useEffect(() => { load(); }, []);
+
+  const run = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await api.purge.run();
+      setMsg(`Purged ${r.spoolFilesDeleted} spool files and ${r.logRowsDeleted} log rows.`);
+      await load();
+    } catch (e) {
+      setMsg(`Error: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel" style={{ maxWidth: 620, marginTop: 18 }}>
+      <h2>Storage maintenance</h2>
+      <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
+        Run an immediate out-of-schedule purge using the retention thresholds above.
+      </p>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+        <button onClick={run} disabled={busy}>Run purge now</button>
+        {msg && <span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span>}
+      </div>
+      {history.length > 0 && (
+        <table>
+          <thead><tr><th>When</th><th>Trigger</th><th>Spool files</th><th>Log rows</th><th>DB size</th></tr></thead>
+          <tbody>
+            {history.map((h, i) => (
+              <tr key={i}>
+                <td>{new Date(h.ranAtUtc).toLocaleString()}</td>
+                <td>{h.manual ? "manual" : "scheduled"}</td>
+                <td>{h.spoolFilesDeleted}</td>
+                <td>{h.logRowsDeleted}</td>
+                <td>{h.databaseSizeBytes > 0 ? `${Math.round(h.databaseSizeBytes / 1048576)} MB` : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 

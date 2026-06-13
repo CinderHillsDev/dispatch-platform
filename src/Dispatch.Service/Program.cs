@@ -120,7 +120,10 @@ try
     // Hosted services: relay worker pool + SMTP listener.
     builder.Services.AddHostedService<SpoolWorkerPool>();
     builder.Services.AddHostedService<SmtpListenerService>();
-    builder.Services.AddHostedService<PurgeWorker>();
+    // PurgeWorker is a singleton (so the manual /api/purge/run endpoint can invoke it) AND a hosted service.
+    builder.Services.AddSingleton<PurgeHistory>();
+    builder.Services.AddSingleton<PurgeWorker>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<PurgeWorker>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<DiskMonitor>());
 
     var app = builder.Build();
@@ -147,6 +150,7 @@ try
     app.UseMiddleware<ApiKeyMiddleware>();
     app.MapIngestionApi(apiSnapshot.Port);
     app.MapDashboardApi(webSnapshot.Port);
+    app.MapPurgeOps(webSnapshot.Port);
     app.MapHub<LogHub>("/hub/logs");
     app.MapHub<TestProviderHub>("/hub/test-provider");
     app.MapEmbeddedUiFallback(webSnapshot.Port);

@@ -17,6 +17,7 @@ public sealed class PurgeWorker(
     ILogMaintenance logs,
     DiskMonitor diskMonitor,
     IPurgeSettings settings,
+    PurgeHistory history,
     ILogger<PurgeWorker> log) : BackgroundService
 {
     private const long BytesPerGb = 1024L * 1024 * 1024;
@@ -51,7 +52,7 @@ public sealed class PurgeWorker(
         }
     }
 
-    internal async Task RunOnceAsync(PurgeOptions o, CancellationToken ct)
+    public async Task<PurgeRunResult> RunOnceAsync(PurgeOptions o, CancellationToken ct, bool manual = false)
     {
         // Disk back-pressure backstop (spec §14.1): the fast DiskMonitor timer is primary, but the purge
         // cycle re-evaluates so intake state stays current even if the timer is delayed.
@@ -62,37 +63,49 @@ public sealed class PurgeWorker(
         if (failed + captured > 0)
             log.LogInformation("Purged {Failed} failed and {Captured} captured spool files", failed, captured);
 
-        await PurgeLogAsync("Delivered", o.Log.DeliveredRetentionDays, ct);
-        await PurgeLogAsync("Failed", o.Log.FailedRetentionDays, ct);
-        await PurgeLogAsync("Retrying", o.Log.RetryingRetentionDays, ct);
-        await PurgeLogAsync("TestSent", o.Log.TestSentRetentionDays, ct);
+        var logRows = 0;
+        logRows += await PurgeLogAsync("Delivered", o.Log.DeliveredRetentionDays, ct);
+        logRows += await PurgeLogAsync("Failed", o.Log.FailedRetentionDays, ct);
+        logRows += await PurgeLogAsync("Retrying", o.Log.RetryingRetentionDays, ct);
+        logRows += await PurgeLogAsync("TestSent", o.Log.TestSentRetentionDays, ct);
 
-        await RunSizePressureAsync(o, ct);
+        logRows += await RunSizePressureAsync(o, ct);
+
+        long dbSize;
+        try { dbSize = await logs.GetDatabaseSizeBytesAsync(ct); } catch { dbSize = 0; }
+
+        var result = new PurgeRunResult(DateTime.UtcNow, manual, failed + captured, logRows, dbSize);
+        history.Record(result);
+        return result;
     }
 
-    private async Task PurgeLogAsync(string @event, int retentionDays, CancellationToken ct)
+    private async Task<int> PurgeLogAsync(string @event, int retentionDays, CancellationToken ct)
     {
         var deleted = await logs.PurgeByRetentionAsync(@event, retentionDays, ct);
         if (deleted > 0)
             log.LogInformation("Purged {Count} {Event} log rows older than {Days}d", deleted, @event, retentionDays);
+        return deleted;
     }
 
-    private async Task RunSizePressureAsync(PurgeOptions o, CancellationToken ct)
+    private async Task<int> RunSizePressureAsync(PurgeOptions o, CancellationToken ct)
     {
         var size = await logs.GetDatabaseSizeBytesAsync(ct);
         var trigger = (long)(o.SizePressure.TriggerGb * BytesPerGb);
         var target = (long)(o.SizePressure.TargetGb * BytesPerGb);
-        if (size < trigger) return;
+        if (size < trigger) return 0;
 
         log.LogWarning("Database at {SizeGb:F1} GB — running size-pressure purge to {TargetGb:F1} GB",
             size / (double)BytesPerGb, o.SizePressure.TargetGb);
 
+        var total = 0;
         while (!ct.IsCancellationRequested && await logs.GetDatabaseSizeBytesAsync(ct) >= target)
         {
             var deleted = await logs.PurgeOldestAsync(500, ct);
             if (deleted == 0) break;   // nothing left to delete; size is held by other objects
+            total += deleted;
             await Task.Delay(100, ct);
         }
+        return total;
     }
 
     private static int PurgeFiles(string dir, int retentionDays, bool includeMeta)

@@ -35,6 +35,7 @@ public class PurgeWorkerTests
         var disk = new DiskMonitor(t.Spool, new IntakeState(), _ => long.MaxValue, NullLogger<DiskMonitor>.Instance);
         var worker = new PurgeWorker(t.Spool, new NoopLogMaintenance(), disk,
             new OptionsPurgeSettings(new PurgeOptions { SpoolFailedRetentionDays = 30, CapturedRetentionDays = 7 }),
+            new PurgeHistory(),
             NullLogger<PurgeWorker>.Instance);
 
         await worker.RunOnceAsync(new PurgeOptions { SpoolFailedRetentionDays = 30, CapturedRetentionDays = 7 }, default);

@@ -25,6 +25,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         if (filter.FromUtc is { } from) { where.Append(" AND logged_at >= @FromUtc"); p.Add("FromUtc", from, DbType.DateTime2); }
         if (filter.ToUtc is { } to) { where.Append(" AND logged_at < @ToUtc"); p.Add("ToUtc", to, DbType.DateTime2); }
         if (filter.Statuses is { Length: > 0 } s) { where.Append(" AND status IN @Statuses"); p.Add("Statuses", s); }
+        if (filter.Events is { Length: > 0 } ev) { where.Append(" AND event IN @Events"); p.Add("Events", ev); }
         if (!string.IsNullOrWhiteSpace(filter.IngestSource)) { where.Append(" AND ingest_source = @IngestSource"); p.Add("IngestSource", filter.IngestSource); }
         if (!string.IsNullOrWhiteSpace(filter.FromDomain)) { where.Append(" AND from_domain = @FromDomain"); p.Add("FromDomain", filter.FromDomain); }
         if (!string.IsNullOrWhiteSpace(filter.ToDomain)) { where.Append(" AND to_domain = @ToDomain"); p.Add("ToDomain", filter.ToDomain); }

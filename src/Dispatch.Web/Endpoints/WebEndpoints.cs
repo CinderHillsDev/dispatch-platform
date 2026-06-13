@@ -182,7 +182,11 @@ public static class WebEndpoints
                 Statuses = q["status"].Count > 0
                     ? q["status"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                     : null,
+                Events = q["event"].Count > 0
+                    ? q["event"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    : null,
                 IngestSource = NullIfEmpty(q["source"].ToString()),
+                ApiKeyId = int.TryParse(q["apiKeyId"], out var akid) ? akid : null,
                 FromDomain = NullIfEmpty(q["fromDomain"].ToString()),
                 ToDomain = NullIfEmpty(q["toDomain"].ToString()),
                 RelayName = NullIfEmpty(q["relay"].ToString()),

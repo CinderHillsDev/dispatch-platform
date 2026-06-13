@@ -163,6 +163,14 @@ export interface SystemConfig {
   spool: { directory: string; workerCount: number; appliesOnRestart: string[] };
 }
 
+export interface PurgeRun {
+  ranAtUtc: string;
+  manual: boolean;
+  spoolFilesDeleted: number;
+  logRowsDeleted: number;
+  databaseSizeBytes: number;
+}
+
 export interface SystemInfo {
   version: string;
   uptimeSeconds: number;
@@ -265,6 +273,11 @@ export const api = {
     saveLogging: (logging: AppSettings["logging"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { logging }),
     saveRetry: (retry: AppSettings["retry"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retry }),
     saveRetention: (retention: AppSettings["retention"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retention }),
+  },
+
+  purge: {
+    run: () => sendJson<PurgeRun>("/api/purge/run", "POST", {}),
+    history: () => getJson<PurgeRun[]>("/api/purge/history"),
   },
 
   system: {

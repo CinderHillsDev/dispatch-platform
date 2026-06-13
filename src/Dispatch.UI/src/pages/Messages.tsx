@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type MessageRow, type MessageDetail, type RelayListItem, type RuleItem } from "../lib/api";
+import { api, type MessageRow, type MessageDetail, type RelayListItem, type RuleItem, type ApiKeyItem } from "../lib/api";
 
 function badgeClass(status: string) {
   if (status === "OK") return "badge ok";
@@ -7,18 +7,15 @@ function badgeClass(status: string) {
   return "badge error";
 }
 
-const STATUS_OPTIONS = [
-  { label: "All", value: "" },
-  { label: "Delivered", value: "OK" },
-  { label: "Error", value: "Error" },
-  { label: "Denied", value: "Denied" },
-];
+// Status filter chips map to the relay_log `event` column (spec §9.2).
+const EVENT_OPTIONS = ["Delivered", "Failed", "Retrying", "Denied", "TestSent"];
 
 interface Filters {
-  status: string;
+  events: string[];
   source: string;
   relay: string;
   rule: string;
+  apiKeyId: string;
   subject: string;
   fromDomain: string;
   toDomain: string;
@@ -27,15 +24,16 @@ interface Filters {
   to: string;
 }
 
-const EMPTY: Filters = { status: "", source: "", relay: "", rule: "", subject: "", fromDomain: "", toDomain: "", tag: "", from: "", to: "" };
+const EMPTY: Filters = { events: [], source: "", relay: "", rule: "", apiKeyId: "", subject: "", fromDomain: "", toDomain: "", tag: "", from: "", to: "" };
 
 function toParams(f: Filters): URLSearchParams {
   const p = new URLSearchParams();
   p.set("limit", "50");
-  if (f.status) p.set("status", f.status);
+  if (f.events.length) p.set("event", f.events.join(","));
   if (f.source) p.set("source", f.source);
   if (f.relay) p.set("relay", f.relay);
   if (f.rule) p.set("rule", f.rule);
+  if (f.apiKeyId) p.set("apiKeyId", f.apiKeyId);
   if (f.subject) p.set("subject", f.subject);
   if (f.fromDomain) p.set("fromDomain", f.fromDomain);
   if (f.toDomain) p.set("toDomain", f.toDomain);
@@ -50,6 +48,7 @@ export function Messages() {
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [relays, setRelays] = useState<RelayListItem[]>([]);
   const [rules, setRules] = useState<RuleItem[]>([]);
+  const [keys, setKeys] = useState<ApiKeyItem[]>([]);
   const [rows, setRows] = useState<MessageRow[]>([]);
   const [cursor, setCursor] = useState<{ at: string; id: number } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -65,6 +64,10 @@ export function Messages() {
 
   useEffect(() => { api.relays.list().then(setRelays).catch(() => setRelays([])); }, []);
   useEffect(() => { api.rules.list().then(setRules).catch(() => setRules([])); }, []);
+  useEffect(() => { api.keys.list().then(setKeys).catch(() => setKeys([])); }, []);
+
+  const toggleEvent = (ev: string) =>
+    setFilters((f) => ({ ...f, events: f.events.includes(ev) ? f.events.filter((e) => e !== ev) : [...f.events, ev] }));
 
   const loadMore = useCallback(async () => {
     if (!cursor) return;
@@ -106,12 +109,18 @@ export function Messages() {
       <div style={{ flex: 1, minWidth: 0 }}>
         <h1 className="page-title">Message Log</h1>
 
-        <div className="filters">
+        <div className="filters" style={{ alignItems: "center" }}>
           <input type="date" value={filters.from} onChange={(e) => set("from", e.target.value)} title="From date" />
           <input type="date" value={filters.to} onChange={(e) => set("to", e.target.value)} title="To date" />
-          <select value={filters.status} onChange={(e) => set("status", e.target.value)}>
-            {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+          {EVENT_OPTIONS.map((ev) => (
+            <button
+              key={ev}
+              type="button"
+              onClick={() => toggleEvent(ev)}
+              className={filters.events.includes(ev) ? "badge ok" : "badge"}
+              style={{ cursor: "pointer", border: "1px solid var(--border)", opacity: filters.events.includes(ev) ? 1 : 0.6 }}
+            >{ev}</button>
+          ))}
           <select value={filters.relay} onChange={(e) => set("relay", e.target.value)}>
             <option value="">Any relay</option>
             {relays.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
@@ -125,6 +134,12 @@ export function Messages() {
             <option value="SMTP">SMTP</option>
             <option value="API">API</option>
           </select>
+          {filters.source === "API" && (
+            <select value={filters.apiKeyId} onChange={(e) => set("apiKeyId", e.target.value)} title="API key">
+              <option value="">Any key</option>
+              {keys.map((k) => <option key={k.id} value={String(k.id)}>{k.name}</option>)}
+            </select>
+          )}
           <input placeholder="Subject contains" value={filters.subject} onChange={(e) => set("subject", e.target.value)} />
           <input placeholder="Sender domain" value={filters.fromDomain} onChange={(e) => set("fromDomain", e.target.value)} />
           <input placeholder="Recipient domain" value={filters.toDomain} onChange={(e) => set("toDomain", e.target.value)} />

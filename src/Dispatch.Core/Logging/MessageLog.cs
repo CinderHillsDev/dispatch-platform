@@ -8,7 +8,8 @@ public sealed class MessageLogFilter
 {
     public DateTime? FromUtc { get; init; }
     public DateTime? ToUtc { get; init; }
-    public string[]? Statuses { get; init; }       // OK | Error | Denied
+    public string[]? Statuses { get; init; }       // OK | Error | Denied (status column)
+    public string[]? Events { get; init; }         // Delivered | Failed | Retrying | Denied | TestSent (event column, §9.2 chips)
     public string? IngestSource { get; init; }     // SMTP | API
     public string? FromDomain { get; init; }
     public string? ToDomain { get; init; }
