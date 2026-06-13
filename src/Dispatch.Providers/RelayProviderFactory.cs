@@ -15,7 +15,7 @@ public sealed class RelayProviderFactory(
     {
         RelayProviderType.Unconfigured => throw new InvalidOperationException(
             "No relay provider is configured. Choose a provider under Relays before sending mail."),
-        RelayProviderType.None => new NoneProvider(spool.CapturedDir),
+        RelayProviderType.Local => new LocalProvider(spool.CapturedDir),
         RelayProviderType.Smtp => new SmtpProvider(config),
         RelayProviderType.Mailgun => new MailgunProvider(config, httpClientFactory.CreateClient("mailgun")),
         RelayProviderType.SendGrid => new SendGridProvider(config, sendGridClientFactory),

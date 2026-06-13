@@ -147,7 +147,7 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
         {
             Id = Id,
             Name = Name,
-            Provider = Enum.TryParse<RelayProviderType>(Provider, ignoreCase: true, out var p) ? p : RelayProviderType.None,
+            Provider = Enum.TryParse<RelayProviderType>(Provider, ignoreCase: true, out var p) ? p : RelayProviderType.Unconfigured,
             IsDefault = IsDefault,
             Enabled = Enabled,
             MaxConcurrency = MaxConcurrency,

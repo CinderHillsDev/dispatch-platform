@@ -57,6 +57,9 @@ export interface SimulateResult {
   relayId: number; relayName: string; provider: string;
 }
 
+export interface InboxItem { id: string; from: string; to: string; subject: string; date: string; sizeBytes: number; }
+export interface InboxMessage extends InboxItem { cc: string; text: string | null; html: string | null; }
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -99,5 +102,12 @@ export const api = {
     remove: (id: number) => sendJson<{ ok: boolean }>(`/api/routing/rules/${id}`, "DELETE", {}),
     reorder: (ids: number[]) => sendJson<{ ok: boolean }>("/api/routing/rules/reorder", "PUT", { ids }),
     simulate: (from: string, to: string) => sendJson<SimulateResult>("/api/routing/simulate", "POST", { from, to }),
+  },
+
+  inbox: {
+    list: () => getJson<InboxItem[]>("/api/local/messages"),
+    get: (id: string) => getJson<InboxMessage>(`/api/local/messages/${encodeURIComponent(id)}`),
+    remove: (id: string) => sendJson<{ ok: boolean }>(`/api/local/messages/${encodeURIComponent(id)}`, "DELETE", {}),
+    clear: () => sendJson<{ ok: boolean }>("/api/local/messages", "DELETE", {}),
   },
 };

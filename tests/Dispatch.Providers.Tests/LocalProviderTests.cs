@@ -4,7 +4,7 @@ using MimeKit;
 
 namespace Dispatch.Providers.Tests;
 
-public class NoneProviderTests
+public class LocalProviderTests
 {
     private static RelayMessage Message()
     {
@@ -22,7 +22,7 @@ public class NoneProviderTests
         var dir = Path.Combine(Path.GetTempPath(), "dispatch-capture-tests", Guid.NewGuid().ToString("N"));
         try
         {
-            var result = await new NoneProvider(dir).SendAsync(Message(), default);
+            var result = await new LocalProvider(dir).SendAsync(Message(), default);
 
             var files = Directory.GetFiles(dir, "*.eml");
             Assert.Single(files);
@@ -38,7 +38,7 @@ public class NoneProviderTests
     [Fact]
     public async Task Discards_when_no_capture_directory()
     {
-        var result = await new NoneProvider().SendAsync(Message(), default);
+        var result = await new LocalProvider().SendAsync(Message(), default);
         Assert.NotNull(result.ProviderMessageId);
         Assert.Contains("no external delivery", result.ProviderDetail);
     }

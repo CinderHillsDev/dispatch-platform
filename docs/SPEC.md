@@ -1174,9 +1174,9 @@ public interface IRelayProvider
 | Required settings | Host, Port, Username, Password, TLS mode |
 | Notes | Use for AWS SES SMTP, Office 365, Postfix, or any smart host |
 
-### 8.5 None / Dev Mode
+### 8.5 Local / Developer Mode
 
-A no-op provider that accepts and discards all messages, logging them as if delivered. All message content is still visible in the UI Message Log. Ideal for local development so no real emails are sent.
+A provider that never delivers externally. It captures each message to `spool/captured/` (viewable in the **Local Inbox** page) and logs it as delivered. Ideal for local development so no real emails are sent. (The out-of-the-box default relay is *Unconfigured* — it refuses to relay until a provider is chosen, so mail is never silently delivered or discarded.)
 
 ---
 

@@ -7,8 +7,9 @@ public enum RelayProviderType
     /// provider is configured, so mail is never silently delivered or discarded.</summary>
     Unconfigured = 0,
 
-    /// <summary>Explicit dev mode: accepts and discards mail, logging it as delivered (spec §8.5).</summary>
-    None,
+    /// <summary>Local / developer mode: never delivers externally; captures mail to spool/captured/ for
+    /// inspection and logs it as delivered (spec §8.5).</summary>
+    Local,
     Smtp,
     Mailgun,
     SendGrid,

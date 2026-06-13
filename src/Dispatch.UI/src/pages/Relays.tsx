@@ -3,7 +3,7 @@ import { api, type RelayDetail, type RelayListItem, type TestResult } from "../l
 
 // Mirrors RelayProviderSchema on the server so the form can render fields immediately on provider change.
 const PROVIDER_FIELDS: Record<string, { name: string; secret: boolean; required: boolean }[]> = {
-  None: [],
+  Local: [],
   Smtp: [
     { name: "Host", secret: false, required: true },
     { name: "Port", secret: false, required: false },
@@ -27,7 +27,7 @@ export function Relays() {
   const [list, setList] = useState<RelayListItem[]>([]);
   const [selected, setSelected] = useState<RelayDetail | null>(null);
   const [newName, setNewName] = useState("");
-  const [newProvider, setNewProvider] = useState("None");
+  const [newProvider, setNewProvider] = useState("Local");
   const [msg, setMsg] = useState<string | null>(null);
 
   const refresh = async () => setList(await api.relays.list());
@@ -140,12 +140,12 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
       </select>
       {provider === "Unconfigured" && (
         <p className="muted" style={{ marginTop: -4, marginBottom: 12, fontSize: 12 }}>
-          This relay has no provider yet — mail to it will fail until you choose one (or pick “None” for local dev).
+          This relay has no provider yet — mail to it will fail until you choose one (or pick “Local” for development).
         </p>
       )}
-      {provider === "None" && (
+      {provider === "Local" && (
         <p className="muted" style={{ marginTop: -4, marginBottom: 12, fontSize: 12 }}>
-          Local dev mode — never delivers externally. Messages are captured to <code>spool/captured/</code> so you can inspect them.
+          Local / developer mode — never delivers externally. Captured messages appear in the Local Inbox.
         </p>
       )}
 

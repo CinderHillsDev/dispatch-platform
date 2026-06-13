@@ -13,7 +13,7 @@ public class RelayProviderFactoryTests
     }
 
     [Theory]
-    [InlineData(RelayProviderType.None, typeof(NoneProvider))]
+    [InlineData(RelayProviderType.Local, typeof(LocalProvider))]
     [InlineData(RelayProviderType.Smtp, typeof(SmtpProvider))]
     [InlineData(RelayProviderType.Mailgun, typeof(MailgunProvider))]
     [InlineData(RelayProviderType.SendGrid, typeof(SendGridProvider))]

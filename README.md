@@ -156,7 +156,7 @@ Open **http://localhost:8420** after installation. On first run, all settings ha
 | **SendGrid** | API Key |
 | **Azure Communication Services** | Connection String, Sender Address |
 | **SMTP (generic)** | Host, Port, Username, Password, TLS mode |
-| **None (dev mode)** | — accepts and discards all mail |
+| **Local (developer mode)** | — captures mail to a local inbox; never delivers externally |
 
 ### Retention
 

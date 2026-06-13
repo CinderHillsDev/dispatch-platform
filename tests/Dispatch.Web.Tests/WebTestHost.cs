@@ -121,7 +121,7 @@ internal sealed class FakeRelayRepository : Dispatch.Core.Relays.IRelayRepositor
 {
     private static readonly Dispatch.Core.Relays.RelayRecord Default = new()
     {
-        Id = 1, Name = "default", Provider = Dispatch.Core.Providers.RelayProviderType.None,
+        Id = 1, Name = "default", Provider = Dispatch.Core.Providers.RelayProviderType.Local,
         IsDefault = true, Enabled = true, MaxConcurrency = 4,
     };
     public Task<Dispatch.Core.Relays.RelayRecord?> GetDefaultAsync(CancellationToken ct = default) => Task.FromResult<Dispatch.Core.Relays.RelayRecord?>(Default);
@@ -136,7 +136,7 @@ internal sealed class FakeRelayRepository : Dispatch.Core.Relays.IRelayRepositor
 
 internal sealed class FakeRelaySettingsStore : Dispatch.Core.Relays.IRelaySettingsStore
 {
-    private Dispatch.Core.Relays.RelaySettings _settings = Dispatch.Core.Relays.RelaySettings.None;
+    private Dispatch.Core.Relays.RelaySettings _settings = Dispatch.Core.Relays.RelaySettings.Empty;
     public Task<Dispatch.Core.Relays.RelaySettings> GetAsync(int relayId, CancellationToken ct = default) => Task.FromResult(_settings);
     public Task SaveAsync(int relayId, Dispatch.Core.Relays.RelaySettings settings, CancellationToken ct = default)
     {
@@ -164,7 +164,7 @@ internal sealed class FakeProviderFactory : Dispatch.Core.Providers.IRelayProvid
 
     private sealed class FakeProvider : Dispatch.Core.Providers.IRelayProvider
     {
-        public string Name => "None";
+        public string Name => "Local";
         public Task<Dispatch.Core.Providers.RelayResult> SendAsync(Dispatch.Core.Providers.RelayMessage message, CancellationToken ct) =>
             Task.FromResult(Dispatch.Core.Providers.RelayResult.Success("test"));
     }

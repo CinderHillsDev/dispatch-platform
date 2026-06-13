@@ -6,6 +6,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Messages } from "./pages/Messages";
 import { Relays } from "./pages/Relays";
 import { Routing } from "./pages/Routing";
+import { LocalInbox } from "./pages/LocalInbox";
 import "./index.css";
 
 function Layout() {
@@ -18,6 +19,7 @@ function Layout() {
           <NavLink to="/messages">Message Log</NavLink>
           <NavLink to="/relays">Relays</NavLink>
           <NavLink to="/routing">Routing</NavLink>
+          <NavLink to="/inbox">Local Inbox</NavLink>
         </nav>
       </aside>
       <main className="main"><Outlet /></main>
@@ -33,6 +35,7 @@ const router = createBrowserRouter([
       { path: "/messages", element: <Messages /> },
       { path: "/relays", element: <Relays /> },
       { path: "/routing", element: <Routing /> },
+      { path: "/inbox", element: <LocalInbox /> },
     ],
   },
 ]);

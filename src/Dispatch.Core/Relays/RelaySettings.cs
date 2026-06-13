@@ -5,7 +5,7 @@ namespace Dispatch.Core.Relays;
 /// <summary>A relay's provider type plus its generic provider settings (keys match what providers read).</summary>
 public sealed record RelaySettings(RelayProviderType Provider, IReadOnlyDictionary<string, string?> Settings)
 {
-    public static RelaySettings None { get; } = new(RelayProviderType.None, new Dictionary<string, string?>());
+    public static RelaySettings Empty { get; } = new(RelayProviderType.Unconfigured, new Dictionary<string, string?>());
 }
 
 /// <summary>Describes one configurable field for a provider (drives validation, encryption, and the UI form).</summary>

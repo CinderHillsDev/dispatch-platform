@@ -22,7 +22,7 @@ public class SqlRoutingTests(SqlServerFixture sql) : IClassFixture<SqlServerFixt
         Assert.Equal(mg.Id, def!.Id);
 
         // A non-default relay can be deleted.
-        var temp = await relays.CreateAsync("Temp", RelayProviderType.None, 4, 0);
+        var temp = await relays.CreateAsync("Temp", RelayProviderType.Local, 4, 0);
         Assert.True(await relays.DeleteAsync(temp.Id));
         Assert.DoesNotContain(await relays.GetAllAsync(), r => r.Id == temp.Id);
     }
@@ -33,7 +33,7 @@ public class SqlRoutingTests(SqlServerFixture sql) : IClassFixture<SqlServerFixt
         if (!sql.Available) return;
         var relays = new SqlRelayRepository(sql.Factory);
         var rules = new SqlRoutingRuleRepository(sql.Factory);
-        var relay = await relays.CreateAsync("Target", RelayProviderType.None, 4, 0);
+        var relay = await relays.CreateAsync("Target", RelayProviderType.Local, 4, 0);
 
         var a = await rules.CreateAsync(new RoutingRule { Name = "A", RecipientPattern = "*.acme.com", RelayId = relay.Id, Enabled = true });
         var b = await rules.CreateAsync(new RoutingRule { Name = "B", SenderPattern = "app.myco.com", RelayId = relay.Id, Enabled = true });

@@ -37,9 +37,9 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         Assert.Equal(Dispatch.Core.Providers.RelayProviderType.Unconfigured, fresh.Provider);
 
         await settings.SaveAsync(1, new Dispatch.Core.Relays.RelaySettings(
-            Dispatch.Core.Providers.RelayProviderType.None, new Dictionary<string, string?>()));
+            Dispatch.Core.Providers.RelayProviderType.Local, new Dictionary<string, string?>()));
         var after = await settings.GetAsync(1);
-        Assert.Equal(Dispatch.Core.Providers.RelayProviderType.None, after.Provider);
+        Assert.Equal(Dispatch.Core.Providers.RelayProviderType.Local, after.Provider);
     }
 
     [Fact]

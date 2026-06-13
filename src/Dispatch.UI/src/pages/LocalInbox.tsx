@@ -1,0 +1,69 @@
+import { useEffect, useState } from "react";
+import { api, type InboxItem, type InboxMessage } from "../lib/api";
+
+export function LocalInbox() {
+  const [items, setItems] = useState<InboxItem[]>([]);
+  const [selected, setSelected] = useState<InboxMessage | null>(null);
+
+  const refresh = async () => setItems(await api.inbox.list());
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 5000);   // poll so new captures appear
+    return () => clearInterval(t);
+  }, []);
+
+  const open = async (id: string) => setSelected(await api.inbox.get(id));
+
+  const remove = async (id: string) => {
+    await api.inbox.remove(id);
+    if (selected?.id === id) setSelected(null);
+    await refresh();
+  };
+
+  const clearAll = async () => { await api.inbox.clear(); setSelected(null); await refresh(); };
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1 className="page-title">Local Inbox</h1>
+        {items.length > 0 && <button onClick={clearAll}>Clear all</button>}
+      </div>
+      <p className="muted" style={{ marginTop: -10, marginBottom: 18 }}>
+        Messages captured by the Local / developer provider — never sent externally.
+      </p>
+
+      <div style={{ display: "flex", gap: 22, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div className="panel" style={{ flex: "1 1 420px", padding: 0, overflow: "hidden" }}>
+          <table>
+            <thead><tr><th>From</th><th>To</th><th>Subject</th><th>When</th><th></th></tr></thead>
+            <tbody>
+              {items.map((m) => (
+                <tr key={m.id} style={{ cursor: "pointer", background: selected?.id === m.id ? "var(--panel-2)" : undefined }} onClick={() => open(m.id)}>
+                  <td>{m.from}</td>
+                  <td>{m.to}</td>
+                  <td className="subject">{m.subject || <span className="muted">(no subject)</span>}</td>
+                  <td>{new Date(m.date).toLocaleTimeString()}</td>
+                  <td><button onClick={(e) => { e.stopPropagation(); remove(m.id); }}>✕</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {items.length === 0 && <div className="center">No captured messages yet. Configure a relay as “Local” and send mail.</div>}
+        </div>
+
+        {selected && (
+          <div className="panel" style={{ flex: "1 1 460px" }}>
+            <h2>{selected.subject || "(no subject)"}</h2>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>From: {selected.from}</div>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>To: {selected.to}</div>
+            {selected.cc && <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>Cc: {selected.cc}</div>}
+            <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{new Date(selected.date).toLocaleString()}</div>
+            {selected.html
+              ? <iframe title="message" sandbox="" srcDoc={selected.html} style={{ width: "100%", height: 380, border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }} />
+              : <pre style={{ whiteSpace: "pre-wrap", background: "var(--panel-2)", padding: 14, borderRadius: 8 }}>{selected.text ?? "(empty body)"}</pre>}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}

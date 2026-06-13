@@ -8,7 +8,7 @@ public sealed class RelayConfig
 {
     public int Id { get; init; } = 1;
     public string Name { get; init; } = "default";
-    public RelayProviderType Provider { get; init; } = RelayProviderType.None;
+    public RelayProviderType Provider { get; init; } = RelayProviderType.Unconfigured;
     public int MaxConcurrency { get; init; } = 4;
     public long MaxMessageBytes { get; init; } = 0;
     public IReadOnlyDictionary<string, string?> Settings { get; init; } =

@@ -40,7 +40,7 @@ public class RoutingEngineTests
 
     private static RelayRecord Relay(int id, string name, bool isDefault = false) => new()
     {
-        Id = id, Name = name, Provider = RelayProviderType.None, IsDefault = isDefault, Enabled = true, MaxConcurrency = 4,
+        Id = id, Name = name, Provider = RelayProviderType.Local, IsDefault = isDefault, Enabled = true, MaxConcurrency = 4,
     };
 
     [Fact]
@@ -73,7 +73,7 @@ public class RoutingEngineTests
             new RoutingRule { Id = 10, Priority = 10, Name = "acme", RecipientPattern = "*.acme.com", RelayId = 10, Enabled = true },
             new RoutingRule { Id = 20, Priority = 20, Name = "app", SenderPattern = "app.myco.com", RelayId = 20, Enabled = true },
             new RoutingRule { Id = 30, Priority = 30, Name = "staging", RecipientPattern = "staging.myco.com", RelayId = 30, Enabled = true });
-        var engine = new RoutingEngine(rules, relays, new StubSettings(RelaySettings.None));
+        var engine = new RoutingEngine(rules, relays, new StubSettings(RelaySettings.Empty));
 
         var relay = await engine.ResolveAsync(from, [to]);
 
@@ -88,7 +88,7 @@ public class RoutingEngineTests
         var relays = new StubRelayRepo(Relay(1, "Mailgun-US", isDefault: true), Relay(10, "Mailgun-EU"));
         var rules = new StubRules(
             new RoutingRule { Id = 10, Priority = 10, Name = "acme", RecipientPattern = "*.acme.com", RelayId = 10, Enabled = true });
-        var engine = new RoutingEngine(rules, relays, new StubSettings(RelaySettings.None));
+        var engine = new RoutingEngine(rules, relays, new StubSettings(RelaySettings.Empty));
 
         var relay = await engine.ResolveAsync("ci@other.com", ["user@gmail.com"]);
 

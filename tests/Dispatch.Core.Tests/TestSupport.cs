@@ -69,7 +69,7 @@ public static class TestData
         RetryOptions? retry = null,
         int workerCount = 4)
     {
-        relay ??= new RelayConfig { Id = 1, Name = "default", Provider = RelayProviderType.None };
+        relay ??= new RelayConfig { Id = 1, Name = "default", Provider = RelayProviderType.Local };
         var resolver = new StubRelayResolver(new ResolvedRelay { Config = relay });
         var factory = new StubProviderFactory(provider);
         return new SpoolWorkerPool(
