@@ -52,11 +52,14 @@ jobs:
 
       - name: Install the WiX toolset
         shell: pwsh
+        env:
+          WIX_VERSION: "6.0.2"
         run: |
-          dotnet tool install --global wix --version 6.* 2>$null; dotnet tool update --global wix --version 6.* 2>$null
-          wix extension add -g WixToolset.Firewall.wixext
-          wix extension add -g WixToolset.Bal.wixext
-          wix extension add -g WixToolset.Util.wixext
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          # Extensions must match the toolset major version (the unpinned latest is v7, incompatible with v6).
+          wix extension add -g "WixToolset.Firewall.wixext/$env:WIX_VERSION"
+          wix extension add -g "WixToolset.Bal.wixext/$env:WIX_VERSION"
+          wix extension add -g "WixToolset.Util.wixext/$env:WIX_VERSION"
 
       - name: Build the MSI
         working-directory: installer/windows
