@@ -65,7 +65,9 @@ public sealed class SendGridProvider(RelayConfig config, ISendGridClientFactory 
         }
 
         response.Headers.TryGetValues("X-Message-Id", out var ids);
-        return RelayResult.Success(ids?.FirstOrDefault(), $"SendGrid {status}");
+        var messageId = ids?.FirstOrDefault();
+        // Spec §11.6 detail format.
+        return RelayResult.Success(messageId, $"HTTP {status} Accepted — X-Message-Id: {messageId}");
     }
 }
 

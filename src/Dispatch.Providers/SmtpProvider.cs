@@ -39,7 +39,8 @@ public sealed class SmtpProvider : IRelayProvider
             var response = await client.SendAsync(message.Message, ct);
             await client.DisconnectAsync(quit: true, ct);
 
-            return RelayResult.Success(detail: response);
+            // Spec §11.6 detail format (250 + server response line).
+            return RelayResult.Success(detail: $"250 {response}");
         }
         catch (Exception ex) when (IsTransient(ex))
         {

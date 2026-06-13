@@ -39,7 +39,8 @@ public sealed class AzureProvider(RelayConfig config, IEmailClientFactory client
         try
         {
             var operation = await client.SendAsync(WaitUntil.Completed, emailMessage, ct);
-            return RelayResult.Success(operation.Id, $"Azure status: {operation.Value.Status}");
+            // Spec §11.6 detail format.
+            return RelayResult.Success(operation.Id, $"OperationId: {operation.Id}, Status: {operation.Value.Status}");
         }
         catch (RequestFailedException ex) when (ex.Status is 429 or >= 500)
         {

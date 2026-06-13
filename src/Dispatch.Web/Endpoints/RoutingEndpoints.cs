@@ -93,7 +93,7 @@ public static class RoutingEndpoints
 
         group.MapPost("/relays/{id:int}/test", async (
             int id, WebEndpoints.TestRelayRequest req, IRelayRepository relays, IRelaySettingsStore store,
-            IRelayProviderFactory factory, ILogRepository log, CancellationToken ct) =>
+            IRelayProviderFactory factory, ILogRepository log, Dispatch.Core.Configuration.ConfigCache cache, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.To)) return Results.BadRequest(new { error = "'to' is required." });
             var record = await relays.GetByIdAsync(id, ct);
@@ -108,7 +108,8 @@ public static class RoutingEndpoints
                     ? $"dispatch-test@{s.Settings["Domain"]}"
                     : null;
 
-            var mime = Dispatch.Web.Realtime.ProviderTestService.BuildTestMessage(s.Provider, req.To, fromOverride);
+            var mime = Dispatch.Web.Realtime.ProviderTestService.BuildTestMessage(
+                s.Provider, req.To, cache.Listener().ServerName, fromOverride);
 
             var config = new RelayConfig
             {

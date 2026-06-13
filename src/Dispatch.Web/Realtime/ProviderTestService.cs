@@ -34,13 +34,15 @@ public sealed class ProviderTestService : IDisposable
 
     private readonly IRelayProviderFactory _factory;
     private readonly IHubContext<TestProviderHub> _hub;
+    private readonly Dispatch.Core.Configuration.ConfigCache _config;
     private readonly ConcurrentDictionary<string, TestRun> _runs = new();
     private readonly Timer _cleanup;
 
-    public ProviderTestService(IRelayProviderFactory factory, IHubContext<TestProviderHub> hub)
+    public ProviderTestService(IRelayProviderFactory factory, IHubContext<TestProviderHub> hub, Dispatch.Core.Configuration.ConfigCache config)
     {
         _factory = factory;
         _hub = hub;
+        _config = config;
         _cleanup = new Timer(_ => EvictExpired(), null, Retention, Retention);
     }
 
@@ -82,7 +84,7 @@ public sealed class ProviderTestService : IDisposable
 
             var provider = _factory.Build(config);   // throws for Unconfigured / unsupported
 
-            var message = BuildTestMessage(config.Provider, recipient);
+            var message = BuildTestMessage(config.Provider, recipient, _config.Listener().ServerName);
             await LogAsync(run, "Info", "Building test MimeMessage");
             await LogAsync(run, "Info", $"From: {message.From}");
             await LogAsync(run, "Info", $"To:   {recipient}");
@@ -121,9 +123,9 @@ public sealed class ProviderTestService : IDisposable
     /// test endpoint so both code paths send an identical, conformant message. <paramref name="fromOverride"/>
     /// lets a caller substitute the sender (e.g. a provider that requires a verified domain).
     /// </summary>
-    public static MimeMessage BuildTestMessage(RelayProviderType provider, string recipient, string? fromOverride = null)
+    public static MimeMessage BuildTestMessage(RelayProviderType provider, string recipient, string hostname, string? fromOverride = null)
     {
-        var hostname = Environment.MachineName;
+        if (string.IsNullOrWhiteSpace(hostname)) hostname = Environment.MachineName;
         var version = typeof(ProviderTestService).Assembly.GetName().Version?.ToString() ?? "dev";
         var timestamp = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
 

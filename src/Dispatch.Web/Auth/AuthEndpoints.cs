@@ -82,14 +82,24 @@ public static class AuthEndpoints
         });
     }
 
-    // A small built-in list of the most common weak passwords (spec §17.3 calls for a common-password
-    // list check). Compared case-insensitively.
+    // Exact-match common weak passwords, compared case-insensitively (spec §17.3 common-password check).
     private static readonly HashSet<string> CommonPasswords = new(StringComparer.OrdinalIgnoreCase)
     {
-        "password", "password1", "password123", "passw0rd", "12345678", "123456789", "1234567890",
-        "qwerty123", "qwertyuiop", "letmein1", "iloveyou1", "admin123", "welcome1", "abc12345",
-        "1q2w3e4r", "1qaz2wsx", "zaq12wsx", "trustno1", "dragon123", "monkey123", "football1",
+        "password", "password1", "password123", "password1234", "passw0rd", "passw0rd123",
+        "12345678", "123456789", "1234567890", "123456789012", "111111111111", "000000000000",
+        "qwerty123", "qwertyuiop", "qwertyuiop123", "letmein1", "iloveyou1", "admin123", "administrator",
+        "welcome1", "welcome123", "abc12345", "1q2w3e4r", "1qaz2wsx", "zaq12wsx", "trustno1",
+        "dragon123", "monkey123", "football1", "changeme123", "p@ssw0rd123", "qwerty123456",
     };
+
+    // Common weak base tokens. A password is rejected if its lowercased form CONTAINS one of these, so
+    // long-but-predictable passwords like "Password123456" or "MyQwerty12345" are still caught — a closer
+    // approximation of the spec's "top-N common passwords" intent than an exact list alone.
+    private static readonly string[] CommonBaseTokens =
+    [
+        "password", "passw0rd", "qwerty", "letmein", "iloveyou", "welcome", "admin", "dragon",
+        "monkey", "football", "baseball", "superman", "trustno1", "changeme", "987654321", "123456789",
+    ];
 
     /// <summary>
     /// Enforces the web-UI password policy (spec §17.3): minimum 12 characters with at least one
@@ -104,6 +114,9 @@ public static class AuthEndpoints
             return "Password must contain at least one uppercase letter, one lowercase letter and one digit.";
         if (CommonPasswords.Contains(password))
             return "Password is too common; choose a less predictable password.";
+        var lower = password.ToLowerInvariant();
+        if (CommonBaseTokens.Any(t => lower.Contains(t)))
+            return "Password contains a common, easily-guessed word or sequence; choose something less predictable.";
         return null;
     }
 

@@ -64,10 +64,17 @@ public sealed class MailgunProvider(RelayConfig config, HttpClient http) : IRela
         }
 
         string? id = null;
-        try { id = JsonDocument.Parse(bodyText).RootElement.GetProperty("id").GetString(); }
-        catch { /* id is best-effort */ }
+        string? statusMessage = null;
+        try
+        {
+            var root = JsonDocument.Parse(bodyText).RootElement;
+            id = root.GetProperty("id").GetString();
+            if (root.TryGetProperty("message", out var m)) statusMessage = m.GetString();
+        }
+        catch { /* id/message are best-effort */ }
 
-        return RelayResult.Success(id, bodyText);
+        // Spec §11.6 detail format.
+        return RelayResult.Success(id, $"HTTP {(int)response.StatusCode} — id: {id}, message: {statusMessage ?? "Queued"}");
     }
 
     private static bool IsTransient(HttpStatusCode code) =>
