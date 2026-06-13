@@ -69,7 +69,7 @@ install_sql_server() {
   . /etc/os-release
   echo "==> Installing SQL Server (Express) for $ID $VERSION_ID"
   if command -v apt-get >/dev/null 2>&1; then
-    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
     curl -fsSL "https://packages.microsoft.com/config/${ID}/${VERSION_ID}/mssql-server-2022.list" -o /etc/apt/sources.list.d/mssql-server-2022.list || \
       curl -fsSL "https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list" -o /etc/apt/sources.list.d/mssql-server-2022.list
     apt-get update -y
