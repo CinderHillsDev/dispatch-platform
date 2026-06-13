@@ -118,6 +118,55 @@ jobs:
           }
           Write-Host "Dispatch /health OK"
 
+  # Builds the self-contained Linux tarball and uploads it as a workflow artifact (downloadable from
+  # the Actions run page). This needs NO tag and creates NO release — releases are only for permanent
+  # public download links. Grab "dispatch-linux-tarball" from the run to test install.sh --prebuilt.
+  linux-tarball:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        run: |
+          ( cd src/Dispatch.UI && npm ci && npm run build )
+          rm -rf src/Dispatch.Web/wwwroot
+          mkdir -p src/Dispatch.Web/wwwroot
+          cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
+          test -f src/Dispatch.Web/wwwroot/index.html || { echo "embedded UI missing index.html"; exit 1; }
+
+      - name: Publish self-contained (linux-x64)
+        run: dotnet publish src/Dispatch.Service -c Release -r linux-x64 --self-contained true -o publish/linux
+
+      - name: Assemble the tarball
+        run: |
+          stage="dispatch-ci-linux-x64"
+          mkdir -p "staging/${stage}/bin"
+          cp -r publish/linux/. "staging/${stage}/bin/"
+          cp installer/linux/install.sh "staging/${stage}/install.sh"
+          cp installer/linux/dispatch.service "staging/${stage}/dispatch.service"
+          chmod +x "staging/${stage}/install.sh" "staging/${stage}/bin/Dispatch.Service"
+          tar -czf "${stage}.tar.gz" -C staging "${stage}"
+          ls -lh "${stage}.tar.gz"
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dispatch-linux-tarball
+          path: dispatch-ci-linux-x64.tar.gz
+          if-no-files-found: error
+
   linux-installer:
     runs-on: ubuntu-latest
     steps:
