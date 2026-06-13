@@ -73,7 +73,7 @@ public static class TestData
         var resolver = new StubRelayResolver(new ResolvedRelay { Config = relay });
         var factory = new StubProviderFactory(provider);
         return new SpoolWorkerPool(
-            spool, resolver, factory, logRepo, counters, new MinuteCounterRing(),
+            spool, resolver, factory, logRepo, counters, new MinuteCounterRing(), new RelayConcurrencyTracker(),
             Options.Create(new SpoolOptions { WorkerCount = workerCount }),
             Options.Create(retry ?? new RetryOptions { MaxRetries = 3, DelaysSeconds = [0.01, 0.02, 0.03] }),
             NullLogger<SpoolWorkerPool>.Instance);

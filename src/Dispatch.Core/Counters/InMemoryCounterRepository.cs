@@ -23,4 +23,15 @@ public sealed class InMemoryCounterRepository : ICounterRepository, ICounterRead
             Sum(CounterField.Received), Sum(CounterField.Delivered), Sum(CounterField.Failed),
             Sum(CounterField.Retried), Sum(CounterField.Denied)));
     }
+
+    public Task<IReadOnlyList<RelayCounterTotals>> GetTodayByRelayAsync(CancellationToken ct = default)
+    {
+        long Get(int relay, CounterField f) => _counts.TryGetValue((relay, f), out var v) ? v : 0;
+        var result = _counts.Keys.Select(k => k.RelayId).Distinct()
+            .Select(r => new RelayCounterTotals(r,
+                Get(r, CounterField.Received), Get(r, CounterField.Delivered), Get(r, CounterField.Failed),
+                Get(r, CounterField.Retried), Get(r, CounterField.Denied)))
+            .ToList();
+        return Task.FromResult<IReadOnlyList<RelayCounterTotals>>(result);
+    }
 }

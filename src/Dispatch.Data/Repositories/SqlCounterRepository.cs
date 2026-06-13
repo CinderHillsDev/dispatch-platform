@@ -51,4 +51,22 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
         await using var cn = await factory.OpenAsync(ct);
         return await cn.QuerySingleAsync<CounterTotals>(new CommandDefinition(sql, cancellationToken: ct));
     }
+
+    public async Task<IReadOnlyList<RelayCounterTotals>> GetTodayByRelayAsync(CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT relay_id AS RelayId,
+                   ISNULL(SUM(received), 0)  AS Received,
+                   ISNULL(SUM(delivered), 0) AS Delivered,
+                   ISNULL(SUM(failed), 0)    AS Failed,
+                   ISNULL(SUM(retried), 0)   AS Retried,
+                   ISNULL(SUM(denied), 0)    AS Denied
+            FROM relay_counters
+            WHERE date = CAST(SYSUTCDATETIME() AS DATE)
+            GROUP BY relay_id;
+            """;
+        await using var cn = await factory.OpenAsync(ct);
+        var rows = await cn.QueryAsync<RelayCounterTotals>(new CommandDefinition(sql, cancellationToken: ct));
+        return rows.ToList();
+    }
 }

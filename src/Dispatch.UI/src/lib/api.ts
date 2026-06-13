@@ -71,6 +71,11 @@ export interface FailedMessage {
 
 export interface SmtpCredential { id: number; username: string; createdAt: string; lastUsedAt: string | null; }
 
+export interface RelayStat {
+  id: number; name: string; provider: string; isDefault: boolean; enabled: boolean;
+  received: number; delivered: number; failed: number; inFlight: number;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -92,6 +97,7 @@ async function sendJson<T>(url: string, method: string, body: unknown): Promise<
 export const api = {
   stats: () => getJson<Stats>("/api/stats"),
   throughput: () => getJson<number[]>("/api/stats/throughput"),
+  relayStats: () => getJson<RelayStat[]>("/api/stats/relays"),
   messages: (params: URLSearchParams) => getJson<MessagePage>(`/api/messages?${params}`),
 
   relays: {

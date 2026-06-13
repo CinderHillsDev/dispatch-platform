@@ -26,6 +26,7 @@ public sealed class SpoolWorkerPool : BackgroundService
     private readonly ILogRepository _logRepo;
     private readonly ICounterRepository _counters;
     private readonly MinuteCounterRing _minuteRing;
+    private readonly RelayConcurrencyTracker _concurrency;
     private readonly ILogger<SpoolWorkerPool> _log;
     private readonly SpoolOptions _spoolOptions;
     private readonly RetryOptions _retry;
@@ -40,6 +41,7 @@ public sealed class SpoolWorkerPool : BackgroundService
         ILogRepository logRepo,
         ICounterRepository counters,
         MinuteCounterRing minuteRing,
+        RelayConcurrencyTracker concurrency,
         IOptions<SpoolOptions> spoolOptions,
         IOptions<RetryOptions> retry,
         ILogger<SpoolWorkerPool> log)
@@ -50,6 +52,7 @@ public sealed class SpoolWorkerPool : BackgroundService
         _logRepo = logRepo;
         _counters = counters;
         _minuteRing = minuteRing;
+        _concurrency = concurrency;
         _spoolOptions = spoolOptions.Value;
         _retry = retry.Value;
         _log = log;
@@ -119,6 +122,7 @@ public sealed class SpoolWorkerPool : BackgroundService
             if (claimed is null) continue;
 
             var c = claimed.Value;
+            _concurrency.Increment(c.Relay.Id);
             try
             {
                 await ProcessAsync(c.EmlPath, c.Relay, ct);
@@ -133,6 +137,7 @@ public sealed class SpoolWorkerPool : BackgroundService
             }
             finally
             {
+                _concurrency.Decrement(c.Relay.Id);
                 c.Semaphore.Release();
             }
 

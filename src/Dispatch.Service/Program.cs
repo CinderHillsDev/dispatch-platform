@@ -54,6 +54,7 @@ try
     builder.Services.AddSingleton<IEmailClientFactory, EmailClientFactory>();
     builder.Services.AddSingleton<IRelayProviderFactory, RelayProviderFactory>();
     builder.Services.AddSingleton<MinuteCounterRing>();
+    builder.Services.AddSingleton<RelayConcurrencyTracker>();
     builder.Services.AddSingleton<SpoolMessageStore>();
     builder.Services.AddSingleton<CidrMailboxFilter>();
     builder.Services.AddSingleton<ConfiguredUserAuthenticator>();

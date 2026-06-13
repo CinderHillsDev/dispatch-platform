@@ -92,6 +92,23 @@ public static class WebEndpoints
 
         group.MapGet("/stats/throughput", (MinuteCounterRing ring) => Results.Ok(ring.Snapshot()));
 
+        group.MapGet("/stats/relays", async (IRelayRepository relays, ICounterReader counters, RelayConcurrencyTracker concurrency, CancellationToken ct) =>
+        {
+            var records = await relays.GetAllAsync(ct);
+            var totals = (await counters.GetTodayByRelayAsync(ct)).ToDictionary(t => t.RelayId);
+            var inFlight = concurrency.Snapshot();
+            return Results.Ok(records.Select(r =>
+            {
+                totals.TryGetValue(r.Id, out var t);
+                return new
+                {
+                    r.Id, r.Name, provider = r.Provider.ToString(), r.IsDefault, r.Enabled,
+                    received = t?.Received ?? 0, delivered = t?.Delivered ?? 0, failed = t?.Failed ?? 0,
+                    inFlight = inFlight.GetValueOrDefault(r.Id, 0),
+                };
+            }));
+        });
+
         group.MapGet("/spool", (SpoolDirectory spool) => Results.Ok(SpoolCounts(spool)));
 
         group.MapGet("/messages", async (HttpContext ctx, IMessageLogQuery logs, CancellationToken ct) =>

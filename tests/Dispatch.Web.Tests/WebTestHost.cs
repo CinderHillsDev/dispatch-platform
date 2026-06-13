@@ -58,6 +58,7 @@ public sealed class WebTestHost : IAsyncLifetime
 
         builder.Services.AddSingleton(Spool);
         builder.Services.AddSingleton<MinuteCounterRing>();
+        builder.Services.AddSingleton<RelayConcurrencyTracker>();
         builder.Services.AddSingleton<ICounterReader, InMemoryCounterRepository>();
         builder.Services.AddSingleton<IApiKeyRepository, FakeApiKeyRepository>();
         builder.Services.AddSingleton<IMessageLogQuery, FakeMessageLogQuery>();

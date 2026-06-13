@@ -17,6 +17,7 @@ function time(iso: string) {
 export function Dashboard() {
   const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats, refetchInterval: 5000 });
   const throughput = useQuery({ queryKey: ["throughput"], queryFn: api.throughput, refetchInterval: 60000 });
+  const relayStats = useQuery({ queryKey: ["relayStats"], queryFn: api.relayStats, refetchInterval: 10000 });
   const [feed, setFeed] = useState<RelayEvent[]>([]);
 
   useEffect(() => {
@@ -54,6 +55,26 @@ export function Dashboard() {
               <Line type="monotone" dataKey="v" stroke="#58a6ff" strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="panel">
+        <h2>Active relays</h2>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {(relayStats.data ?? []).map((r) => (
+            <div key={r.id} className="card" style={{ minWidth: 180 }}>
+              <div style={{ fontWeight: 600 }}>
+                {r.isDefault ? "★ " : ""}{r.name}
+                {" "}<span className={r.failed > 0 ? "badge error" : "badge ok"} style={{ marginLeft: 4 }}>{r.failed > 0 ? "errors" : "ok"}</span>
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{r.provider}{r.enabled ? "" : " · disabled"}</div>
+              <div style={{ fontSize: 13, marginTop: 8 }}>
+                {r.delivered} delivered · {r.failed} failed
+              </div>
+              <div className="muted" style={{ fontSize: 12 }}>{r.inFlight} in flight</div>
+            </div>
+          ))}
+          {(relayStats.data ?? []).length === 0 && <span className="muted">No relays.</span>}
         </div>
       </div>
 
