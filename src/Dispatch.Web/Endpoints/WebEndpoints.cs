@@ -5,6 +5,7 @@ using Dispatch.Core.Logging;
 using Dispatch.Core.Providers;
 using Dispatch.Core.Relays;
 using Dispatch.Core.Spool;
+using Dispatch.Web.Auth;
 using Dispatch.Web.Ingestion;
 using Dispatch.Web.Realtime;
 using Microsoft.AspNetCore.Builder;
@@ -98,6 +99,7 @@ public static class WebEndpoints
             });
         });
 
+        group.MapAuth();            // /api/auth/* (see AuthEndpoints)
         group.MapRelayRouting();    // /api/relays/* and /api/routing/* (see RoutingEndpoints)
         group.MapLocalInbox();      // /api/local/messages (see LocalInboxEndpoints)
         group.MapFailedMessages();  // /api/failed/* (see FailedMessageEndpoints)

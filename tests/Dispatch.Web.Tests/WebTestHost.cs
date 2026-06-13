@@ -63,6 +63,7 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton<IRelayRepository, FakeRelayRepository>();
         builder.Services.AddSingleton<IRelaySettingsStore, FakeRelaySettingsStore>();
         builder.Services.AddSingleton<IRoutingRuleRepository, FakeRoutingRuleRepository>();
+        builder.Services.AddSingleton<IConfigRepository, FakeConfigRepository>();
         builder.Services.AddSingleton<IRelayProviderFactory, FakeProviderFactory>();
         builder.Services.AddSingleton<IRelayResolver, RoutingEngine>();
         builder.Services.AddSingleton<ILogRepository, NullLogRepository>();   // decorated by AddDispatchWeb
@@ -143,6 +144,15 @@ internal sealed class FakeRelaySettingsStore : Dispatch.Core.Relays.IRelaySettin
         _settings = settings;
         return Task.CompletedTask;
     }
+}
+
+internal sealed class FakeConfigRepository : IConfigRepository
+{
+    private readonly Dictionary<string, string> _values = new();
+    public Task<string?> GetAsync(string key, CancellationToken ct = default) => Task.FromResult(_values.GetValueOrDefault(key));
+    public Task SetAsync(string key, string value, bool encrypted = false, CancellationToken ct = default) { _values[key] = value; return Task.CompletedTask; }
+    public Task<IReadOnlyList<ConfigEntry>> GetAllAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ConfigEntry>>(_values.Select(kv => new ConfigEntry(kv.Key, kv.Value, false, DateTime.UtcNow)).ToList());
 }
 
 internal sealed class FakeRoutingRuleRepository : IRoutingRuleRepository

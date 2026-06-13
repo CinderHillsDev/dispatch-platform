@@ -59,7 +59,7 @@ Your apps / scripts  →  Dispatch API  (port 8421)      ─┘
 | 📊 **Message log** | After-the-fact history in SQL Server; searchable, filterable; CSV export |
 | 🧪 **Provider testing** | Send a real test email from the settings page; watch the relay log live |
 | 🗑️ **Auto-purge** | Time-based retention + size-based pressure purge (triggers at 9.5 GB, target 9.0 GB) |
-| 🔒 **Security** | Encrypted credential storage; optional UI password; localhost-first defaults |
+| 🔒 **Security** | Encrypted credential storage; required admin password (set at install); localhost-first defaults |
 | 🪟 **Windows** | Installs as a Windows Service; MSI with firewall rules; GUI bootstrap wizard |
 | 🐧 **Linux** | Runs as a systemd unit; interactive bash installer |
 | ⬆️ **Upgrades** | Spool drain → schema migration → binary swap; rollback on failure |

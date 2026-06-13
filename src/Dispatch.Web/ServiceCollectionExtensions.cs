@@ -1,6 +1,9 @@
 using Dispatch.Core.Logging;
+using Dispatch.Web.Auth;
 using Dispatch.Web.Ingestion;
 using Dispatch.Web.Realtime;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -21,6 +24,21 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<RateLimiter>();
         services.AddSingleton<ApiMessageHandler>();
         services.AddScoped<ApiKeyMiddleware>();
+        services.AddScoped<WebAuthMiddleware>();
+
+        // Optional web-UI cookie auth (enforced by WebAuthMiddleware only when configured).
+        services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+            .AddCookie(o =>
+            {
+                o.Cookie.Name = "dispatch.auth";
+                o.Cookie.HttpOnly = true;
+                o.Cookie.SameSite = SameSiteMode.Lax;
+                o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                o.ExpireTimeSpan = TimeSpan.FromHours(8);
+                o.SlidingExpiration = true;
+                o.Events.OnRedirectToLogin = c => { c.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
+                o.Events.OnRedirectToAccessDenied = c => { c.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+            });
 
         // Decorate the existing ILogRepository registration with the broadcaster.
         var inner = services.Single(d => d.ServiceType == typeof(ILogRepository));

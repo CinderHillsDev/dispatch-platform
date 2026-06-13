@@ -91,7 +91,20 @@ try
         }
     }
 
+    // Seed the admin password from install config on first run (the installer supplies AdminPassword).
+    // If none is supplied, the web UI presents a one-time first-run setup screen instead.
+    var adminPassword = builder.Configuration["AdminPassword"];
+    if (!string.IsNullOrWhiteSpace(adminPassword)
+        && string.IsNullOrEmpty(await configRepo.GetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey)))
+    {
+        await configRepo.SetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey,
+            BCrypt.Net.BCrypt.HashPassword(adminPassword, 12), encrypted: false);
+        Log.Information("Seeded admin password from install configuration");
+    }
+
     app.UseEmbeddedUi(webOptions.Port);
+    app.UseAuthentication();
+    app.UseMiddleware<Dispatch.Web.Auth.WebAuthMiddleware>();
     app.UseMiddleware<ApiKeyMiddleware>();
     app.MapIngestionApi(apiOptions.Port);
     app.MapDashboardApi(webOptions.Port);

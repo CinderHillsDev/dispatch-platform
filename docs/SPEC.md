@@ -847,7 +847,7 @@ CREATE TABLE schema_version (
 
 In addition to accepting mail over SMTP, Dispatch exposes an HTTP API on a dedicated port (default **8421**) that lets developers submit messages with a simple `POST` request — no SMTP client, no MX configuration, no email library required. The API is intentionally similar to Mailgun's `/messages` endpoint so it is familiar to developers already using cloud email providers.
 
-The HTTP API and the web UI run on **different ports** with **different authentication**. The web UI (8420) uses optional username/password. The API (8421) uses API keys issued from the web UI.
+The HTTP API and the web UI run on **different ports** with **different authentication**. The web UI (8420) requires an admin password (set at install, or via a one-time first-run setup screen). The API (8421) uses API keys issued from the web UI.
 
 All messages received via the HTTP API follow exactly the same path as SMTP messages — written atomically to `spool/incoming/` and `202 Accepted` returned before any database or network call.
 

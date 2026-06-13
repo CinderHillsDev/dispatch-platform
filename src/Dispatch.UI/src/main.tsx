@@ -8,6 +8,7 @@ import { Relays } from "./pages/Relays";
 import { Routing } from "./pages/Routing";
 import { LocalInbox } from "./pages/LocalInbox";
 import { Failed } from "./pages/Failed";
+import { AuthGate, logout } from "./auth";
 import "./index.css";
 
 function Layout() {
@@ -23,6 +24,7 @@ function Layout() {
           <NavLink to="/routing">Routing</NavLink>
           <NavLink to="/inbox">Local Inbox</NavLink>
         </nav>
+        <button onClick={logout} style={{ marginTop: 18, width: "100%" }}>Sign out</button>
       </aside>
       <main className="main"><Outlet /></main>
     </div>
@@ -48,7 +50,9 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWind
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <AuthGate>
+        <RouterProvider router={router} />
+      </AuthGate>
     </QueryClientProvider>
   </React.StrictMode>,
 );
