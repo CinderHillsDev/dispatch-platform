@@ -17,7 +17,7 @@ public static class ServiceCollectionExtensions
     /// <see cref="BroadcastingLogRepository"/> so persisted events drive the live feed. Call AFTER the
     /// data layer is registered (so an inner <see cref="ILogRepository"/> exists to decorate).
     /// </summary>
-    public static IServiceCollection AddDispatchWeb(this IServiceCollection services)
+    public static IServiceCollection AddDispatchWeb(this IServiceCollection services, bool secureCookies = false)
     {
         services.AddSignalR();
         services.AddSingleton<RelayEventStream>();
@@ -33,8 +33,10 @@ public static class ServiceCollectionExtensions
             {
                 o.Cookie.Name = "dispatch.auth";
                 o.Cookie.HttpOnly = true;
-                o.Cookie.SameSite = SameSiteMode.Lax;
-                o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                o.Cookie.SameSite = SameSiteMode.Strict;
+                // Secure when the dashboard is fronted by TLS (WebUi:RequireHttps); SameAsRequest keeps the
+                // cookie working over plain HTTP in local dev. Set RequireHttps=true in production.
+                o.Cookie.SecurePolicy = secureCookies ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
                 o.ExpireTimeSpan = TimeSpan.FromHours(8);
                 o.SlidingExpiration = true;
                 o.Events.OnRedirectToLogin = c => { c.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };

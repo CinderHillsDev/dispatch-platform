@@ -13,7 +13,7 @@ namespace Dispatch.Web.Endpoints;
 /// <summary>Unauthenticated Prometheus metrics endpoint (text exposition format 0.0.4).</summary>
 public static class MetricsEndpoints
 {
-    public static void MapMetrics(this IEndpointRouteBuilder app)
+    public static void MapMetrics(this IEndpointRouteBuilder app, int webPort)
     {
         app.MapGet("/metrics", async (
             ICounterReader counters, IRelayRepository relays, RelayConcurrencyTracker concurrency,
@@ -52,16 +52,19 @@ public static class MetricsEndpoints
             ]);
 
             Gauge(sb, "dispatch_relay_inflight", "Dispatches in flight per relay",
-                names.Select(kv => ($"relay=\"{Escape(kv.Value)}\"", (double)inFlight.GetValueOrDefault(kv.Key, 0))));
+                names.Select(kv => ((string?)$"relay=\"{Escape(kv.Value)}\"", (double)inFlight.GetValueOrDefault(kv.Key, 0))));
 
             Gauge(sb, "dispatch_relay_delivered_today", "Delivered today per relay",
-                perRelay.Select(r => ($"relay=\"{Escape(names.GetValueOrDefault(r.RelayId, r.RelayId.ToString()))}\"", (double)r.Delivered)));
+                perRelay.Select(r => ((string?)$"relay=\"{Escape(names.GetValueOrDefault(r.RelayId, r.RelayId.ToString()))}\"", (double)r.Delivered)));
 
             Gauge(sb, "dispatch_relay_failed_today", "Failed today per relay",
-                perRelay.Select(r => ($"relay=\"{Escape(names.GetValueOrDefault(r.RelayId, r.RelayId.ToString()))}\"", (double)r.Failed)));
+                perRelay.Select(r => ((string?)$"relay=\"{Escape(names.GetValueOrDefault(r.RelayId, r.RelayId.ToString()))}\"", (double)r.Failed)));
 
             return Results.Text(sb.ToString(), "text/plain; version=0.0.4");
-        });
+        })
+        // Unauthenticated, but only on the dashboard port — never exposed on the ingestion listener.
+        .AddEndpointFilter(async (ctx, next) =>
+            ctx.HttpContext.Connection.LocalPort == webPort ? await next(ctx) : Results.NotFound());
     }
 
     private static void Gauge(StringBuilder sb, string name, string help, IEnumerable<(string? Labels, double Value)> series)

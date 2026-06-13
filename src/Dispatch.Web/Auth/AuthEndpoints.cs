@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Dispatch.Core.Configuration;
+using Dispatch.Web.Ingestion;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
@@ -17,6 +18,9 @@ public static class AuthEndpoints
 {
     public const string PasswordHashKey = "webui.password_hash";
 
+    /// <summary>Max web-UI login attempts per client IP per minute before further attempts are 429'd.</summary>
+    private const int LoginAttemptsPerMinute = 10;
+
     public static void MapAuth(this RouteGroupBuilder group)
     {
         group.MapGet("/auth/status", async (HttpContext ctx, IConfigRepository config) =>
@@ -30,8 +34,17 @@ public static class AuthEndpoints
             });
         });
 
-        group.MapPost("/auth/login", async (LoginRequest req, HttpContext ctx, IConfigRepository config) =>
+        group.MapPost("/auth/login", async (LoginRequest req, HttpContext ctx, IConfigRepository config, RateLimiter limiter) =>
         {
+            // Throttle login attempts per client IP to blunt online brute force (spec §17). bcrypt-12 already
+            // makes each verify costly; this caps the attempt rate on top of that.
+            var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            if (!limiter.TryAcquire($"login:{ip}", LoginAttemptsPerMinute))
+            {
+                ctx.Response.Headers.RetryAfter = "60";
+                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            }
+
             var hash = await config.GetAsync(PasswordHashKey, ctx.RequestAborted);
             if (string.IsNullOrEmpty(hash) || string.IsNullOrEmpty(req.Password) || !BCrypt.Net.BCrypt.Verify(req.Password, hash))
                 return Results.Unauthorized();

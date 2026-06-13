@@ -67,7 +67,7 @@ try
     builder.Services.AddDispatchData(connectionString);
 
     // Web/ingestion services (SignalR, live feed, rate limiter, API-key middleware) — must follow AddDispatchData.
-    builder.Services.AddDispatchWeb();
+    builder.Services.AddDispatchWeb(webOptions.RequireHttps);
 
     // Hosted services: relay worker pool + SMTP listener.
     builder.Services.AddHostedService<SpoolWorkerPool>();
@@ -108,6 +108,7 @@ try
         Log.Information("Seeded admin password from install configuration");
     }
 
+    app.UseSecurityHeaders(webOptions.Port, webOptions.RequireHttps);
     app.UseEmbeddedUi(webOptions.Port);
     app.UseAuthentication();
     app.UseMiddleware<Dispatch.Web.Auth.WebAuthMiddleware>();

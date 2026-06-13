@@ -135,7 +135,7 @@ public static class WebEndpoints
                 : Results.Ok(payload);
         });
 
-        app.MapMetrics();   // unauthenticated Prometheus /metrics (see MetricsEndpoints)
+        app.MapMetrics(webPort);   // unauthenticated Prometheus /metrics, dashboard port only (see MetricsEndpoints)
 
         var group = app.MapGroup("/api").RequireLocalPort(webPort);
 
