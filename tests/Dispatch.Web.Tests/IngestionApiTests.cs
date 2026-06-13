@@ -88,6 +88,18 @@ public class IngestionApiTests(WebTestHost host) : IClassFixture<WebTestHost>
     }
 
     [Fact]
+    public async Task Ingest_malformed_json_is_400_not_500()
+    {
+        var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/messages")
+        {
+            Content = new StringContent("{ not valid json ", System.Text.Encoding.UTF8, "application/json"),
+        };
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", WebTestHost.ValidKey);
+        var res = await host.Api.SendAsync(req);
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
     public async Task Ingest_without_body_content_is_400()
     {
         // Neither text nor html.

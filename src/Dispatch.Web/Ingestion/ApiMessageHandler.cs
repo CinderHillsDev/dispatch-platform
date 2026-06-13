@@ -27,9 +27,9 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, ILogger<ApiMessageHa
         {
             return Results.BadRequest(new { error = ex.Message });
         }
-        catch (Exception ex) when (ex is FormatException or ParseException)
+        catch (Exception ex) when (ex is FormatException or ParseException or System.Text.Json.JsonException)
         {
-            return Results.BadRequest(new { error = $"Invalid address or message: {ex.Message}" });
+            return Results.BadRequest(new { error = $"Invalid request: {ex.Message}" });
         }
 
         var from = mime.From.Mailboxes.FirstOrDefault()?.Address ?? "";
