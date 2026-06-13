@@ -28,8 +28,10 @@
 set -euo pipefail
 
 INSTALL_DIR="/opt/dispatch"
-CONFIG_DIR="/etc/dispatch"
 DATA_DIR="/var/lib/dispatch"
+# Config + spool live together under the data dir (the service's content root), mirroring the Windows
+# ProgramData layout. The spool default (./.dispatch-spool, from the SQL config) resolves under here.
+CONFIG_DIR="$DATA_DIR"
 LOG_DIR="/var/log/dispatch"
 HTTP_PORT="8420"
 API_PORT="8421"
@@ -142,7 +144,7 @@ dotnet publish "$SOURCE_DIR/src/Dispatch.Service" -c Release -o "$INSTALL_DIR"
 
 echo "==> Creating the 'dispatch' service account and directories"
 id -u dispatch >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dispatch
-mkdir -p "$CONFIG_DIR" "$DATA_DIR/spool" "$LOG_DIR"
+mkdir -p "$CONFIG_DIR" "$DATA_DIR/.dispatch-spool" "$LOG_DIR"
 
 echo "==> Writing $CONFIG_DIR/appsettings.json"
 # Spec §12.1: appsettings holds ONLY the connection string, the admin-password seed, and the Web UI TLS
@@ -167,9 +169,9 @@ chmod 600 "$CONFIG_DIR/appsettings.json"
 
 # Spool file security (spec §14.5): pre-create the subdirectories mode 700 so they're correct from first
 # start; the service runs with UMask=0177 so every .eml/.meta is created rw------- (600).
-mkdir -p "$DATA_DIR/spool/incoming" "$DATA_DIR/spool/processing" "$DATA_DIR/spool/failed"
-chown -R dispatch:dispatch "$DATA_DIR/spool"
-chmod 700 "$DATA_DIR/spool" "$DATA_DIR/spool/incoming" "$DATA_DIR/spool/processing" "$DATA_DIR/spool/failed"
+mkdir -p "$DATA_DIR/.dispatch-spool/incoming" "$DATA_DIR/.dispatch-spool/processing" "$DATA_DIR/.dispatch-spool/failed"
+chown -R dispatch:dispatch "$DATA_DIR/.dispatch-spool"
+chmod 700 "$DATA_DIR/.dispatch-spool" "$DATA_DIR/.dispatch-spool/incoming" "$DATA_DIR/.dispatch-spool/processing" "$DATA_DIR/.dispatch-spool/failed"
 
 echo "==> Installing systemd unit"
 install -m 644 "$SOURCE_DIR/installer/linux/dispatch.service" /etc/systemd/system/dispatch.service

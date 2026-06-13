@@ -18,6 +18,11 @@ public class RelayProviderFactoryTests
     [InlineData(RelayProviderType.Mailgun, typeof(MailgunProvider))]
     [InlineData(RelayProviderType.SendGrid, typeof(SendGridProvider))]
     [InlineData(RelayProviderType.AzureCommunication, typeof(AzureProvider))]
+    [InlineData(RelayProviderType.AmazonSes, typeof(AmazonSesProvider))]
+    [InlineData(RelayProviderType.Postmark, typeof(PostmarkProvider))]
+    [InlineData(RelayProviderType.Resend, typeof(ResendProvider))]
+    [InlineData(RelayProviderType.SparkPost, typeof(SparkPostProvider))]
+    [InlineData(RelayProviderType.Smtp2Go, typeof(Smtp2GoProvider))]
     public void Builds_expected_provider_type(RelayProviderType provider, Type expected)
     {
         var built = Factory().Build(new RelayConfig { Provider = provider });

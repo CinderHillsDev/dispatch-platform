@@ -39,6 +39,30 @@ public static class RelayProviderSchema
             new("Password", "smtp.password", Secret: true, Required: false),
             new("TlsMode", "smtp.tls_mode", Secret: false, Required: false),
         ],
+        RelayProviderType.AmazonSes =>
+        [
+            new("AccessKeyId", "ses.access_key_id", Secret: false, Required: true),
+            new("SecretAccessKey", "ses.secret_access_key", Secret: true, Required: true),
+            new("Region", "ses.region", Secret: false, Required: true),
+        ],
+        RelayProviderType.Postmark =>
+        [
+            new("ApiKey", "postmark.server_token", Secret: true, Required: true),
+            new("MessageStream", "postmark.message_stream", Secret: false, Required: false),
+        ],
+        RelayProviderType.Resend =>
+        [
+            new("ApiKey", "resend.api_key", Secret: true, Required: true),
+        ],
+        RelayProviderType.SparkPost =>
+        [
+            new("ApiKey", "sparkpost.api_key", Secret: true, Required: true),
+            new("Region", "sparkpost.region", Secret: false, Required: false),
+        ],
+        RelayProviderType.Smtp2Go =>
+        [
+            new("ApiKey", "smtp2go.api_key", Secret: true, Required: true),
+        ],
         _ => [],
     };
 }

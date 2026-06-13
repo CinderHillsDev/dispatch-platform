@@ -14,4 +14,9 @@ public enum RelayProviderType
     Mailgun,
     SendGrid,
     AzureCommunication,
+    AmazonSes,
+    Postmark,
+    Resend,
+    SparkPost,
+    Smtp2Go,
 }

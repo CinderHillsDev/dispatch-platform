@@ -22,6 +22,36 @@ const PROVIDER_FIELDS: Record<string, { name: string; secret: boolean; required:
     { name: "ConnectionString", secret: true, required: true },
     { name: "SenderAddress", secret: false, required: true },
   ],
+  AmazonSes: [
+    { name: "AccessKeyId", secret: false, required: true },
+    { name: "SecretAccessKey", secret: true, required: true },
+    { name: "Region", secret: false, required: true },
+  ],
+  Postmark: [
+    { name: "ApiKey", secret: true, required: true },
+    { name: "MessageStream", secret: false, required: false },
+  ],
+  Resend: [{ name: "ApiKey", secret: true, required: true }],
+  SparkPost: [
+    { name: "ApiKey", secret: true, required: true },
+    { name: "Region", secret: false, required: false },
+  ],
+  Smtp2Go: [{ name: "ApiKey", secret: true, required: true }],
+};
+
+// One-click SMTP presets — pick a provider and host/port/TLS are filled in; just add credentials. Almost
+// every provider offers SMTP, so this covers the long tail without a native integration for each.
+const SMTP_PRESETS: Record<string, { Host: string; Port: string; TlsMode: string }> = {
+  "Amazon SES (us-east-1)": { Host: "email-smtp.us-east-1.amazonaws.com", Port: "587", TlsMode: "StartTls" },
+  "Brevo": { Host: "smtp-relay.brevo.com", Port: "587", TlsMode: "StartTls" },
+  "Gmail / Google Workspace": { Host: "smtp.gmail.com", Port: "587", TlsMode: "StartTls" },
+  "Mailjet": { Host: "in-v3.mailjet.com", Port: "587", TlsMode: "StartTls" },
+  "Microsoft 365": { Host: "smtp.office365.com", Port: "587", TlsMode: "StartTls" },
+  "Postmark": { Host: "smtp.postmarkapp.com", Port: "587", TlsMode: "StartTls" },
+  "Resend": { Host: "smtp.resend.com", Port: "465", TlsMode: "SslOnConnect" },
+  "SendGrid": { Host: "smtp.sendgrid.net", Port: "587", TlsMode: "StartTls" },
+  "SMTP2GO": { Host: "mail.smtp2go.com", Port: "587", TlsMode: "StartTls" },
+  "SparkPost": { Host: "smtp.sparkpostmail.com", Port: "587", TlsMode: "StartTls" },
 };
 
 export function Relays() {
@@ -196,6 +226,23 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
         <p className="muted" style={{ marginTop: -4, marginBottom: 12, fontSize: 12 }}>
           Local / developer mode — never delivers externally. Captured messages appear in the Local Inbox.
         </p>
+      )}
+
+      {provider === "Smtp" && (
+        <div style={{ marginBottom: 10 }}>
+          <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Preset (optional)</label>
+          <select
+            style={{ width: "100%" }}
+            defaultValue=""
+            onChange={(e) => {
+              const p = SMTP_PRESETS[e.target.value];
+              if (p) setValues({ ...values, Host: p.Host, Port: p.Port, TlsMode: p.TlsMode });
+            }}
+          >
+            <option value="">— pick a provider to fill host/port —</option>
+            {Object.keys(SMTP_PRESETS).map((k) => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </div>
       )}
 
       {fields.map((f) => (

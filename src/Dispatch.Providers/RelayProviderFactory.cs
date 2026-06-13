@@ -20,6 +20,11 @@ public sealed class RelayProviderFactory(
         RelayProviderType.Mailgun => new MailgunProvider(config, httpClientFactory.CreateClient("mailgun")),
         RelayProviderType.SendGrid => new SendGridProvider(config, sendGridClientFactory),
         RelayProviderType.AzureCommunication => new AzureProvider(config, emailClientFactory),
+        RelayProviderType.AmazonSes => new AmazonSesProvider(config),
+        RelayProviderType.Postmark => new PostmarkProvider(config, httpClientFactory.CreateClient("postmark")),
+        RelayProviderType.Resend => new ResendProvider(config, httpClientFactory.CreateClient("resend")),
+        RelayProviderType.SparkPost => new SparkPostProvider(config, httpClientFactory.CreateClient("sparkpost")),
+        RelayProviderType.Smtp2Go => new Smtp2GoProvider(config, httpClientFactory.CreateClient("smtp2go")),
         _ => throw new NotSupportedException($"Relay provider '{config.Provider}' is not supported."),
     };
 }

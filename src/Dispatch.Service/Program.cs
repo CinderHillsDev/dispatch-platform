@@ -94,9 +94,16 @@ try
     builder.Services.Configure<PurgeOptions>(_ => { });
     builder.Services.Configure<DefaultRelayOptions>(_ => { });
 
-    // Core singletons.
+    // Core singletons. A relative spool directory is resolved against the content root (not the process
+    // CWD, which is system32 for a Windows service / a read-only dir for the systemd unit), so the default
+    // "./.dispatch-spool" lands beside the app data, not wherever the service happened to start.
     builder.Services.AddSingleton(sp =>
-        new SpoolDirectory(sp.GetRequiredService<IOptions<SpoolOptions>>().Value.Directory));
+    {
+        var dir = sp.GetRequiredService<IOptions<SpoolOptions>>().Value.Directory;
+        if (!Path.IsPathRooted(dir))
+            dir = Path.Combine(builder.Environment.ContentRootPath, dir);
+        return new SpoolDirectory(dir);
+    });
     builder.Services.AddSingleton<IRelayResolver, RoutingEngine>();
     builder.Services.AddHttpClient();
     builder.Services.AddSingleton<ISendGridClientFactory, SendGridClientFactory>();

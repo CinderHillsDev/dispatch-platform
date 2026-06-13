@@ -6,8 +6,8 @@ After=network.target
 Type=simple
 User=dispatch
 Group=dispatch
-# Binaries live in /opt/dispatch; config (appsettings.json) is read from the working directory.
-WorkingDirectory=/etc/dispatch
+# Binaries live in /opt/dispatch; appsettings.json + the spool live under the data dir (the content root).
+WorkingDirectory=/var/lib/dispatch
 ExecStart=/opt/dispatch/Dispatch.Service
 Environment=DOTNET_ENVIRONMENT=Production
 Environment=DISPATCH_LOG_DIR=/var/log/dispatch
@@ -21,7 +21,7 @@ PrivateTmp=true
 # Spool .eml/.meta files contain message content (spec §14.5): force mode 600 (rw-------) on every
 # file the service creates so message bodies are never group/world-readable.
 UMask=0177
-ReadWritePaths=/var/lib/dispatch /var/log/dispatch /etc/dispatch
+ReadWritePaths=/var/lib/dispatch /var/log/dispatch
 
 [Install]
 WantedBy=multi-user.target
