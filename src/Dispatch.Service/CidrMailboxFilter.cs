@@ -1,5 +1,6 @@
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
+using Dispatch.Core.Logging;
 using Dispatch.Core.Maintenance;
 using Dispatch.Core.Routing;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,8 @@ namespace Dispatch.Service;
 /// <summary>
 /// Application-layer access control (spec §5.3, §14.2): refuses MAIL FROM when the source IP is outside
 /// the configured allow-list, enforces the global max message size at MAIL FROM, and enforces the
-/// per-relay size limit at RCPT TO (before DATA) by running the routing engine. Denied attempts are counted.
+/// per-relay size limit at RCPT TO (before DATA) by running the routing engine. Denied attempts are counted
+/// and, when <see cref="ILoggingSettings.LogDeniedAsync"/> is enabled, written to relay_log (spec §6.6/§9.2).
 /// </summary>
 public sealed class CidrMailboxFilter : IMailboxFilter
 {
@@ -27,6 +29,8 @@ public sealed class CidrMailboxFilter : IMailboxFilter
     private readonly ICounterRepository _counters;
     private readonly IRelayResolver _routing;
     private readonly IntakeState _intake;
+    private readonly ILogRepository _logRepo;
+    private readonly ILoggingSettings _loggingSettings;
     private readonly ILogger<CidrMailboxFilter> _log;
 
     public CidrMailboxFilter(
@@ -34,6 +38,8 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         ICounterRepository counters,
         IRelayResolver routing,
         IntakeState intake,
+        ILogRepository logRepo,
+        ILoggingSettings loggingSettings,
         ILogger<CidrMailboxFilter> log)
     {
         var o = options.Value;
@@ -46,6 +52,8 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         _counters = counters;
         _routing = routing;
         _intake = intake;
+        _logRepo = logRepo;
+        _loggingSettings = loggingSettings;
         _log = log;
     }
 
@@ -57,7 +65,8 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         switch (_intake.Level)
         {
             case IntakeLevel.Suspended:
-                _ = _counters.IncrementAsync(0, CounterField.Denied, cancellationToken);
+                await DenyAsync(context, from.AsAddress(), null,
+                    "Intake suspended (spool disk critically low)", cancellationToken);
                 _log.LogWarning("Rejecting MAIL FROM {From}: intake suspended (spool disk critically low)",
                     from.AsAddress());
                 return false;
@@ -72,6 +81,8 @@ public sealed class CidrMailboxFilter : IMailboxFilter
 
         if (_maxBytes > 0 && size > _maxBytes)
         {
+            await DenyAsync(context, from.AsAddress(), null,
+                $"Declared size {size} exceeds global limit {_maxBytes}", cancellationToken);
             _log.LogWarning("Rejecting MAIL FROM {From}: size {Size} exceeds limit {Limit}",
                 from.AsAddress(), size, _maxBytes);
             return false;
@@ -86,7 +97,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
 
         if (!allowed)
         {
-            _ = _counters.IncrementAsync(0, CounterField.Denied, cancellationToken);
+            await DenyAsync(context, from.AsAddress(), null, $"Source IP {ip} not in allow-list", cancellationToken);
             _log.LogWarning("Denied connection from {Ip} (not in allow-list)", ip);
         }
 
@@ -107,7 +118,8 @@ public sealed class CidrMailboxFilter : IMailboxFilter
 
         if (limit > 0 && declaredSize > limit)
         {
-            _ = _counters.IncrementAsync(0, CounterField.Denied, cancellationToken);
+            await DenyAsync(context, from.AsAddress(), to.AsAddress(),
+                $"Declared size {declaredSize} exceeds relay \"{relay.Name}\" limit {limit}", cancellationToken);
             _log.LogWarning(
                 "Rejecting RCPT TO {To}: declared size {Size} exceeds relay \"{Relay}\" limit {Limit}",
                 to.AsAddress(), declaredSize, relay.Name, limit);
@@ -115,6 +127,41 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Records a denial: always increments the Denied counter, and (when enabled) writes a Denied relay_log
+    /// row so refusals are visible in the message log, not just the dashboard counter. Both are best-effort —
+    /// a logging/counter failure must never turn a refusal into an acceptance.
+    /// </summary>
+    private async Task DenyAsync(ISessionContext context, string from, string? to, string reason, CancellationToken ct)
+    {
+        try { await _counters.IncrementAsync(0, CounterField.Denied, ct); }
+        catch (Exception ex) { _log.LogError(ex, "Denied-counter increment failed"); }
+
+        try
+        {
+            if (!await _loggingSettings.LogDeniedAsync(ct)) return;
+            await _logRepo.InsertAsync(new RelayLogEntry
+            {
+                Event = "Denied",
+                Status = "Denied",
+                FromAddress = from,
+                FromDomain = Domain(from),
+                ToAddresses = to is null ? [] : [to],
+                ToDomain = to is null ? "" : Domain(to),
+                Error = reason,
+                IngestSource = "SMTP",
+                SourceIp = RemoteIp(context)?.ToString(),
+            }, ct);
+        }
+        catch (Exception ex) { _log.LogError(ex, "Denied relay_log insert failed (refusal unaffected)"); }
+    }
+
+    private static string Domain(string address)
+    {
+        var at = address.LastIndexOf('@');
+        return at >= 0 && at < address.Length - 1 ? address[(at + 1)..] : "";
     }
 
     private static IPAddress? RemoteIp(ISessionContext context) =>

@@ -234,4 +234,54 @@ public class SpoolWorkerPoolTests
             await pool.StopAsync(CancellationToken.None);
         }
     }
+
+    [Fact]
+    public async Task Received_is_counted_once_across_retries_and_recovery()
+    {
+        using var t = new TempSpool();
+        var counters = new InMemoryCounterRepository();
+        var provider = DelegateProvider.AlwaysThrows(new TransientRelayException("flap"));
+        var pool = TestData.BuildPool(t.Spool, provider, new CapturingLogRepository(), counters,
+            retry: new RetryOptions { MaxRetries = 5, DelaysSeconds = [0] });
+
+        var (emlPath, id) = TestData.Seed(t.Spool.ProcessingDir, t.Spool, retryCount: 0);
+        await pool.ProcessAsync(emlPath, Relay(), CancellationToken.None);   // attempt 1: transient → back to incoming
+        Assert.Equal(1, counters.Get(1, CounterField.Received));
+
+        // Simulate crash-recovery: the file (still on its first delivery, ReceivedCounted persisted) is moved
+        // back to processing and reprocessed. Received must NOT be counted a second time.
+        var incoming = t.Spool.IncomingPath(id);
+        var processing = t.Spool.ProcessingPath($"{id}.eml");
+        File.Move(incoming, processing, overwrite: true);
+        File.Move(SpoolMeta.PathFor(incoming), SpoolMeta.PathFor(processing), overwrite: true);
+        await pool.ProcessAsync(processing, Relay(), CancellationToken.None);   // attempt 2
+
+        Assert.Equal(1, counters.Get(1, CounterField.Received));   // counted once, not twice
+        Assert.Equal(2, counters.Get(1, CounterField.Retried));    // both attempts retried
+    }
+
+    [Fact]
+    public async Task Claim_quarantines_incoming_file_with_unreadable_meta_after_grace()
+    {
+        using var t = new TempSpool();
+        var pool = TestData.BuildPool(t.Spool, DelegateProvider.AlwaysSucceeds(),
+            new CapturingLogRepository(), new InMemoryCounterRepository());
+
+        // A recent .eml with no .meta is still mid-write — left alone.
+        var fresh = Guid.NewGuid();
+        File.WriteAllText(t.Spool.IncomingPath(fresh), "raw");
+        Assert.Null(await pool.ClaimFileForAvailableRelayAsync(CancellationToken.None));
+        Assert.True(File.Exists(t.Spool.IncomingPath(fresh)));
+
+        // An old .eml whose .meta never appeared (torn/corrupt) is quarantined to failed/ so it can't strand.
+        var stale = Guid.NewGuid();
+        var staleEml = t.Spool.IncomingPath(stale);
+        File.WriteAllText(staleEml, "raw");
+        File.SetLastWriteTimeUtc(staleEml, DateTime.UtcNow.AddMinutes(-10));
+
+        Assert.Null(await pool.ClaimFileForAvailableRelayAsync(CancellationToken.None));
+        Assert.False(File.Exists(staleEml));
+        Assert.True(File.Exists(t.Spool.FailedPath($"{stale}.eml")));
+        Assert.True(File.Exists(t.Spool.IncomingPath(fresh)));   // the fresh one is untouched
+    }
 }

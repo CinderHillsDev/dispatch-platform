@@ -18,6 +18,8 @@ public sealed class SpoolMeta
     public string? ApiKeyName { get; set; }
     public string[]? Tags { get; set; }
     public int RetryCount { get; set; }
+    /// <summary>True once this message has been counted as Received, so crash-recovery can't double-count it.</summary>
+    public bool ReceivedCounted { get; set; }
     public DateTime? NextRetryAt { get; set; }
     public int? LastRelayId { get; set; }
     public string? LastError { get; set; }

@@ -34,10 +34,16 @@ public sealed class SpoolMessageStore : MessageStore
     {
         var id = Guid.NewGuid();
         var path = _spool.IncomingPath(id);
-        var bytes = buffer.ToArray();
 
-        // Disk write — the hot path. Everything else happens after 250 OK.
-        await File.WriteAllBytesAsync(path, bytes, cancellationToken);
+        // Disk write — the hot path. Stream the message straight to the spool file segment-by-segment so we
+        // never hold the whole body as an extra in-memory byte[] (bounded only by the SMTP SIZE ceiling).
+        long size;
+        await using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
+        {
+            foreach (var segment in buffer)
+                await fs.WriteAsync(segment, cancellationToken);
+            size = fs.Length;
+        }
 
         var from = SafeAddress(transaction.From);
         var to = transaction.To?
@@ -49,8 +55,8 @@ public sealed class SpoolMessageStore : MessageStore
         string[]? tags = null;
         try
         {
-            using var ms = new MemoryStream(bytes, writable: false);
-            var msg = await MimeMessage.LoadAsync(ms, cancellationToken);
+            await using var rs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
+            var msg = await MimeMessage.LoadAsync(rs, cancellationToken);
             tags = msg.Headers
                 .Where(h => h.Field.Equals("X-Dispatch-Tag", StringComparison.OrdinalIgnoreCase))
                 .Select(h => h.Value.Trim())
@@ -80,7 +86,7 @@ public sealed class SpoolMessageStore : MessageStore
 
         _spool.Signal(Path.GetFileName(path));
         _log.LogInformation(
-            "Received {SpoolId} from {From} ({Size} bytes) → 250 OK", id, from, bytes.Length);
+            "Received {SpoolId} from {From} ({Size} bytes) → 250 OK", id, from, size);
 
         return SmtpResponse.Ok;
     }

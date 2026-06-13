@@ -96,6 +96,8 @@ public class CidrMailboxFilterTests
             new InMemoryCounterRepository(),
             resolver,
             intake ?? new IntakeState(),
+            new CapturingLogRepository(),
+            new Dispatch.Core.Logging.AlwaysLogSettings(),
             NullLogger<CidrMailboxFilter>.Instance);
     }
 }

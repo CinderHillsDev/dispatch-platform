@@ -205,7 +205,14 @@ public sealed class SpoolWorkerPool : BackgroundService
         foreach (var candidate in candidates)
         {
             var meta = SpoolMeta.Peek(candidate);
-            if (meta is null) continue;                                   // not ready / being written
+            if (meta is null)
+            {
+                // Missing/corrupt .meta. Normally this is just the sub-second window while the sidecar is being
+                // written; but a torn/corrupt sidecar would otherwise strand the .eml forever (the claim loop
+                // skips it on every pass). Quarantine it to failed/ once it is older than the grace period.
+                QuarantineUnreadable(candidate);
+                continue;
+            }
 
             if (meta.NextRetryAt is { } due && due > DateTime.UtcNow) continue;  // back-off not elapsed
 
@@ -223,6 +230,11 @@ public sealed class SpoolWorkerPool : BackgroundService
             {
                 sem.Release();                                            // another worker beat us — move on
                 continue;
+            }
+            catch
+            {
+                sem.Release();                                            // never leak the relay slot on an unexpected failure
+                throw;
             }
 
             var metaSrc = SpoolMeta.PathFor(candidate);
@@ -252,11 +264,16 @@ public sealed class SpoolWorkerPool : BackgroundService
         var retry = await _retry.GetAsync(ct);
         var sw = Stopwatch.StartNew();
 
-        // Count each message as received once, on its first dispatch attempt (off the hot path).
-        if (meta.RetryCount == 0)
+        // Count each message as received exactly once (off the hot path). Guarded by a persisted flag rather
+        // than RetryCount==0 so a crash-recovered file (moved processing→incoming and reprocessed while still
+        // on its first attempt) is not double-counted, which would inflate the received total and throughput.
+        if (!meta.ReceivedCounted)
         {
             await SafeIncrement(relay.Id, CounterField.Received, ct);
             _minuteRing.RecordReceived();
+            meta.ReceivedCounted = true;
+            try { meta.Save(emlPath); }
+            catch (Exception ex) { _log.LogDebug(ex, "Could not persist ReceivedCounted for {SpoolId}", meta.SpoolId); }
         }
 
         try
@@ -330,7 +347,11 @@ public sealed class SpoolWorkerPool : BackgroundService
             _log.LogWarning(
                 "Transient failure for {SpoolId} (attempt {Attempt}): {Error}; retrying in {Delay}",
                 meta.SpoolId, meta.RetryCount, ex.Message, delay);
-            ScheduleSignal(Path.GetFileName(incomingEml), delay, ct);
+            // Zero-delay retries get an immediate doorbell; delayed retries are picked up by the worker-loop
+            // fallback poll once NextRetryAt elapses (the claim loop honours NextRetryAt). This avoids spawning
+            // an unbounded number of fire-and-forget delay timers under a sustained provider outage.
+            if (delay <= TimeSpan.Zero)
+                _spool.Signal(Path.GetFileName(incomingEml));
         }
         catch (Exception ex)
         {
@@ -379,23 +400,39 @@ public sealed class SpoolWorkerPool : BackgroundService
 
     // ---- Helpers ---------------------------------------------------------------------------
 
-    private void ScheduleSignal(string filename, TimeSpan delay, CancellationToken ct)
-    {
-        if (delay <= TimeSpan.Zero)
-        {
-            _spool.Signal(filename);
-            return;
-        }
+    /// <summary>
+    /// Grace period before an incoming .eml whose .meta is missing/unreadable is treated as corrupt rather
+    /// than mid-write. Generously larger than the sub-second ingest write window (spec §6.8 orphan handling).
+    /// </summary>
+    private static readonly TimeSpan UnreadableMetaGrace = TimeSpan.FromMinutes(5);
 
-        _ = Task.Run(async () =>
+    private void QuarantineUnreadable(string emlPath)
+    {
+        DateTime writtenUtc;
+        try { writtenUtc = File.GetLastWriteTimeUtc(emlPath); }
+        catch { return; }   // vanished (claimed/deleted by another worker) — nothing to do
+
+        if (DateTime.UtcNow - writtenUtc < UnreadableMetaGrace) return;   // still within the mid-write window
+
+        try
         {
-            try
+            var dest = _spool.FailedPath(Path.GetFileName(emlPath));
+            File.Move(emlPath, dest, overwrite: true);
+            var meta = SpoolMeta.PathFor(emlPath);
+            if (File.Exists(meta))
             {
-                await Task.Delay(delay, ct);
-                _spool.Signal(filename);
+                try { File.Move(meta, SpoolMeta.PathFor(dest), overwrite: true); } catch { /* best effort */ }
             }
-            catch (OperationCanceledException) { }
-        }, ct);
+            _log.LogError("Quarantined {File} to failed/: its .meta is missing or corrupt", Path.GetFileName(emlPath));
+        }
+        catch (Exception ex) when (ex is IOException or FileNotFoundException)
+        {
+            // Raced with another worker that claimed/removed it — fine, it's no longer stranded.
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to quarantine unreadable spool file {File}", Path.GetFileName(emlPath));
+        }
     }
 
     private static bool IsTransient(Exception ex) => ex is TransientRelayException;
