@@ -1,5 +1,6 @@
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
+using Dispatch.Core.Maintenance;
 using Dispatch.Core.Providers;
 using Dispatch.Core.Relays;
 using Dispatch.Core.Routing;
@@ -41,6 +42,7 @@ try
     builder.Services.Configure<DefaultRelayOptions>(builder.Configuration.GetSection(DefaultRelayOptions.SectionName));
     builder.Services.Configure<ApiOptions>(builder.Configuration.GetSection(ApiOptions.SectionName));
     builder.Services.Configure<WebUiOptions>(builder.Configuration.GetSection(WebUiOptions.SectionName));
+    builder.Services.Configure<PurgeOptions>(builder.Configuration.GetSection(PurgeOptions.SectionName));
 
     // Core singletons.
     builder.Services.AddSingleton(sp =>
@@ -65,6 +67,7 @@ try
     // Hosted services: relay worker pool + SMTP listener.
     builder.Services.AddHostedService<SpoolWorkerPool>();
     builder.Services.AddHostedService<SmtpListenerService>();
+    builder.Services.AddHostedService<PurgeWorker>();
 
     var app = builder.Build();
 

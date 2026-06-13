@@ -63,6 +63,33 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     }
 
     [Fact]
+    public async Task Log_retention_purge_deletes_aged_rows()
+    {
+        if (!sql.Available) return;
+        var maintenance = new SqlLogMaintenance(sql.Factory);
+        var spoolId = Guid.NewGuid().ToString("N");
+
+        // Insert a Delivered row dated 100 days ago (bypassing the SYSUTCDATETIME default).
+        await using (var cn = await sql.Factory.OpenAsync())
+        {
+            await cn.ExecuteAsync("""
+                INSERT INTO relay_log (logged_at, spool_id, event, status, from_address, from_domain, to_addresses, to_domain, subject)
+                VALUES (DATEADD(DAY, -100, SYSUTCDATETIME()), @spoolId, 'Delivered', 'OK', 'a@x.com', 'x.com', '[]', 'y.com', 's');
+                """, new { spoolId });
+        }
+
+        var deleted = await maintenance.PurgeByRetentionAsync("Delivered", retentionDays: 30);
+        Assert.True(deleted >= 1);
+
+        await using var verify = await sql.Factory.OpenAsync();
+        var remaining = await verify.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM relay_log WHERE spool_id = @spoolId", new { spoolId });
+        Assert.Equal(0, remaining);
+
+        Assert.True(await maintenance.GetDatabaseSizeBytesAsync() > 0);
+    }
+
+    [Fact]
     public async Task Counter_merge_accumulates_today()
     {
         if (!sql.Available) return;

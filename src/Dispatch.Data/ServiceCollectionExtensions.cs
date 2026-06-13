@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRoutingRuleRepository, SqlRoutingRuleRepository>();
         services.AddSingleton<IApiKeyRepository, SqlApiKeyRepository>();
         services.AddSingleton<IMessageLogQuery, SqlMessageLogQuery>();
+        services.AddSingleton<ILogMaintenance, SqlLogMaintenance>();
 
         return services;
     }
