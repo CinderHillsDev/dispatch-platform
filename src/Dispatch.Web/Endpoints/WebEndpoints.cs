@@ -78,6 +78,8 @@ public static class WebEndpoints
             });
         });
 
+        app.MapMetrics();   // unauthenticated Prometheus /metrics (see MetricsEndpoints)
+
         var group = app.MapGroup("/api").RequireLocalPort(webPort);
 
         group.MapGet("/stats", async (ICounterReader counters, SpoolDirectory spool, CancellationToken ct) =>
