@@ -1,5 +1,6 @@
 using System.Data;
 using System.Text;
+using System.Text.Json;
 using Dapper;
 using Dispatch.Core.Logging;
 
@@ -27,6 +28,10 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         if (!string.IsNullOrWhiteSpace(filter.IngestSource)) { where.Append(" AND ingest_source = @IngestSource"); p.Add("IngestSource", filter.IngestSource); }
         if (!string.IsNullOrWhiteSpace(filter.FromDomain)) { where.Append(" AND from_domain = @FromDomain"); p.Add("FromDomain", filter.FromDomain); }
         if (!string.IsNullOrWhiteSpace(filter.ToDomain)) { where.Append(" AND to_domain = @ToDomain"); p.Add("ToDomain", filter.ToDomain); }
+        if (!string.IsNullOrWhiteSpace(filter.RelayName)) { where.Append(" AND relay_name = @RelayName"); p.Add("RelayName", filter.RelayName); }
+        // Tag: tags is a JSON array string (e.g. ["a","b"]); match the parameterised pattern %"tag"% — the value
+        // stays a Dapper parameter, only the LIKE wildcards are literal (no interpolation of user input).
+        if (!string.IsNullOrWhiteSpace(filter.Tag)) { where.Append(" AND tags LIKE @TagPattern"); p.Add("TagPattern", "%\"" + filter.Tag + "\"%"); }
 
         if (filter.Cursor is { } cursor)
         {
@@ -71,5 +76,73 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         await using var cn = await factory.OpenAsync(ct);
         return await cn.QuerySingleOrDefaultAsync<MessageLogRow>(
             new CommandDefinition(sql, new { spoolId }, cancellationToken: ct));
+    }
+
+    public async Task<MessageLogDetail?> GetByIdAsync(long id, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT TOP 1
+                id AS Id, logged_at AS LoggedAt, event AS Event, status AS Status, spool_id AS SpoolId,
+                retry_attempt AS RetryAttempt, from_address AS FromAddress, from_domain AS FromDomain,
+                to_addresses AS ToAddressesJson, to_domain AS ToDomain, subject AS Subject, size_bytes AS SizeBytes,
+                relay_name AS RelayName, routing_rule_name AS RoutingRuleName, routing_matched AS RoutingMatched,
+                provider AS Provider, provider_message_id AS ProviderMessageId, provider_response AS ProviderResponse,
+                duration_ms AS DurationMs, error AS Error, ingest_source AS IngestSource, source_ip AS SourceIp,
+                api_key_name AS ApiKeyName, tags AS TagsJson
+            FROM relay_log
+            WHERE id = @id;
+            """;
+        await using var cn = await factory.OpenAsync(ct);
+        var raw = await cn.QuerySingleOrDefaultAsync<DetailRow>(
+            new CommandDefinition(sql, new { id }, cancellationToken: ct));
+        return raw?.ToDetail();
+    }
+
+    /// <summary>Flat projection — the JSON array columns are deserialised into string[] by <see cref="ToDetail"/>.</summary>
+    private sealed class DetailRow
+    {
+        public long Id { get; init; }
+        public DateTime LoggedAt { get; init; }
+        public string Event { get; init; } = "";
+        public string Status { get; init; } = "";
+        public string SpoolId { get; init; } = "";
+        public int RetryAttempt { get; init; }
+        public string FromAddress { get; init; } = "";
+        public string FromDomain { get; init; } = "";
+        public string? ToAddressesJson { get; init; }
+        public string ToDomain { get; init; } = "";
+        public string? Subject { get; init; }
+        public int SizeBytes { get; init; }
+        public string? RelayName { get; init; }
+        public string? RoutingRuleName { get; init; }
+        public bool RoutingMatched { get; init; }
+        public string? Provider { get; init; }
+        public string? ProviderMessageId { get; init; }
+        public string? ProviderResponse { get; init; }
+        public int? DurationMs { get; init; }
+        public string? Error { get; init; }
+        public string IngestSource { get; init; } = "";
+        public string? SourceIp { get; init; }
+        public string? ApiKeyName { get; init; }
+        public string? TagsJson { get; init; }
+
+        public MessageLogDetail ToDetail() => new()
+        {
+            Id = Id, LoggedAt = LoggedAt, Event = Event, Status = Status, SpoolId = SpoolId,
+            RetryAttempt = RetryAttempt, FromAddress = FromAddress, FromDomain = FromDomain,
+            ToAddresses = ParseJsonArray(ToAddressesJson), ToDomain = ToDomain, Subject = Subject,
+            SizeBytes = SizeBytes, RelayName = RelayName, RoutingRuleName = RoutingRuleName,
+            RoutingMatched = RoutingMatched, Provider = Provider, ProviderMessageId = ProviderMessageId,
+            ProviderResponse = ProviderResponse, DurationMs = DurationMs, Error = Error,
+            IngestSource = IngestSource, SourceIp = SourceIp, ApiKeyName = ApiKeyName,
+            Tags = ParseJsonArray(TagsJson),
+        };
+    }
+
+    private static IReadOnlyList<string> ParseJsonArray(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<string[]>(json) ?? []; }
+        catch (JsonException) { return []; }
     }
 }

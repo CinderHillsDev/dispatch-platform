@@ -198,4 +198,76 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         await using var cn = await sql.Factory.OpenAsync();
         Assert.True(await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM relay_log") >= 1);
     }
+
+    [Fact]
+    public async Task MessageLog_relay_and_tag_filters_match_only_intended_rows()
+    {
+        if (!sql.Available) return;
+        var log = new SqlLogRepository(sql.Factory);
+        var query = new SqlMessageLogQuery(sql.Factory);
+        var domain = "ftag-" + Guid.NewGuid().ToString("N")[..8] + ".test";
+
+        var taggedSpool = Guid.NewGuid().ToString("N");
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = taggedSpool,
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@" + domain], ToDomain = domain,
+            RelayName = "alpha", Tags = ["urgent", "newsletter"],
+        });
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = Guid.NewGuid().ToString("N"),
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@" + domain], ToDomain = domain,
+            RelayName = "beta", Tags = ["routine"],
+        });
+
+        var byRelay = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, RelayName = "alpha" });
+        Assert.Single(byRelay.Rows);
+        Assert.Equal(taggedSpool, byRelay.Rows[0].SpoolId);
+
+        var byTag = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Tag = "urgent" });
+        Assert.Single(byTag.Rows);
+        Assert.Equal(taggedSpool, byTag.Rows[0].SpoolId);
+
+        // Tag filter must be a literal value, not a SQL fragment / wildcard injection.
+        var noMatch = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Tag = "urgent\"; DROP TABLE relay_log; --" });
+        Assert.Empty(noMatch.Rows);
+    }
+
+    [Fact]
+    public async Task MessageLog_GetByIdAsync_returns_full_detail_with_parsed_arrays()
+    {
+        if (!sql.Available) return;
+        var log = new SqlLogRepository(sql.Factory);
+        var query = new SqlMessageLogQuery(sql.Factory);
+        var spoolId = Guid.NewGuid().ToString("N");
+
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = spoolId,
+            FromAddress = "a@x.com", FromDomain = "x.com",
+            ToAddresses = ["b@y.com", "c@y.com"], ToDomain = "y.com", Subject = "Hi",
+            RelayId = 1, RelayName = "default", RoutingRuleName = "rule-1", RoutingMatched = true,
+            Provider = "None", ProviderMessageId = "pm-123", ProviderResponse = "250 OK",
+            IngestSource = "API", SourceIp = "10.0.0.5", Tags = ["urgent", "vip"],
+        });
+
+        // Find the row id we just inserted.
+        await using var cn = await sql.Factory.OpenAsync();
+        var id = await cn.ExecuteScalarAsync<long>(
+            "SELECT id FROM relay_log WHERE spool_id = @spoolId", new { spoolId });
+
+        var detail = await query.GetByIdAsync(id);
+        Assert.NotNull(detail);
+        Assert.Equal(spoolId, detail!.SpoolId);
+        Assert.Equal(["b@y.com", "c@y.com"], detail.ToAddresses);
+        Assert.Equal(["urgent", "vip"], detail.Tags);
+        Assert.Equal("rule-1", detail.RoutingRuleName);
+        Assert.True(detail.RoutingMatched);
+        Assert.Equal("pm-123", detail.ProviderMessageId);
+        Assert.Equal("250 OK", detail.ProviderResponse);
+        Assert.Equal("10.0.0.5", detail.SourceIp);
+
+        Assert.Null(await query.GetByIdAsync(-1));
+    }
 }

@@ -28,6 +28,33 @@ export interface MessagePage {
   nextCursor: { at: string; id: number } | null;
 }
 
+export interface MessageDetail {
+  id: number;
+  loggedAt: string;
+  event: string;
+  status: string;
+  spoolId: string;
+  retryAttempt: number;
+  fromAddress: string;
+  fromDomain: string;
+  toAddresses: string[];
+  toDomain: string;
+  subject: string | null;
+  sizeBytes: number;
+  relayName: string | null;
+  routingRuleName: string | null;
+  routingMatched: boolean;
+  provider: string | null;
+  providerMessageId: string | null;
+  providerResponse: string | null;
+  durationMs: number | null;
+  error: string | null;
+  ingestSource: string;
+  sourceIp: string | null;
+  apiKeyName: string | null;
+  tags: string[];
+}
+
 export interface RelayEvent {
   loggedAt: string;
   event: string;
@@ -101,6 +128,7 @@ export const api = {
   throughput: () => getJson<number[]>("/api/stats/throughput"),
   relayStats: () => getJson<RelayStat[]>("/api/stats/relays"),
   messages: (params: URLSearchParams) => getJson<MessagePage>(`/api/messages?${params}`),
+  message: (id: number) => getJson<MessageDetail>(`/api/messages/${id}`),
 
   relays: {
     list: () => getJson<RelayListItem[]>("/api/relays"),

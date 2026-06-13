@@ -120,6 +120,15 @@ internal sealed class FakeMessageLogQuery : IMessageLogQuery
         Task.FromResult(new MessageLogPage([], null));
     public Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, CancellationToken ct = default) =>
         Task.FromResult<MessageLogRow?>(null);
+    public Task<MessageLogDetail?> GetByIdAsync(long id, CancellationToken ct = default) =>
+        Task.FromResult<MessageLogDetail?>(id == 42
+            ? new MessageLogDetail
+            {
+                Id = 42, Status = "OK", Event = "Delivered", SpoolId = "spool-42",
+                FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@y.com"], ToDomain = "y.com",
+                RelayName = "default", Provider = "None", IngestSource = "API", Tags = ["urgent"],
+            }
+            : null);
 }
 
 internal sealed class FakeRelayRepository : Dispatch.Core.Relays.IRelayRepository

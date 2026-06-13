@@ -12,6 +12,8 @@ public sealed class MessageLogFilter
     public string? IngestSource { get; init; }     // SMTP | API
     public string? FromDomain { get; init; }
     public string? ToDomain { get; init; }
+    public string? RelayName { get; init; }
+    public string? Tag { get; init; }
     public int Limit { get; init; } = 50;
     public MessageLogCursor? Cursor { get; init; }
 }
@@ -38,6 +40,35 @@ public sealed class MessageLogRow
 
 public sealed record MessageLogPage(IReadOnlyList<MessageLogRow> Rows, MessageLogCursor? NextCursor);
 
+/// <summary>Full per-message detail for the Message Log row-detail panel (spec §9.2).</summary>
+public sealed class MessageLogDetail
+{
+    public long Id { get; init; }
+    public DateTime LoggedAt { get; init; }
+    public string Event { get; init; } = "";
+    public string Status { get; init; } = "";
+    public string SpoolId { get; init; } = "";
+    public int RetryAttempt { get; init; }
+    public string FromAddress { get; init; } = "";
+    public string FromDomain { get; init; } = "";
+    public IReadOnlyList<string> ToAddresses { get; init; } = [];
+    public string ToDomain { get; init; } = "";
+    public string? Subject { get; init; }
+    public int SizeBytes { get; init; }
+    public string? RelayName { get; init; }
+    public string? RoutingRuleName { get; init; }
+    public bool RoutingMatched { get; init; }
+    public string? Provider { get; init; }
+    public string? ProviderMessageId { get; init; }
+    public string? ProviderResponse { get; init; }
+    public int? DurationMs { get; init; }
+    public string? Error { get; init; }
+    public string IngestSource { get; init; } = "";
+    public string? SourceIp { get; init; }
+    public string? ApiKeyName { get; init; }
+    public IReadOnlyList<string> Tags { get; init; } = [];
+}
+
 /// <summary>Keyset-paginated read of <c>relay_log</c> for the Message Log (spec §9.2, §19).</summary>
 public interface IMessageLogQuery
 {
@@ -45,4 +76,7 @@ public interface IMessageLogQuery
 
     /// <summary>Most recent log row for a spool id, for delivery-status lookups (spec §7.4).</summary>
     Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, CancellationToken ct = default);
+
+    /// <summary>Full detail for a single log row by id, for the row-detail panel (spec §9.2). Null if missing.</summary>
+    Task<MessageLogDetail?> GetByIdAsync(long id, CancellationToken ct = default);
 }

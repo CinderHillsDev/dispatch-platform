@@ -126,6 +126,8 @@ public static class WebEndpoints
                 IngestSource = NullIfEmpty(q["source"].ToString()),
                 FromDomain = NullIfEmpty(q["fromDomain"].ToString()),
                 ToDomain = NullIfEmpty(q["toDomain"].ToString()),
+                RelayName = NullIfEmpty(q["relay"].ToString()),
+                Tag = NullIfEmpty(q["tag"].ToString()),
                 Limit = int.TryParse(q["limit"], out var l) ? l : 50,
                 Cursor = ParseDate(q["cursorAt"]) is { } at && long.TryParse(q["cursorId"], out var cid)
                     ? new MessageLogCursor(at, cid)
@@ -137,6 +139,12 @@ public static class WebEndpoints
                 rows = page.Rows,
                 nextCursor = page.NextCursor is { } c ? new { at = c.LoggedAt, id = c.Id } : null,
             });
+        });
+
+        group.MapGet("/messages/{id:long}", async (long id, IMessageLogQuery logs, CancellationToken ct) =>
+        {
+            var detail = await logs.GetByIdAsync(id, ct);
+            return detail is null ? Results.NotFound() : Results.Ok(detail);
         });
 
         group.MapAuth();            // /api/auth/* (see AuthEndpoints)
