@@ -29,4 +29,10 @@ public sealed class ListenerOptions
     /// <summary>Path to a PFX certificate enabling STARTTLS (empty = plain text only).</summary>
     public string TlsCertPath { get; set; } = "";
     public string TlsCertPassword { get; set; } = "";
+
+    /// <summary>Per-command wait timeout in seconds (spec §5.3). 0 = library default.</summary>
+    public int ConnectionTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>Max concurrent SMTP connections (spec §5.3). 0 = unlimited; over the cap MAIL FROM is refused 421.</summary>
+    public int MaxConnections { get; set; } = 100;
 }

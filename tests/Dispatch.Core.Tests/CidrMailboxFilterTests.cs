@@ -85,24 +85,42 @@ public class CidrMailboxFilterTests
             $"expected throttle delay, took {sw.ElapsedMilliseconds}ms");
     }
 
-    private static CidrMailboxFilter Build(long relayMaxBytes, IntakeState? intake = null)
+    private static CidrMailboxFilter Build(long relayMaxBytes, IntakeState? intake = null,
+        Dispatch.Service.ConnectionTracker? connections = null, int maxConnections = 0)
     {
         var resolver = new StubRelayResolver(new ResolvedRelay
         {
             Config = new RelayConfig { Id = 1, Name = "small-relay", MaxMessageBytes = relayMaxBytes },
         });
-        var cache = new ConfigCache();
-        cache.LoadFrom(new Dictionary<string, string>
+        var values = new Dictionary<string, string>
         {
             [ConfigKeys.ListenerAllowedCidrs] = "[\"0.0.0.0/0\",\"::/0\"]",
-        });
+        };
+        if (maxConnections > 0) values[ConfigKeys.ListenerMaxConnections] = maxConnections.ToString();
+        var cache = new ConfigCache();
+        cache.LoadFrom(values);
         return new CidrMailboxFilter(
             cache,
             new InMemoryCounterRepository(),
             resolver,
             intake ?? new IntakeState(),
+            connections ?? new Dispatch.Service.ConnectionTracker(),
             new CapturingLogRepository(),
             new Dispatch.Core.Logging.AlwaysLogSettings(),
             NullLogger<CidrMailboxFilter>.Instance);
+    }
+
+    [Fact]
+    public async Task CanAcceptFrom_rejects_when_over_connection_cap()
+    {
+        var connections = new Dispatch.Service.ConnectionTracker();
+        connections.Increment();   // 1
+        connections.Increment();   // 2 — over a cap of 1
+        var filter = Build(relayMaxBytes: 0, connections: connections, maxConnections: 1);
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Loopback, 4242));
+
+        var ex = await Assert.ThrowsAsync<SmtpServer.Protocol.SmtpResponseException>(() =>
+            filter.CanAcceptFromAsync(ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None));
+        Assert.Equal(SmtpServer.Protocol.SmtpReplyCode.ServiceUnavailable, ex.Response.ReplyCode);
     }
 }

@@ -66,6 +66,8 @@ public sealed class ConfigCache
         RequireAuth = GetBool(ConfigKeys.ListenerRequireAuth, false),
         TlsCertPath = GetString(ConfigKeys.ListenerTlsCertPath, ""),
         TlsCertPassword = GetString(ConfigKeys.ListenerTlsCertPassword, ""),
+        ConnectionTimeoutSeconds = GetInt(ConfigKeys.ListenerConnectionTimeoutSeconds, 60),
+        MaxConnections = GetInt(ConfigKeys.ListenerMaxConnections, 100),
     };
 
     public ApiOptions Api() => new()

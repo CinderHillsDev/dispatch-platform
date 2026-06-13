@@ -18,6 +18,7 @@ public sealed class SmtpListenerService : BackgroundService
     private readonly SpoolMessageStore _messageStore;
     private readonly CidrMailboxFilter _mailboxFilter;
     private readonly ConfiguredUserAuthenticator _authenticator;
+    private readonly ConnectionTracker _connections;
     private readonly ListenerOptions _options;
     private readonly ILogger<SmtpListenerService> _log;
 
@@ -25,12 +26,14 @@ public sealed class SmtpListenerService : BackgroundService
         SpoolMessageStore messageStore,
         CidrMailboxFilter mailboxFilter,
         ConfiguredUserAuthenticator authenticator,
+        ConnectionTracker connections,
         IOptions<ListenerOptions> options,
         ILogger<SmtpListenerService> log)
     {
         _messageStore = messageStore;
         _mailboxFilter = mailboxFilter;
         _authenticator = authenticator;
+        _connections = connections;
         _options = options.Value;
         _log = log;
     }
@@ -53,6 +56,8 @@ public sealed class SmtpListenerService : BackgroundService
         }
         if (_options.MaxMessageBytes is > 0 and <= int.MaxValue)
             optionsBuilder.MaxMessageSize((int)_options.MaxMessageBytes);
+        if (_options.ConnectionTimeoutSeconds > 0)
+            optionsBuilder.CommandWaitTimeout(TimeSpan.FromSeconds(_options.ConnectionTimeoutSeconds));
 
         var serviceProvider = new SmtpServer.ComponentModel.ServiceProvider();
         serviceProvider.Add(_messageStore);
@@ -61,10 +66,18 @@ public sealed class SmtpListenerService : BackgroundService
 
         var server = new SmtpServer.SmtpServer(optionsBuilder.Build(), serviceProvider);
 
-        _log.LogInformation("SMTP listener starting on port(s) {Ports}{Auth}{Tls}",
+        // Track live connections for the max-connections cap (spec §5.3). The cap is enforced at MAIL FROM
+        // by CidrMailboxFilter (the library accepts the TCP connection before these events fire).
+        server.SessionCreated += (_, _) => _connections.Increment();
+        server.SessionCompleted += (_, _) => _connections.Decrement();
+        server.SessionFaulted += (_, _) => _connections.Decrement();
+        server.SessionCancelled += (_, _) => _connections.Decrement();
+
+        _log.LogInformation("SMTP listener starting on port(s) {Ports}{Auth}{Tls} (timeout {Timeout}s, max {Max} conns)",
             string.Join(", ", ports),
             _options.RequireAuth ? " (AUTH required)" : "",
-            certificate is not null ? " (STARTTLS)" : "");
+            certificate is not null ? " (STARTTLS)" : "",
+            _options.ConnectionTimeoutSeconds, _options.MaxConnections);
 
         try
         {

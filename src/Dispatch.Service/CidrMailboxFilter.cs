@@ -29,6 +29,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
     private readonly ICounterRepository _counters;
     private readonly IRelayResolver _routing;
     private readonly IntakeState _intake;
+    private readonly ConnectionTracker _connections;
     private readonly ILogRepository _logRepo;
     private readonly ILoggingSettings _loggingSettings;
     private readonly ILogger<CidrMailboxFilter> _log;
@@ -43,6 +44,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         ICounterRepository counters,
         IRelayResolver routing,
         IntakeState intake,
+        ConnectionTracker connections,
         ILogRepository logRepo,
         ILoggingSettings loggingSettings,
         ILogger<CidrMailboxFilter> log)
@@ -51,6 +53,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         _counters = counters;
         _routing = routing;
         _intake = intake;
+        _connections = connections;
         _logRepo = logRepo;
         _loggingSettings = loggingSettings;
         _log = log;
@@ -93,6 +96,18 @@ public sealed class CidrMailboxFilter : IMailboxFilter
 
         // Live settings from the config cache (spec §12.5): edits in the web UI apply on the next connection.
         var listener = _config.Listener();
+
+        // Max concurrent connections (spec §5.3). The library accepts the TCP connection (counted on
+        // SessionCreated) before MAIL FROM, so we refuse here with a transient 421 once over the cap.
+        if (listener.MaxConnections > 0 && _connections.Active > listener.MaxConnections)
+        {
+            await DenyAsync(context, from.AsAddress(), null,
+                $"Too many concurrent connections ({_connections.Active} > {listener.MaxConnections})", cancellationToken);
+            _log.LogWarning("Rejecting MAIL FROM {From}: over connection cap ({Active}/{Max})",
+                from.AsAddress(), _connections.Active, listener.MaxConnections);
+            throw new SmtpResponseException(
+                new SmtpResponse(SmtpReplyCode.ServiceUnavailable, "Too many concurrent connections, try again later"));
+        }
 
         // Capture the declared SIZE= for the per-relay check at RCPT TO (spec §14.2).
         context.Properties[DeclaredSizeKey] = size;

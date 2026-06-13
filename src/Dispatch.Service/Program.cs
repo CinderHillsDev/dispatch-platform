@@ -107,6 +107,7 @@ try
     builder.Services.AddSingleton<SpoolMessageStore>();
     builder.Services.AddSingleton<IntakeState>();
     builder.Services.AddSingleton<DiskMonitor>();
+    builder.Services.AddSingleton<ConnectionTracker>();
     builder.Services.AddSingleton<CidrMailboxFilter>();
     builder.Services.AddSingleton<ConfiguredUserAuthenticator>();
 

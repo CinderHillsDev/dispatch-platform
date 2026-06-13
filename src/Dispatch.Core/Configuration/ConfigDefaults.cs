@@ -19,6 +19,8 @@ public static class ConfigDefaults
         [ConfigKeys.ListenerMaxMessageBytes] = "0",
         [ConfigKeys.ListenerRequireAuth] = "false",
         [ConfigKeys.ListenerTlsCertPath] = "",
+        [ConfigKeys.ListenerConnectionTimeoutSeconds] = "60",
+        [ConfigKeys.ListenerMaxConnections] = "100",
 
         [ConfigKeys.SpoolDirectory] = "./.dispatch-spool",
         [ConfigKeys.SpoolWorkerCount] = "4",
