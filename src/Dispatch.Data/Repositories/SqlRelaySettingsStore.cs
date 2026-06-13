@@ -21,8 +21,9 @@ public sealed class SqlRelaySettingsStore(IConfigRepository config) : IRelaySett
             return cached.Value;
 
         var providerText = await config.GetAsync($"relay:{relayId}:provider", ct);
+        // Unset/unparseable → Unconfigured, so a never-configured relay refuses to relay (not silent discard).
         var provider = Enum.TryParse<RelayProviderType>(providerText, ignoreCase: true, out var p)
-            ? p : RelayProviderType.None;
+            ? p : RelayProviderType.Unconfigured;
 
         var settings = new Dictionary<string, string?>();
         foreach (var field in RelayProviderSchema.For(provider))

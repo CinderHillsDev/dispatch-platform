@@ -1,5 +1,6 @@
 using System.Net.Http;
 using Dispatch.Core.Providers;
+using Dispatch.Core.Spool;
 
 namespace Dispatch.Providers;
 
@@ -7,11 +8,14 @@ namespace Dispatch.Providers;
 public sealed class RelayProviderFactory(
     IHttpClientFactory httpClientFactory,
     ISendGridClientFactory sendGridClientFactory,
-    IEmailClientFactory emailClientFactory) : IRelayProviderFactory
+    IEmailClientFactory emailClientFactory,
+    SpoolDirectory spool) : IRelayProviderFactory
 {
     public IRelayProvider Build(RelayConfig config) => config.Provider switch
     {
-        RelayProviderType.None => new NoneProvider(),
+        RelayProviderType.Unconfigured => throw new InvalidOperationException(
+            "No relay provider is configured. Choose a provider under Relays before sending mail."),
+        RelayProviderType.None => new NoneProvider(spool.CapturedDir),
         RelayProviderType.Smtp => new SmtpProvider(config),
         RelayProviderType.Mailgun => new MailgunProvider(config, httpClientFactory.CreateClient("mailgun")),
         RelayProviderType.SendGrid => new SendGridProvider(config, sendGridClientFactory),

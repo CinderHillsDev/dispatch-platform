@@ -217,9 +217,13 @@ public static class RoutingEndpoints
         return new
         {
             record.Id, record.Name, provider = s.Provider.ToString(), record.IsDefault, record.Enabled,
-            record.MaxConcurrency, providers = Enum.GetNames<RelayProviderType>(), fields,
+            record.MaxConcurrency, providers = SelectableProviders, fields,
         };
     }
+
+    // "Unconfigured" is the implicit default, not something an admin picks from the dropdown.
+    private static readonly string[] SelectableProviders =
+        Enum.GetNames<RelayProviderType>().Where(n => n != nameof(RelayProviderType.Unconfigured)).ToArray();
 
     private static string? Empty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 

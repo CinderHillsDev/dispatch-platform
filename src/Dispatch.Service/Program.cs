@@ -76,7 +76,7 @@ try
     if (await configRepo.GetAsync("relay:1:provider") is null)
     {
         var def = app.Services.GetRequiredService<IOptions<DefaultRelayOptions>>().Value;
-        if (def.Provider != RelayProviderType.None)
+        if (def.Provider != RelayProviderType.Unconfigured)
         {
             var relayRepo = app.Services.GetRequiredService<IRelayRepository>();
             var defaultRelay = await relayRepo.GetDefaultAsync();

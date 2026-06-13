@@ -106,6 +106,8 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
   const [busy, setBusy] = useState(false);
 
   const fields = PROVIDER_FIELDS[provider] ?? [];
+  // Surface the implicit "Unconfigured" state in the dropdown until a real provider is chosen.
+  const options = relay.providers.includes(provider) ? relay.providers : [provider, ...relay.providers];
   const secretHasValue = (n: string) => relay.provider === provider && (relay.fields.find((f) => f.name === n)?.hasValue ?? false);
 
   const save = async () => {
@@ -134,8 +136,18 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
 
       <label className="muted" style={{ fontSize: 12 }}>Provider</label>
       <select style={{ width: "100%", marginBottom: 12 }} value={provider} onChange={(e) => { setProvider(e.target.value); setValues({}); }}>
-        {relay.providers.map((p) => <option key={p} value={p}>{p}</option>)}
+        {options.map((p) => <option key={p} value={p}>{p}</option>)}
       </select>
+      {provider === "Unconfigured" && (
+        <p className="muted" style={{ marginTop: -4, marginBottom: 12, fontSize: 12 }}>
+          This relay has no provider yet — mail to it will fail until you choose one (or pick “None” for local dev).
+        </p>
+      )}
+      {provider === "None" && (
+        <p className="muted" style={{ marginTop: -4, marginBottom: 12, fontSize: 12 }}>
+          Local dev mode — never delivers externally. Messages are captured to <code>spool/captured/</code> so you can inspect them.
+        </p>
+      )}
 
       {fields.map((f) => (
         <div key={f.name} style={{ marginBottom: 10 }}>

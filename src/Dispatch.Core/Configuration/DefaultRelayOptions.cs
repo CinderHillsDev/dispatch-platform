@@ -8,7 +8,7 @@ public sealed class DefaultRelayOptions
     public const string SectionName = "DefaultRelay";
 
     public string Name { get; set; } = "default";
-    public RelayProviderType Provider { get; set; } = RelayProviderType.None;
+    public RelayProviderType Provider { get; set; } = RelayProviderType.Unconfigured;
     public int MaxConcurrency { get; set; } = 4;
     public long MaxMessageBytes { get; set; } = 0;
 

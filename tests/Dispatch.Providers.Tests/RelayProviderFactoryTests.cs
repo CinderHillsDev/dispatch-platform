@@ -1,12 +1,16 @@
 using Dispatch.Core.Providers;
+using Dispatch.Core.Spool;
 using Dispatch.Providers;
 
 namespace Dispatch.Providers.Tests;
 
 public class RelayProviderFactoryTests
 {
-    private static RelayProviderFactory Factory() =>
-        new(new StubHttpClientFactory(), new SendGridClientFactory(), new EmailClientFactory());
+    private static RelayProviderFactory Factory()
+    {
+        var spool = new SpoolDirectory(Path.Combine(Path.GetTempPath(), "dispatch-factory-tests", Guid.NewGuid().ToString("N")));
+        return new(new StubHttpClientFactory(), new SendGridClientFactory(), new EmailClientFactory(), spool);
+    }
 
     [Theory]
     [InlineData(RelayProviderType.None, typeof(NoneProvider))]
@@ -18,6 +22,14 @@ public class RelayProviderFactoryTests
     {
         var built = Factory().Build(new RelayConfig { Provider = provider });
         Assert.IsType(expected, built);
+    }
+
+    [Fact]
+    public void Unconfigured_provider_refuses_to_relay()
+    {
+        // Out-of-the-box default: no provider chosen → permanent failure, never a silent discard.
+        Assert.Throws<InvalidOperationException>(() =>
+            Factory().Build(new RelayConfig { Provider = RelayProviderType.Unconfigured }));
     }
 
     private sealed class StubHttpClientFactory : IHttpClientFactory

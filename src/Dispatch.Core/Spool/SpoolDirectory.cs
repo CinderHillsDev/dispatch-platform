@@ -13,6 +13,9 @@ public sealed class SpoolDirectory
     public string ProcessingDir { get; }
     public string FailedDir { get; }
 
+    /// <summary>Where the local/dev (None) provider captures messages instead of delivering externally.</summary>
+    public string CapturedDir { get; }
+
     // Bounded doorbell: filenames only. DropOldest because a dropped wake-up is harmless —
     // the FileSystemWatcher and startup sweep guarantee files are still discovered.
     private readonly Channel<string> _doorbell =
@@ -27,9 +30,11 @@ public sealed class SpoolDirectory
         IncomingDir = Path.Combine(Root, "incoming");
         ProcessingDir = Path.Combine(Root, "processing");
         FailedDir = Path.Combine(Root, "failed");
+        CapturedDir = Path.Combine(Root, "captured");
         Directory.CreateDirectory(IncomingDir);
         Directory.CreateDirectory(ProcessingDir);
         Directory.CreateDirectory(FailedDir);
+        Directory.CreateDirectory(CapturedDir);
     }
 
     public string IncomingPath(Guid id) => Path.Combine(IncomingDir, $"{id}.eml");

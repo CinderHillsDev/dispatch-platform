@@ -27,6 +27,22 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     }
 
     [Fact]
+    public async Task Default_relay_is_unconfigured_until_a_provider_is_set()
+    {
+        if (!sql.Available) return;
+        var settings = new SqlRelaySettingsStore(new SqlConfigRepository(sql.Factory));
+
+        // Fresh DB: the seeded default relay has no provider configured.
+        var fresh = await settings.GetAsync(1);
+        Assert.Equal(Dispatch.Core.Providers.RelayProviderType.Unconfigured, fresh.Provider);
+
+        await settings.SaveAsync(1, new Dispatch.Core.Relays.RelaySettings(
+            Dispatch.Core.Providers.RelayProviderType.None, new Dictionary<string, string?>()));
+        var after = await settings.GetAsync(1);
+        Assert.Equal(Dispatch.Core.Providers.RelayProviderType.None, after.Provider);
+    }
+
+    [Fact]
     public async Task Log_insert_is_read_back_by_message_log_query()
     {
         if (!sql.Available) return;

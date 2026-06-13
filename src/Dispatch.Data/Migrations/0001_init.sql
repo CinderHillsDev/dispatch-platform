@@ -105,7 +105,7 @@ CREATE TABLE config_smtp_credentials (
     last_used_at  DATETIME2     NULL
 );
 
--- Seed a default relay so the system relays out of the box (provider overridden by appsettings until
--- credential-in-SQL management lands).
+-- Seed a single default relay in the "Unconfigured" state: until an administrator picks a provider,
+-- Dispatch refuses to relay (mail is never silently delivered or discarded).
 INSERT INTO relays (name, provider, is_default, enabled, max_concurrency)
-VALUES (N'default', N'None', 1, 1, 4);
+VALUES (N'default', N'Unconfigured', 1, 1, 4);
