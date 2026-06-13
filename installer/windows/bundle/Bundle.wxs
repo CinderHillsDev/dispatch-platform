@@ -25,7 +25,8 @@
           Compressed="yes">
 
     <BootstrapperApplication>
-      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" SuppressOptionsUI="yes" />
+      <!-- hyperlinkLicense theme with an empty LicenseUrl shows the install UI with no license link. -->
+      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" LicenseUrl="" SuppressOptionsUI="yes" />
     </BootstrapperApplication>
 
     <!-- Skip the SQL Express step if the DISPATCHSQL instance already exists. -->
