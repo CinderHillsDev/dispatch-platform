@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { api, type RelayDetail, type RelayListItem, type TestResult } from "../lib/api";
+import { useEffect, useRef, useState } from "react";
+import { api, type RelayDetail, type RelayListItem, type TestResult, type TestRunLine } from "../lib/api";
+import { createTestProviderConnection } from "../lib/signalr";
 
 // Mirrors RelayProviderSchema on the server so the form can render fields immediately on provider change.
 const PROVIDER_FIELDS: Record<string, { name: string; secret: boolean; required: boolean }[]> = {
@@ -105,6 +106,54 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Live streaming provider test (spec §11) — tests the CURRENTLY ENTERED credentials, no save required.
+  const [testLines, setTestLines] = useState<TestRunLine[]>([]);
+  const [testStatus, setTestStatus] = useState<"" | "Running" | "Success" | "Failed">("");
+  const [testStartedAt, setTestStartedAt] = useState(0);
+  const testConn = useRef<ReturnType<typeof createTestProviderConnection> | null>(null);
+
+  useEffect(() => () => { testConn.current?.stop(); }, []);
+
+  const runStreamingTest = async () => {
+    if (!testTo) return;
+    setBusy(true);
+    setTestLines([]);
+    setTestStatus("Running");
+    setTestStartedAt(Date.now());
+    try {
+      await testConn.current?.stop();
+      const conn = createTestProviderConnection((line) => {
+        setTestLines((prev) => [...prev, { ts: line.ts, level: line.level, message: line.message }]);
+        if (line.level === "Success") setTestStatus("Success");
+        if (line.level === "Failed") setTestStatus("Failed");
+      });
+      testConn.current = conn;
+      await conn.start();
+
+      const start = await api.config.testProvider(provider, values, testTo);
+      await conn.invoke("Join", start.runId);
+
+      // Poll as a fallback so the terminal status is reached even if a line is missed.
+      const poll = setInterval(async () => {
+        try {
+          const run = await api.config.testProviderRun(start.runId);
+          if (run.status !== "Running") {
+            clearInterval(poll);
+            setTestLines(run.lines);
+            setTestStatus(run.status === "Success" ? "Success" : "Failed");
+          }
+        } catch { clearInterval(poll); }
+      }, 750);
+    } catch (e) {
+      setTestLines((prev) => [...prev, { ts: new Date().toISOString(), level: "Failed", message: (e as Error).message }]);
+      setTestStatus("Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const elapsed = (ts: string) => testStartedAt ? `+${Math.max(0, (new Date(ts).getTime() - testStartedAt) / 1000).toFixed(3)}s` : "";
+
   const fields = PROVIDER_FIELDS[provider] ?? [];
   // Surface the implicit "Unconfigured" state in the dropdown until a real provider is chosen.
   const options = relay.providers.includes(provider) ? relay.providers : [provider, ...relay.providers];
@@ -174,20 +223,45 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
 
       <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
         <label className="muted" style={{ fontSize: 12 }}>Send test email</label>
+        <p className="muted" style={{ marginTop: 2, marginBottom: 6, fontSize: 11 }}>
+          Tests the credentials entered above — they do not need to be saved first.
+        </p>
         <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
           <input style={{ flex: 1 }} placeholder="recipient@example.com" value={testTo} onChange={(e) => setTestTo(e.target.value)} />
+          <button disabled={busy || !testTo || testStatus === "Running"} onClick={runStreamingTest}>Send Test Email</button>
           <button disabled={busy || !testTo} onClick={async () => {
             setBusy(true); setTestResult(null);
             try { setTestResult(await api.relays.test(relay.id, testTo)); }
             catch (e) { setTestResult({ ok: false, error: (e as Error).message }); }
             finally { setBusy(false); }
-          }}>Test</button>
+          }}>Quick Test</button>
         </div>
         {testResult && (
           <div style={{ marginTop: 10 }}>
             {testResult.ok
               ? <span className="badge ok">Sent via {testResult.provider}</span>
               : <span className="badge error">Failed: {testResult.error}</span>}
+          </div>
+        )}
+
+        {(testStatus || testLines.length > 0) && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span className="muted" style={{ fontSize: 12 }}>Test Log</span>
+              <button disabled={testStatus === "Running"} onClick={() => { setTestLines([]); setTestStatus(""); }} style={{ padding: "2px 8px", fontSize: 11 }}>Clear</button>
+            </div>
+            <div style={{
+              fontFamily: "monospace", fontSize: 12, background: "var(--bg, #111)", border: "1px solid var(--border)",
+              borderRadius: 4, padding: 8, maxHeight: 220, overflowY: "auto", whiteSpace: "pre-wrap",
+            }}>
+              {testLines.length === 0 && <div className="muted">Starting…</div>}
+              {testLines.map((l, i) => (
+                <div key={i} style={{ color: l.level === "Success" ? "#3fb950" : l.level === "Failed" || l.level === "Error" ? "#f85149" : undefined }}>
+                  <span className="muted">{elapsed(l.ts)} </span>
+                  <strong>{l.level === "Success" ? "✓ SUCCESS" : l.level === "Failed" ? "✗ FAILED" : l.level.toUpperCase()}</strong>{"  "}{l.message}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

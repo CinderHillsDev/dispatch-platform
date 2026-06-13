@@ -74,6 +74,10 @@ export interface RelayListItem { id: number; name: string; provider: string; isD
 export interface RelayDetail extends RelayListItem { providers: string[]; fields: RelayField[]; }
 export interface TestResult { ok: boolean; provider?: string; providerMessageId?: string; detail?: string; error?: string; }
 
+export interface TestRunStart { runId: string; status: string; }
+export interface TestRunLine { ts: string; level: string; message: string; }
+export interface TestRun { runId: string; status: string; provider: string; durationMs: number; lines: TestRunLine[]; }
+
 export interface RuleItem {
   id: number; priority: number; name: string;
   recipientPattern: string | null; senderPattern: string | null;
@@ -158,6 +162,12 @@ export const api = {
     setDefault: (id: number) => sendJson<{ ok: boolean }>(`/api/relays/${id}/set-default`, "POST", {}),
     remove: (id: number) => sendJson<{ ok: boolean }>(`/api/relays/${id}`, "DELETE", {}),
     test: (id: number, to: string) => sendJson<TestResult>(`/api/relays/${id}/test`, "POST", { to }),
+  },
+
+  config: {
+    testProvider: (provider: string, settings: Record<string, string>, testRecipient: string) =>
+      sendJson<TestRunStart>("/api/config/test-provider", "POST", { provider, settings, testRecipient }),
+    testProviderRun: (runId: string) => getJson<TestRun>(`/api/config/test-provider/${encodeURIComponent(runId)}`),
   },
 
   rules: {

@@ -79,6 +79,7 @@ public sealed class WebTestHost : IAsyncLifetime
         _app.MapIngestionApi(ApiPort);
         _app.MapDashboardApi(WebPort);
         _app.MapHub<LogHub>("/hub/logs");
+        _app.MapHub<TestProviderHub>("/hub/test-provider");
 
         await _app.StartAsync();
 

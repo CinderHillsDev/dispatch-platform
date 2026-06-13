@@ -17,3 +17,20 @@ export function createLogConnection(
   conn.on("relayEvent", onEvent);
   return conn;
 }
+
+export interface TestProviderLogLine { runId: string; ts: string; level: string; message: string; }
+
+/// Builds a SignalR connection to the provider-test hub (spec §11). The caller joins the run's group
+/// (`conn.invoke("Join", runId)`) once started, and wires the `TestProviderLogLine` handler.
+export function createTestProviderConnection(
+  onLine: (line: TestProviderLogLine) => void,
+): HubConnection {
+  const conn = new HubConnectionBuilder()
+    .withUrl("/hub/test-provider")
+    .withAutomaticReconnect()
+    .configureLogging(LogLevel.Warning)
+    .build();
+
+  conn.on("TestProviderLogLine", onLine);
+  return conn;
+}

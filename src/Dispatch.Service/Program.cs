@@ -112,6 +112,7 @@ try
     app.MapIngestionApi(apiOptions.Port);
     app.MapDashboardApi(webOptions.Port);
     app.MapHub<LogHub>("/hub/logs");
+    app.MapHub<TestProviderHub>("/hub/test-provider");
     app.MapEmbeddedUiFallback(webOptions.Port);
 
     await app.RunAsync();

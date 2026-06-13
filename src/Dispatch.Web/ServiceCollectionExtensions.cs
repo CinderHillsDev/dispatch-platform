@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddSignalR();
         services.AddSingleton<RelayEventStream>();
+        services.AddSingleton<ProviderTestService>();
         services.AddSingleton<RateLimiter>();
         services.AddSingleton<ApiMessageHandler>();
         services.AddScoped<ApiKeyMiddleware>();
