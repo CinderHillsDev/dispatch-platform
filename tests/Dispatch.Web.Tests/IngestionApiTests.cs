@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Dispatch.Core.Spool;
 
 namespace Dispatch.Web.Tests;
@@ -19,10 +20,46 @@ public class IngestionApiTests(WebTestHost host)
     }
 
     [Fact]
-    public async Task Health_is_open_without_auth()
+    public async Task Health_is_open_without_auth_and_reports_healthy_shape()
     {
         var res = await host.Web.GetAsync("/health");
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        var doc = await res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("healthy", doc.GetProperty("status").GetString());
+        Assert.False(string.IsNullOrEmpty(doc.GetProperty("version").GetString()));
+        Assert.True(doc.GetProperty("uptimeSeconds").GetInt64() >= 0);
+
+        var spool = doc.GetProperty("spool");
+        Assert.True(spool.TryGetProperty("incoming", out _));
+        Assert.True(spool.TryGetProperty("diskFreeMb", out _));
+
+        var sql = doc.GetProperty("sql");
+        Assert.True(sql.GetProperty("connected").GetBoolean());
+        Assert.Equal(142, sql.GetProperty("dbSizeMb").GetInt64());
+
+        var smtp = doc.GetProperty("smtp");
+        Assert.True(smtp.GetProperty("listening").GetBoolean());
+        Assert.NotEmpty(smtp.GetProperty("ports").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Health_returns_503_critical_when_intake_suspended()
+    {
+        host.Intake.Apply(0);   // below SuspendBytes -> IntakeLevel.Suspended
+        try
+        {
+            var res = await host.Web.GetAsync("/health");
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
+
+            var doc = await res.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("critical", doc.GetProperty("status").GetString());
+            Assert.False(string.IsNullOrEmpty(doc.GetProperty("message").GetString()));
+        }
+        finally
+        {
+            host.Intake.Apply(long.MaxValue);   // restore Normal for the shared host
+        }
     }
 
     [Fact]

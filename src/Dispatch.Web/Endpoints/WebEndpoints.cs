@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Dispatch.Core.ApiKeys;
+using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
 using Dispatch.Core.Maintenance;
@@ -12,6 +13,7 @@ using Dispatch.Web.Realtime;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Options;
 using MimeKit;
 
 namespace Dispatch.Web.Endpoints;
@@ -77,22 +79,60 @@ public static class WebEndpoints
     /// <summary>Dashboard read/stats API + admin, reachable only on the web port (spec §9.2).</summary>
     public static void MapDashboardApi(this IEndpointRouteBuilder app, int webPort)
     {
-        // No auth, any port (§14). Liveness ("status") never depends on SQL; a short, non-throwing probe
-        // adds a database-reachability flag plus version/uptime/queue depth for monitoring.
-        app.MapGet("/health", async (SpoolDirectory spool, IDatabaseHealth db, MinuteCounterRing ring, CancellationToken ct) =>
+        // No auth, any port (§14.4). Liveness ("status") never blocks on SQL; all probes are best-effort,
+        // non-throwing, and short-budget so monitors get a fast answer. Three states (spec §14.4):
+        //   healthy  — everything nominal                                    -> 200
+        //   degraded — SQL unreachable (mail still flows via the spool)      -> 200
+        //   critical — intake suspended (disk critically low)                -> 503
+        app.MapGet("/health", async (
+            SpoolDirectory spool, IDatabaseHealth db, ILogMaintenance maintenance, MinuteCounterRing ring,
+            IntakeState intake, IOptions<ListenerOptions> listener, CancellationToken ct) =>
         {
-            var reachable = await db.IsReachableAsync(ct);
-            return Results.Ok(new
+            var connected = await db.IsReachableAsync(ct);
+
+            // dbSizeMb is best-effort: only attempt it when SQL is reachable, and swallow any failure
+            // so a slow/unhealthy database can never make /health hang or throw.
+            long? dbSizeMb = null;
+            if (connected)
             {
-                status = "ok",
+                try { dbSizeMb = (await maintenance.GetDatabaseSizeBytesAsync(ct)) / (1024 * 1024); }
+                catch { /* best-effort — leave null */ }
+            }
+
+            long? diskFreeMb = null;
+            try { diskFreeMb = new DriveInfo(spool.Root).AvailableFreeSpace / (1024 * 1024); }
+            catch { /* best-effort — leave null */ }
+
+            var ports = listener.Value.EffectivePorts;
+            var suspended = intake.Level == IntakeLevel.Suspended;
+            var status = suspended ? "critical" : connected ? "healthy" : "degraded";
+            var message = suspended
+                ? "Disk space critically low — SMTP intake suspended"
+                : connected ? null
+                : "SQL Server unavailable — mail flow unaffected; UI log unavailable";
+
+            var payload = new
+            {
+                status,
+                message,
                 version = Version,
                 startedAtUtc = ProcessStartUtc,
                 uptimeSeconds = (long)(DateTime.UtcNow - ProcessStartUtc).TotalSeconds,
                 timeUtc = DateTime.UtcNow,
-                database = new { reachable },
                 last5Minutes = new { received = ring.SumReceived(5), sentToProvider = ring.SumDelivered(5) },
-                spool = SpoolCounts(spool),
-            });
+                spool = new
+                {
+                    incoming = Directory.EnumerateFiles(spool.IncomingDir, "*.eml").Count(),
+                    processing = Directory.EnumerateFiles(spool.ProcessingDir, "*.eml").Count(),
+                    failed = Directory.EnumerateFiles(spool.FailedDir, "*.eml").Count(),
+                    diskFreeMb,
+                },
+                sql = new { connected, dbSizeMb },
+                smtp = new { listening = ports.Length > 0, ports },
+            };
+            return suspended
+                ? Results.Json(payload, statusCode: StatusCodes.Status503ServiceUnavailable)
+                : Results.Ok(payload);
         });
 
         app.MapMetrics();   // unauthenticated Prometheus /metrics (see MetricsEndpoints)

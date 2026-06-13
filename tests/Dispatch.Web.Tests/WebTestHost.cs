@@ -37,6 +37,7 @@ public sealed class WebTestHost : IAsyncLifetime
     public HttpClient Web { get; private set; } = null!;
     public HttpClient Api { get; private set; } = null!;
     public SpoolDirectory Spool { get; private set; } = null!;
+    public Dispatch.Core.Maintenance.IntakeState Intake { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
@@ -56,9 +57,12 @@ public sealed class WebTestHost : IAsyncLifetime
             o.AllowedCidrs = ["127.0.0.1/32", "::1/128"];
             o.RateLimitPerKey = 100;
         });
+        // /health reads EffectivePorts; with no Ports set this falls back to DefaultPorts (2525).
+        builder.Services.Configure<ListenerOptions>(_ => { });
 
         builder.Services.AddSingleton(Spool);
-        builder.Services.AddSingleton<Dispatch.Core.Maintenance.IntakeState>();
+        Intake = new Dispatch.Core.Maintenance.IntakeState();
+        builder.Services.AddSingleton(Intake);
         builder.Services.AddSingleton<MinuteCounterRing>();
         builder.Services.AddSingleton<RelayConcurrencyTracker>();
         builder.Services.AddSingleton<ICounterReader, InMemoryCounterRepository>();
@@ -69,6 +73,7 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton<IRoutingRuleRepository, FakeRoutingRuleRepository>();
         builder.Services.AddSingleton<IConfigRepository, FakeConfigRepository>();
         builder.Services.AddSingleton<IDatabaseHealth, FakeDatabaseHealth>();
+        builder.Services.AddSingleton<ILogMaintenance, FakeLogMaintenance>();
         builder.Services.AddSingleton<ISmtpCredentialRepository, FakeSmtpCredentialRepository>();
         builder.Services.AddSingleton<IRelayProviderFactory, FakeProviderFactory>();
         builder.Services.AddSingleton<IRelayResolver, RoutingEngine>();
@@ -170,6 +175,14 @@ internal sealed class FakeRelaySettingsStore : Dispatch.Core.Relays.IRelaySettin
 internal sealed class FakeDatabaseHealth : IDatabaseHealth
 {
     public Task<bool> IsReachableAsync(CancellationToken ct = default) => Task.FromResult(true);
+}
+
+internal sealed class FakeLogMaintenance : ILogMaintenance
+{
+    // 142 MB so /health's dbSizeMb is asserted as 142 in the web test.
+    public Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default) => Task.FromResult(142L * 1024 * 1024);
+    public Task<int> PurgeByRetentionAsync(string @event, int retentionDays, CancellationToken ct = default) => Task.FromResult(0);
+    public Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default) => Task.FromResult(0);
 }
 
 internal sealed class FakeSmtpCredentialRepository : Dispatch.Core.Smtp.ISmtpCredentialRepository
