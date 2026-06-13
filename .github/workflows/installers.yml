@@ -1,0 +1,115 @@
+name: Installers
+
+# Validates the installer artifacts on self-hosted runners. Non-destructive by default: the Windows job
+# builds the MSI + Burn bundle (proving the WiX sources + net472 launcher compile) and the Linux job
+# lints install.sh. The actual SQL-Express install + service smoke test is destructive (it installs SQL
+# Server on the runner), so it only runs when manually dispatched with full_install=true.
+on:
+  workflow_dispatch:
+    inputs:
+      full_install:
+        description: "Also run the real SQL install + service smoke test (mutates the runner)"
+        type: boolean
+        default: false
+  push:
+    paths:
+      - "installer/**"
+      - ".github/workflows/installers.yml"
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  windows-installer:
+    runs-on: [self-hosted, windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        shell: pwsh
+        run: |
+          Push-Location src/Dispatch.UI; npm ci; npm run build; Pop-Location
+          Remove-Item -Recurse -Force src/Dispatch.Web/wwwroot -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force src/Dispatch.Web/wwwroot | Out-Null
+          Copy-Item -Recurse -Force src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
+          if (-not (Test-Path src/Dispatch.Web/wwwroot/index.html)) { throw "embedded UI missing index.html" }
+
+      - name: Publish the service
+        run: dotnet publish src/Dispatch.Service -c Release -o installer/windows/publish
+
+      - name: Install the WiX toolset
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 6.* 2>$null; dotnet tool update --global wix --version 6.* 2>$null
+          wix extension add -g WixToolset.Firewall.wixext
+          wix extension add -g WixToolset.Bal.wixext
+          wix extension add -g WixToolset.Util.wixext
+
+      - name: Build the MSI
+        working-directory: installer/windows
+        run: wix build Dispatch.wxs -d PublishDir=publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
+
+      - name: Build the SQL Express launcher
+        run: dotnet build installer/windows/sql-express/SqlExpressLauncher.csproj -c Release
+
+      - name: Build the bundle
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          wix build bundle/Bundle.wxs -ext WixToolset.Bal.wixext -ext WixToolset.Util.wixext `
+            -bindpath:SqlLauncher=sql-express/bin/Release/net472 -bindpath:Msi=. -o DispatchSetup.exe
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dispatch-windows-installer
+          path: |
+            installer/windows/Dispatch.msi
+            installer/windows/DispatchSetup.exe
+          if-no-files-found: error
+
+      - name: Full install + smoke (opt-in)
+        if: ${{ inputs.full_install == true }}
+        shell: pwsh
+        run: |
+          Start-Process -Wait -FilePath installer/windows/DispatchSetup.exe -ArgumentList '/quiet','/log','install.log'
+          Start-Sleep -Seconds 20
+          $r = Invoke-WebRequest -UseBasicParsing http://localhost:8420/health
+          if ($r.StatusCode -ne 200) { throw "health check failed: $($r.StatusCode)" }
+          Write-Host "Dispatch /health OK"
+
+  linux-installer:
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint install.sh
+        run: |
+          bash -n installer/linux/install.sh
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck -S warning installer/linux/install.sh || true
+          else
+            echo "shellcheck not installed — syntax check only"
+          fi
+
+      - name: Full install + smoke (opt-in)
+        if: ${{ inputs.full_install == true }}
+        run: |
+          sudo ./installer/linux/install.sh --install-sql \
+            --sa-password "${{ secrets.MSSQL_SA_PASSWORD || 'Dispatch_Dev_Pass123' }}" \
+            --admin-password "Ci-Smoke-Passw0rd!" --source "$PWD"
+          sleep 20
+          curl -fsS http://localhost:8420/health
