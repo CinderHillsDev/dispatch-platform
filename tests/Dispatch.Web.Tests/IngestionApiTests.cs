@@ -5,7 +5,8 @@ using Dispatch.Core.Spool;
 
 namespace Dispatch.Web.Tests;
 
-public class IngestionApiTests(WebTestHost host) : IClassFixture<WebTestHost>
+[Collection("web")]
+public class IngestionApiTests(WebTestHost host)
 {
     private HttpRequestMessage Post(string key, object body)
     {
