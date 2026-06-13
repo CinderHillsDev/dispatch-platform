@@ -99,9 +99,18 @@ jobs:
             Start-Sleep -Seconds 5
           }
           if (-not $ok) {
-            Write-Host "=== bundle install.log ==="; Get-Content install.log -ErrorAction SilentlyContinue
+            Write-Host "=== bundle + MSI logs (Burn writes per-package install_*.log) ==="
+            Get-ChildItem -Path . -Filter "install*.log" -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "----- $($_.Name) -----"; Get-Content $_.FullName | Select-Object -Last 80
+            }
             Write-Host "=== SQL bootstrap log ==="; Get-Content C:\Windows\Temp\Dispatch-SqlInstall.log -ErrorAction SilentlyContinue
-            Write-Host "=== Dispatch service ==="; Get-Service Dispatch -ErrorAction SilentlyContinue | Format-List Name,Status,StartType
+            Write-Host "=== Application event log (Dispatch / .NET Runtime / Application Error) ==="
+            try {
+              Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-30) } -ErrorAction SilentlyContinue |
+                Where-Object { $_.ProviderName -match 'Dispatch|\.NET Runtime|Application Error' } |
+                Select-Object -First 15 | Format-List TimeCreated, ProviderName, Message
+            } catch {}
+            Write-Host "=== Dispatch service ==="; Get-Service Dispatch -ErrorAction SilentlyContinue | Format-List Name, Status, StartType
             Write-Host "=== Dispatch app log ==="; Get-Content "$env:ProgramData\Dispatch\logs\*.log" -ErrorAction SilentlyContinue | Select-Object -Last 40
             throw "health check failed after 120s (bundle exit $($p.ExitCode))"
           }
