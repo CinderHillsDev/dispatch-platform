@@ -185,6 +185,7 @@ public static class WebEndpoints
                 FromDomain = NullIfEmpty(q["fromDomain"].ToString()),
                 ToDomain = NullIfEmpty(q["toDomain"].ToString()),
                 RelayName = NullIfEmpty(q["relay"].ToString()),
+                RoutingRuleName = NullIfEmpty(q["rule"].ToString()),
                 Tag = NullIfEmpty(q["tag"].ToString()),
                 Limit = int.TryParse(q["limit"], out var l) ? l : 50,
                 Cursor = ParseDate(q["cursorAt"]) is { } at && long.TryParse(q["cursorId"], out var cid)

@@ -29,6 +29,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         if (!string.IsNullOrWhiteSpace(filter.FromDomain)) { where.Append(" AND from_domain = @FromDomain"); p.Add("FromDomain", filter.FromDomain); }
         if (!string.IsNullOrWhiteSpace(filter.ToDomain)) { where.Append(" AND to_domain = @ToDomain"); p.Add("ToDomain", filter.ToDomain); }
         if (!string.IsNullOrWhiteSpace(filter.RelayName)) { where.Append(" AND relay_name = @RelayName"); p.Add("RelayName", filter.RelayName); }
+        if (!string.IsNullOrWhiteSpace(filter.RoutingRuleName)) { where.Append(" AND routing_rule_name = @RoutingRuleName"); p.Add("RoutingRuleName", filter.RoutingRuleName); }
         if (filter.ApiKeyId is { } apiKeyId) { where.Append(" AND api_key_id = @ApiKeyId"); p.Add("ApiKeyId", apiKeyId); }
         // Tag: tags is a JSON array string (e.g. ["a","b"]); match the parameterised pattern %"tag"% — the value
         // stays a Dapper parameter, only the LIKE wildcards are literal (no interpolation of user input).
@@ -108,7 +109,28 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         await using var cn = await factory.OpenAsync(ct);
         var raw = await cn.QuerySingleOrDefaultAsync<DetailRow>(
             new CommandDefinition(sql, new { id }, cancellationToken: ct));
-        return raw?.ToDetail();
+        if (raw is null) return null;
+
+        // Retry/attempt timeline (spec §9.2): all relay_log rows sharing this spool id, oldest first.
+        // Denied/pre-DATA rows have an empty spool id, so fall back to this single row as the history.
+        IReadOnlyList<MessageLogAttempt> history;
+        if (string.IsNullOrEmpty(raw.SpoolId))
+        {
+            history = [new MessageLogAttempt(raw.LoggedAt, raw.Event, raw.Status, raw.RetryAttempt, raw.Provider, raw.DurationMs, raw.Error)];
+        }
+        else
+        {
+            const string historySql = """
+                SELECT logged_at AS LoggedAt, event AS Event, status AS Status, retry_attempt AS RetryAttempt,
+                       provider AS Provider, duration_ms AS DurationMs, error AS Error
+                FROM relay_log
+                WHERE spool_id = @spoolId
+                ORDER BY logged_at ASC, id ASC;
+                """;
+            history = (await cn.QueryAsync<MessageLogAttempt>(
+                new CommandDefinition(historySql, new { spoolId = raw.SpoolId }, cancellationToken: ct))).ToList();
+        }
+        return raw.ToDetail(history);
     }
 
     /// <summary>Flat projection — the JSON array columns are deserialised into string[] by <see cref="ToDetail"/>.</summary>
@@ -139,7 +161,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         public string? ApiKeyName { get; init; }
         public string? TagsJson { get; init; }
 
-        public MessageLogDetail ToDetail() => new()
+        public MessageLogDetail ToDetail(IReadOnlyList<MessageLogAttempt> history) => new()
         {
             Id = Id, LoggedAt = LoggedAt, Event = Event, Status = Status, SpoolId = SpoolId,
             RetryAttempt = RetryAttempt, FromAddress = FromAddress, FromDomain = FromDomain,
@@ -148,7 +170,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
             RoutingMatched = RoutingMatched, Provider = Provider, ProviderMessageId = ProviderMessageId,
             ProviderResponse = ProviderResponse, DurationMs = DurationMs, Error = Error,
             IngestSource = IngestSource, SourceIp = SourceIp, ApiKeyName = ApiKeyName,
-            Tags = ParseJsonArray(TagsJson),
+            Tags = ParseJsonArray(TagsJson), History = history,
         };
     }
 

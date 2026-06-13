@@ -115,14 +115,23 @@ public sealed class ProviderTestService : IDisposable
         }
     }
 
-    private static MimeMessage BuildTestMessage(RelayProviderType provider, string recipient)
+    /// <summary>
+    /// Builds the spec §11.3 provider-test message: a Dispatch-Test From, a descriptive timestamped subject,
+    /// both plain and HTML bodies, and the <c>X-Dispatch-Test: true</c> header. Shared with the relay-scoped
+    /// test endpoint so both code paths send an identical, conformant message. <paramref name="fromOverride"/>
+    /// lets a caller substitute the sender (e.g. a provider that requires a verified domain).
+    /// </summary>
+    public static MimeMessage BuildTestMessage(RelayProviderType provider, string recipient, string? fromOverride = null)
     {
         var hostname = Environment.MachineName;
         var version = typeof(ProviderTestService).Assembly.GetName().Version?.ToString() ?? "dev";
         var timestamp = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
 
         var message = new MimeMessage();
-        message.From.Add(new MailboxAddress("Dispatch Test", $"dispatch-test@{hostname}"));
+        if (!string.IsNullOrWhiteSpace(fromOverride))
+            message.From.Add(MailboxAddress.Parse(fromOverride));
+        else
+            message.From.Add(new MailboxAddress("Dispatch Test", $"dispatch-test@{hostname}"));
         message.To.Add(MailboxAddress.Parse(recipient));
         message.Subject = $"Dispatch provider test — {provider} — {timestamp}";
         message.Headers.Add("X-Dispatch-Test", "true");

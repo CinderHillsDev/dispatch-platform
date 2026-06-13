@@ -13,6 +13,7 @@ public sealed class MessageLogFilter
     public string? FromDomain { get; init; }
     public string? ToDomain { get; init; }
     public string? RelayName { get; init; }
+    public string? RoutingRuleName { get; init; }  // restrict to messages routed by a named rule (§9.2)
     public string? Tag { get; init; }
     public int? ApiKeyId { get; init; }            // restrict to one API key (per-key list, §7.4)
     public int Limit { get; init; } = 50;
@@ -68,7 +69,14 @@ public sealed class MessageLogDetail
     public string? SourceIp { get; init; }
     public string? ApiKeyName { get; init; }
     public IReadOnlyList<string> Tags { get; init; } = [];
+
+    /// <summary>All relay_log rows for this spool id, oldest first — the retry/attempt timeline (spec §9.2).</summary>
+    public IReadOnlyList<MessageLogAttempt> History { get; init; } = [];
 }
+
+/// <summary>One attempt in a message's retry history (spec §9.2 row-detail timeline).</summary>
+public sealed record MessageLogAttempt(
+    DateTime LoggedAt, string Event, string Status, int RetryAttempt, string? Provider, int? DurationMs, string? Error);
 
 /// <summary>Keyset-paginated read of <c>relay_log</c> for the Message Log (spec §9.2, §19).</summary>
 public interface IMessageLogQuery

@@ -320,4 +320,47 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
 
         Assert.Null(await query.GetByIdAsync(-1));
     }
+
+    [Fact]
+    public async Task MessageLog_routing_rule_filter_and_retry_history()
+    {
+        if (!sql.Available) return;
+        var log = new SqlLogRepository(sql.Factory);
+        var query = new SqlMessageLogQuery(sql.Factory);
+        var domain = "rule-" + Guid.NewGuid().ToString("N")[..8] + ".test";
+        var ruleName = "rule-" + Guid.NewGuid().ToString("N")[..8];
+        var spoolId = Guid.NewGuid().ToString("N");
+
+        // Two attempts for the same spool id (a retry then a delivery), both routed by the named rule.
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Retrying", Status = "Error", SpoolId = spoolId, RetryAttempt = 1, Error = "upstream 421",
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@" + domain], ToDomain = domain,
+            RelayName = "alpha", RoutingRuleName = ruleName, RoutingMatched = true, Provider = "None",
+        });
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = spoolId, DurationMs = 12,
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@" + domain], ToDomain = domain,
+            RelayName = "alpha", RoutingRuleName = ruleName, RoutingMatched = true, Provider = "None",
+        });
+        // A different message NOT routed by the rule — must be excluded by the rule filter.
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = Guid.NewGuid().ToString("N"),
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@" + domain], ToDomain = domain,
+            RelayName = "beta",
+        });
+
+        var byRule = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, RoutingRuleName = ruleName });
+        Assert.Equal(2, byRule.Rows.Count);
+        Assert.All(byRule.Rows, r => Assert.Equal(spoolId, r.SpoolId));
+
+        // GetByIdAsync includes the full attempt timeline for the spool id, oldest first.
+        var detail = await query.GetByIdAsync(byRule.Rows[0].Id);
+        Assert.NotNull(detail);
+        Assert.Equal(2, detail!.History.Count);
+        Assert.Equal("Retrying", detail.History[0].Event);
+        Assert.Equal("Delivered", detail.History[1].Event);
+    }
 }

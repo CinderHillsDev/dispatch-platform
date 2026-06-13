@@ -56,6 +56,17 @@ export interface MessageDetail {
   sourceIp: string | null;
   apiKeyName: string | null;
   tags: string[];
+  history: MessageAttempt[];
+}
+
+export interface MessageAttempt {
+  loggedAt: string;
+  event: string;
+  status: string;
+  retryAttempt: number;
+  provider: string | null;
+  durationMs: number | null;
+  error: string | null;
 }
 
 export interface RelayEvent {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type MessageRow, type MessageDetail, type RelayListItem } from "../lib/api";
+import { api, type MessageRow, type MessageDetail, type RelayListItem, type RuleItem } from "../lib/api";
 
 function badgeClass(status: string) {
   if (status === "OK") return "badge ok";
@@ -18,6 +18,7 @@ interface Filters {
   status: string;
   source: string;
   relay: string;
+  rule: string;
   fromDomain: string;
   toDomain: string;
   tag: string;
@@ -25,7 +26,7 @@ interface Filters {
   to: string;
 }
 
-const EMPTY: Filters = { status: "", source: "", relay: "", fromDomain: "", toDomain: "", tag: "", from: "", to: "" };
+const EMPTY: Filters = { status: "", source: "", relay: "", rule: "", fromDomain: "", toDomain: "", tag: "", from: "", to: "" };
 
 function toParams(f: Filters): URLSearchParams {
   const p = new URLSearchParams();
@@ -33,6 +34,7 @@ function toParams(f: Filters): URLSearchParams {
   if (f.status) p.set("status", f.status);
   if (f.source) p.set("source", f.source);
   if (f.relay) p.set("relay", f.relay);
+  if (f.rule) p.set("rule", f.rule);
   if (f.fromDomain) p.set("fromDomain", f.fromDomain);
   if (f.toDomain) p.set("toDomain", f.toDomain);
   if (f.tag) p.set("tag", f.tag);
@@ -45,6 +47,7 @@ function toParams(f: Filters): URLSearchParams {
 export function Messages() {
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [relays, setRelays] = useState<RelayListItem[]>([]);
+  const [rules, setRules] = useState<RuleItem[]>([]);
   const [rows, setRows] = useState<MessageRow[]>([]);
   const [cursor, setCursor] = useState<{ at: string; id: number } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,6 +60,7 @@ export function Messages() {
     setFilters((f) => ({ ...f, [key]: value }));
 
   useEffect(() => { api.relays.list().then(setRelays).catch(() => setRelays([])); }, []);
+  useEffect(() => { api.rules.list().then(setRules).catch(() => setRules([])); }, []);
 
   const loadMore = useCallback(async () => {
     if (!cursor) return;
@@ -107,6 +111,10 @@ export function Messages() {
           <select value={filters.relay} onChange={(e) => set("relay", e.target.value)}>
             <option value="">Any relay</option>
             {relays.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
+          </select>
+          <select value={filters.rule} onChange={(e) => set("rule", e.target.value)} title="Routing rule">
+            <option value="">Any rule</option>
+            {rules.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
           </select>
           <select value={filters.source} onChange={(e) => set("source", e.target.value)}>
             <option value="">All sources</option>
@@ -191,6 +199,20 @@ export function Messages() {
                   : <span className="muted">—</span>}
               </Field>
               {detail.error && <Field label="Error"><span className="badge error" style={{ whiteSpace: "pre-wrap" }}>{detail.error}</span></Field>}
+              {detail.history.length > 1 && (
+                <Field label={`Retry history (${detail.history.length} attempts)`}>
+                  <ol style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
+                    {detail.history.map((h, i) => (
+                      <li key={i} style={{ fontSize: 13 }}>
+                        <span className={badgeClass(h.status)} style={{ marginRight: 6 }}>{h.event}</span>
+                        <span className="muted">{new Date(h.loggedAt).toLocaleString()}</span>
+                        {h.durationMs != null ? <span className="muted"> · {h.durationMs} ms</span> : null}
+                        {h.error ? <div className="muted" style={{ whiteSpace: "pre-wrap" }}>{h.error}</div> : null}
+                      </li>
+                    ))}
+                  </ol>
+                </Field>
+              )}
             </dl>
           )}
         </aside>

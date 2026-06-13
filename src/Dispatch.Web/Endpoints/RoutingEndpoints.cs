@@ -100,17 +100,15 @@ public static class RoutingEndpoints
             if (record is null) return Results.NotFound();
             var s = await store.GetAsync(id, ct);
 
-            var from = !string.IsNullOrWhiteSpace(req.From)
+            // Send the same spec §11.3-conformant message as the live provider test (proper From, timestamped
+            // subject, text+HTML bodies, X-Dispatch-Test header) rather than an ad-hoc plaintext stub.
+            var fromOverride = !string.IsNullOrWhiteSpace(req.From)
                 ? req.From!
                 : s.Provider == RelayProviderType.Mailgun && !string.IsNullOrEmpty(s.Settings.GetValueOrDefault("Domain"))
                     ? $"dispatch-test@{s.Settings["Domain"]}"
-                    : "Dispatch Test <noreply@dispatch.test>";
+                    : null;
 
-            var mime = new MimeMessage();
-            mime.From.Add(MailboxAddress.Parse(from));
-            mime.To.Add(MailboxAddress.Parse(req.To));
-            mime.Subject = "Dispatch test email";
-            mime.Body = new TextPart("plain") { Text = "This is a test email sent from Dispatch." };
+            var mime = Dispatch.Web.Realtime.ProviderTestService.BuildTestMessage(s.Provider, req.To, fromOverride);
 
             var config = new RelayConfig
             {
