@@ -47,6 +47,18 @@ A small embedded web UI — served directly from the process on port 8420 — le
 - Provider-agnostic relay — swap between Mailgun, SendGrid, SMTP, Azure Communication Services, or others through the UI without restarting
 - AGPL-3.0 + Commons Clause — free to use and self-host; selling the software or charging for hosted access is prohibited
 
+### 1.1 Implementation deltas (authoritative)
+
+The shipped implementation intentionally diverges from a few details described later in this document. Where they conflict, the notes here win; the older passages are kept for context but should be read with these in mind:
+
+- **Default SMTP port is `2525`, not `25/587`.** 25/587 require elevation; the dev-friendly default avoids that. Operators set production ports (25/587) from the dashboard. (Affects §5.3, §12.3 `listener.ports`.)
+- **No "None" provider.** The provider model is `Unconfigured` (the out-of-the-box default — never delivers, fails clearly) plus `Local` (developer mode — captures to `spool/captured/`, never delivers externally). The schema/enum has no `None` value; references to provider `None` mean `Local`/`Unconfigured`. (Affects §10.2, §10.4/§10.5, §11.6.)
+- **No CSV export.** The async CSV export (job endpoints, Export UI) was dropped as out of scope. (Affects §9.2 Export, §9.3 `/api/messages/export*`.)
+- **Logging is repository-driven, not Serilog custom sinks.** Relay events reach `relay_log` via `ILogRepository.InsertAsync` and the live feed via a `BroadcastingLogRepository` decorator + `RelayEventStream`; there is no `RelayLogDbSink`/`RingBufferSink`. File + console Serilog sinks remain. (Affects §13.1/§13.2.)
+- **`api_keys.rate_limit_per_minute` default is `100`** (the spec is internally inconsistent — §6.11 says 0, §7.6 says 100; code uses 100; 0 still means "use the global default").
+- **Web UI HTTPS** is served when `WebUi:TlsCertPath` is configured (appsettings, §12.2); with no cert it falls back to plain HTTP with a startup warning, so local development works without a certificate. (Refines §17.2's "HTTPS-only".)
+- **Config provider settings** are edited per-relay via `PUT /api/relays/{id}` (named relays, §10), not a global `PUT /api/config/provider`; live in-flight counts are part of `GET /api/stats/relays`. (Affects §9.3.)
+
 ---
 
 ## 2. Architecture Overview
