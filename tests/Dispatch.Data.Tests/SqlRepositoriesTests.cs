@@ -114,6 +114,22 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     }
 
     [Fact]
+    public async Task Smtp_credential_add_verify_delete()
+    {
+        if (!sql.Available) return;
+        var creds = new SqlSmtpCredentialRepository(sql.Factory);
+
+        await creds.AddAsync("sender1", "s3cret-pass");
+        Assert.True(await creds.VerifyAsync("sender1", "s3cret-pass"));
+        Assert.False(await creds.VerifyAsync("sender1", "wrong"));
+        Assert.False(await creds.VerifyAsync("ghost", "whatever"));
+        Assert.Contains(await creds.ListAsync(), c => c.Username == "sender1");
+
+        Assert.True(await creds.DeleteAsync("sender1"));
+        Assert.False(await creds.VerifyAsync("sender1", "s3cret-pass"));
+    }
+
+    [Fact]
     public async Task ApiKey_create_verify_revoke_lifecycle()
     {
         if (!sql.Available) return;

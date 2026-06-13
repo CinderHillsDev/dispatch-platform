@@ -69,6 +69,8 @@ export interface FailedMessage {
   text: string | null; html: string | null; retryCount: number; lastError: string | null;
 }
 
+export interface SmtpCredential { id: number; username: string; createdAt: string; lastUsedAt: string | null; }
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -125,5 +127,11 @@ export const api = {
     get: (id: string) => getJson<FailedMessage>(`/api/failed/${encodeURIComponent(id)}`),
     retry: (id: string) => sendJson<{ ok: boolean }>(`/api/failed/${encodeURIComponent(id)}/retry`, "POST", {}),
     remove: (id: string) => sendJson<{ ok: boolean }>(`/api/failed/${encodeURIComponent(id)}`, "DELETE", {}),
+  },
+
+  smtpCreds: {
+    list: () => getJson<SmtpCredential[]>("/api/smtp-credentials"),
+    add: (username: string, password: string) => sendJson<{ ok: boolean }>("/api/smtp-credentials", "POST", { username, password }),
+    remove: (username: string) => sendJson<{ ok: boolean }>(`/api/smtp-credentials/${encodeURIComponent(username)}`, "DELETE", {}),
   },
 };

@@ -8,6 +8,7 @@ import { Relays } from "./pages/Relays";
 import { Routing } from "./pages/Routing";
 import { LocalInbox } from "./pages/LocalInbox";
 import { Failed } from "./pages/Failed";
+import { SmtpAuth } from "./pages/SmtpAuth";
 import { AuthGate, logout } from "./auth";
 import "./index.css";
 
@@ -22,6 +23,7 @@ function Layout() {
           <NavLink to="/failed">Failed</NavLink>
           <NavLink to="/relays">Relays</NavLink>
           <NavLink to="/routing">Routing</NavLink>
+          <NavLink to="/smtp-auth">SMTP Auth</NavLink>
           <NavLink to="/inbox">Local Inbox</NavLink>
         </nav>
         <button onClick={logout} style={{ marginTop: 18, width: "100%" }}>Sign out</button>
@@ -40,6 +42,7 @@ const router = createBrowserRouter([
       { path: "/failed", element: <Failed /> },
       { path: "/relays", element: <Relays /> },
       { path: "/routing", element: <Routing /> },
+      { path: "/smtp-auth", element: <SmtpAuth /> },
       { path: "/inbox", element: <LocalInbox /> },
     ],
   },

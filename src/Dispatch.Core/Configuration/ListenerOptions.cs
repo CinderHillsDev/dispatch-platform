@@ -22,4 +22,11 @@ public sealed class ListenerOptions
 
     /// <summary>Global max message size ceiling in bytes. 0 = no limit.</summary>
     public long MaxMessageBytes { get; set; } = 0;
+
+    /// <summary>Require SMTP AUTH against the configured credential allow-list (spec §5.3).</summary>
+    public bool RequireAuth { get; set; } = false;
+
+    /// <summary>Path to a PFX certificate enabling STARTTLS (empty = plain text only).</summary>
+    public string TlsCertPath { get; set; } = "";
+    public string TlsCertPassword { get; set; } = "";
 }

@@ -4,6 +4,7 @@ using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
 using Dispatch.Core.Relays;
 using Dispatch.Core.Routing;
+using Dispatch.Core.Smtp;
 using Dispatch.Data.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -32,6 +33,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMessageLogQuery, SqlMessageLogQuery>();
         services.AddSingleton<ILogMaintenance, SqlLogMaintenance>();
         services.AddSingleton<IDatabaseHealth, SqlDatabaseHealth>();
+        services.AddSingleton<ISmtpCredentialRepository, SqlSmtpCredentialRepository>();
 
         return services;
     }

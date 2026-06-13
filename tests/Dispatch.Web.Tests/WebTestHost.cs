@@ -5,6 +5,7 @@ using Dispatch.Core.Configuration;
 using Dispatch.Core.Providers;
 using Dispatch.Core.Relays;
 using Dispatch.Core.Routing;
+using Dispatch.Core.Smtp;
 using Dispatch.Core.Spool;
 using Dispatch.Web;
 using Dispatch.Web.Endpoints;
@@ -65,6 +66,7 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton<IRoutingRuleRepository, FakeRoutingRuleRepository>();
         builder.Services.AddSingleton<IConfigRepository, FakeConfigRepository>();
         builder.Services.AddSingleton<IDatabaseHealth, FakeDatabaseHealth>();
+        builder.Services.AddSingleton<ISmtpCredentialRepository, FakeSmtpCredentialRepository>();
         builder.Services.AddSingleton<IRelayProviderFactory, FakeProviderFactory>();
         builder.Services.AddSingleton<IRelayResolver, RoutingEngine>();
         builder.Services.AddSingleton<ILogRepository, NullLogRepository>();   // decorated by AddDispatchWeb
@@ -150,6 +152,15 @@ internal sealed class FakeRelaySettingsStore : Dispatch.Core.Relays.IRelaySettin
 internal sealed class FakeDatabaseHealth : IDatabaseHealth
 {
     public Task<bool> IsReachableAsync(CancellationToken ct = default) => Task.FromResult(true);
+}
+
+internal sealed class FakeSmtpCredentialRepository : Dispatch.Core.Smtp.ISmtpCredentialRepository
+{
+    public Task<bool> VerifyAsync(string username, string password, CancellationToken ct = default) => Task.FromResult(false);
+    public Task<IReadOnlyList<Dispatch.Core.Smtp.SmtpCredential>> ListAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<Dispatch.Core.Smtp.SmtpCredential>>([]);
+    public Task AddAsync(string username, string password, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<bool> DeleteAsync(string username, CancellationToken ct = default) => Task.FromResult(true);
 }
 
 internal sealed class FakeConfigRepository : IConfigRepository

@@ -56,6 +56,7 @@ try
     builder.Services.AddSingleton<MinuteCounterRing>();
     builder.Services.AddSingleton<SpoolMessageStore>();
     builder.Services.AddSingleton<CidrMailboxFilter>();
+    builder.Services.AddSingleton<ConfiguredUserAuthenticator>();
 
     // SQL persistence (relay_log, relay_counters, relays, config, api_keys, message-log queries).
     var connectionString = builder.Configuration.GetConnectionString("DispatchLog")

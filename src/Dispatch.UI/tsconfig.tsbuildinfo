@@ -1,1 +1,1 @@
-{"root":["./src/auth.tsx","./src/main.tsx","./src/lib/api.ts","./src/lib/signalr.ts","./src/pages/dashboard.tsx","./src/pages/failed.tsx","./src/pages/localinbox.tsx","./src/pages/messages.tsx","./src/pages/relays.tsx","./src/pages/routing.tsx"],"version":"5.9.3"}
+{"root":["./src/auth.tsx","./src/main.tsx","./src/lib/api.ts","./src/lib/signalr.ts","./src/pages/dashboard.tsx","./src/pages/failed.tsx","./src/pages/localinbox.tsx","./src/pages/messages.tsx","./src/pages/relays.tsx","./src/pages/routing.tsx","./src/pages/smtpauth.tsx"],"version":"5.9.3"}
