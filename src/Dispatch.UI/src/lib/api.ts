@@ -128,7 +128,18 @@ export interface RelayStat {
   received: number; delivered: number; failed: number; inFlight: number;
 }
 
-export interface AppSettings { logging: { delivered: boolean; retrying: boolean; denied: boolean }; }
+export interface AppSettings {
+  logging: { delivered: boolean; retrying: boolean; denied: boolean };
+  retry: { maxRetries: number; retryDelaysSeconds: number[] };
+  retention: {
+    logDeliveredRetentionDays: number;
+    logFailedRetentionDays: number;
+    spoolFailedRetentionDays: number;
+    capturedRetentionDays: number;
+    sizeTriggerGb: number;
+    sizeTargetGb: number;
+  };
+}
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -212,5 +223,7 @@ export const api = {
   settings: {
     get: () => getJson<AppSettings>("/api/settings"),
     saveLogging: (logging: AppSettings["logging"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { logging }),
+    saveRetry: (retry: AppSettings["retry"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retry }),
+    saveRetention: (retention: AppSettings["retention"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retention }),
   },
 };

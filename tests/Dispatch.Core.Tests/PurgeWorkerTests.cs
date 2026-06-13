@@ -3,7 +3,6 @@ using Dispatch.Core.Logging;
 using Dispatch.Core.Maintenance;
 using Dispatch.Core.Spool;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace Dispatch.Core.Tests;
 
@@ -35,7 +34,7 @@ public class PurgeWorkerTests
 
         var disk = new DiskMonitor(t.Spool, new IntakeState(), _ => long.MaxValue, NullLogger<DiskMonitor>.Instance);
         var worker = new PurgeWorker(t.Spool, new NoopLogMaintenance(), disk,
-            Options.Create(new PurgeOptions { SpoolFailedRetentionDays = 30, CapturedRetentionDays = 7 }),
+            new OptionsPurgeSettings(new PurgeOptions { SpoolFailedRetentionDays = 30, CapturedRetentionDays = 7 }),
             NullLogger<PurgeWorker>.Instance);
 
         await worker.RunOnceAsync(new PurgeOptions { SpoolFailedRetentionDays = 30, CapturedRetentionDays = 7 }, default);

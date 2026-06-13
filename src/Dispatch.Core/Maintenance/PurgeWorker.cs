@@ -3,7 +3,6 @@ using Dispatch.Core.Logging;
 using Dispatch.Core.Spool;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Dispatch.Core.Maintenance;
 
@@ -17,23 +16,25 @@ public sealed class PurgeWorker(
     SpoolDirectory spool,
     ILogMaintenance logs,
     DiskMonitor diskMonitor,
-    IOptions<PurgeOptions> options,
+    IPurgeSettings settings,
     ILogger<PurgeWorker> log) : BackgroundService
 {
     private const long BytesPerGb = 1024L * 1024 * 1024;
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        var o = options.Value;
-        if (!o.Enabled)
+        // Resolve the (live, SQL-backed) settings once per cycle — retention/threshold edits in the web
+        // UI take effect on the next cycle without a restart.
+        var initial = await settings.GetAsync(ct);
+        if (!initial.Enabled)
         {
             log.LogInformation("Purge worker disabled");
             return;
         }
 
-        var interval = TimeSpan.FromHours(Math.Max(0.1, o.ScheduleIntervalHours));
         while (!ct.IsCancellationRequested)
         {
+            var o = await settings.GetAsync(ct);
             try
             {
                 await RunOnceAsync(o, ct);
@@ -44,6 +45,7 @@ public sealed class PurgeWorker(
                 log.LogError(ex, "Purge cycle failed");
             }
 
+            var interval = TimeSpan.FromHours(Math.Max(0.1, o.ScheduleIntervalHours));
             try { await Task.Delay(interval, ct); }
             catch (OperationCanceledException) { break; }
         }

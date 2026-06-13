@@ -30,7 +30,7 @@ public sealed class SpoolWorkerPool : BackgroundService
     private readonly RelayConcurrencyTracker _concurrency;
     private readonly ILogger<SpoolWorkerPool> _log;
     private readonly SpoolOptions _spoolOptions;
-    private readonly RetryOptions _retry;
+    private readonly IRetrySettings _retry;
 
     private readonly ConcurrentDictionary<int, SemaphoreSlim> _semaphores = new();
     private FileSystemWatcher? _watcher;
@@ -45,7 +45,7 @@ public sealed class SpoolWorkerPool : BackgroundService
         MinuteCounterRing minuteRing,
         RelayConcurrencyTracker concurrency,
         IOptions<SpoolOptions> spoolOptions,
-        IOptions<RetryOptions> retry,
+        IRetrySettings retry,
         ILogger<SpoolWorkerPool> log)
     {
         _spool = spool;
@@ -57,7 +57,7 @@ public sealed class SpoolWorkerPool : BackgroundService
         _minuteRing = minuteRing;
         _concurrency = concurrency;
         _spoolOptions = spoolOptions.Value;
-        _retry = retry.Value;
+        _retry = retry;
         _log = log;
     }
 
@@ -249,6 +249,7 @@ public sealed class SpoolWorkerPool : BackgroundService
     internal async Task ProcessAsync(string emlPath, ResolvedRelay relay, CancellationToken ct)
     {
         var meta = SpoolMeta.Load(emlPath);
+        var retry = await _retry.GetAsync(ct);
         var sw = Stopwatch.StartNew();
 
         // Count each message as received once, on its first dispatch attempt (off the hot path).
@@ -313,14 +314,14 @@ public sealed class SpoolWorkerPool : BackgroundService
                 "Delivered {SpoolId} via {Relay} ({Provider}) in {Ms}ms",
                 meta.SpoolId, relay.Name, provider.Name, sw.ElapsedMilliseconds);
         }
-        catch (Exception ex) when (IsTransient(ex) && meta.RetryCount < _retry.MaxRetries)
+        catch (Exception ex) when (IsTransient(ex) && meta.RetryCount < retry.MaxRetries)
         {
             await SafeIncrement(relay.Id, CounterField.Retried, ct);
             if (await _loggingSettings.LogRetryingAsync(ct))
                 await SafeLog(BuildErrorEntry("Retrying", meta, relay, ex, meta.RetryCount + 1), ct);
 
             meta.RetryCount++;
-            var delay = RetryDelay(meta.RetryCount);
+            var delay = retry.DelayFor(meta.RetryCount);
             meta.NextRetryAt = DateTime.UtcNow.Add(delay);
             meta.LastError = ex.Message;
             meta.LastRelayId = relay.Id;
@@ -395,14 +396,6 @@ public sealed class SpoolWorkerPool : BackgroundService
             }
             catch (OperationCanceledException) { }
         }, ct);
-    }
-
-    private TimeSpan RetryDelay(int attempt)
-    {
-        var delays = _retry.EffectiveDelaysSeconds;
-        if (delays.Length == 0) return TimeSpan.Zero;
-        var idx = Math.Clamp(attempt - 1, 0, delays.Length - 1);
-        return TimeSpan.FromSeconds(delays[idx]);
     }
 
     private static bool IsTransient(Exception ex) => ex is TransientRelayException;

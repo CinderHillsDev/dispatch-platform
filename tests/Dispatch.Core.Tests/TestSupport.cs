@@ -76,7 +76,7 @@ public static class TestData
         return new SpoolWorkerPool(
             spool, resolver, factory, logRepo, loggingSettings ?? new AlwaysLogSettings(), counters, new MinuteCounterRing(), new RelayConcurrencyTracker(),
             Options.Create(new SpoolOptions { WorkerCount = workerCount }),
-            Options.Create(retry ?? new RetryOptions { MaxRetries = 3, DelaysSeconds = [0.01, 0.02, 0.03] }),
+            new OptionsRetrySettings(retry ?? new RetryOptions { MaxRetries = 3, DelaysSeconds = [0.01, 0.02, 0.03] }),
             NullLogger<SpoolWorkerPool>.Instance);
     }
 
