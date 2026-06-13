@@ -152,6 +152,17 @@ export interface AppSettings {
   };
 }
 
+export interface SystemConfig {
+  editableViaRestartOnly: boolean;
+  listener: {
+    ports: number[]; serverName: string; allowedCidrs: string[];
+    maxMessageBytes: number; requireAuth: boolean;
+    tlsEnabled: boolean; tlsCertPath: string; tlsCertPassword: string | null;
+  };
+  api: { port: number; allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number };
+  webui: { port: number; requireHttps: boolean };
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -233,6 +244,7 @@ export const api = {
 
   settings: {
     get: () => getJson<AppSettings>("/api/settings"),
+    config: () => getJson<SystemConfig>("/api/config"),
     saveLogging: (logging: AppSettings["logging"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { logging }),
     saveRetry: (retry: AppSettings["retry"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retry }),
     saveRetention: (retention: AppSettings["retention"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retention }),

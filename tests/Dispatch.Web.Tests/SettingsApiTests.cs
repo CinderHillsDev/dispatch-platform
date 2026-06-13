@@ -55,4 +55,19 @@ public class SettingsApiTests(WebTestHost host)
         Assert.Equal(8.25, retention.GetProperty("sizeTriggerGb").GetDouble());
         Assert.Equal(7.75, retention.GetProperty("sizeTargetGb").GetDouble());
     }
+
+    [Fact]
+    public async Task Config_returns_effective_listener_api_webui_shape()
+    {
+        var res = await host.Web.GetAsync("/api/config");
+        res.EnsureSuccessStatusCode();
+        var json = await res.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.NotEmpty(json.GetProperty("listener").GetProperty("ports").EnumerateArray());
+        Assert.NotEmpty(json.GetProperty("listener").GetProperty("allowedCidrs").EnumerateArray());
+        // The test host configures the ingestion API port + rate limit.
+        Assert.Equal(WebTestHost.ApiPort, json.GetProperty("api").GetProperty("port").GetInt32());
+        Assert.Equal(100, json.GetProperty("api").GetProperty("rateLimitPerKey").GetInt32());
+        Assert.True(json.GetProperty("webui").TryGetProperty("port", out _));
+    }
 }

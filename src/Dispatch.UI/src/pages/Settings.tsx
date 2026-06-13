@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, type AppSettings } from "../lib/api";
+import { api, type AppSettings, type SystemConfig } from "../lib/api";
 
 export function Settings() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [sysConfig, setSysConfig] = useState<SystemConfig | null>(null);
   const [delaysText, setDelaysText] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -13,6 +14,7 @@ export function Settings() {
       setDelaysText(s.retry.retryDelaysSeconds.join(", "));
     });
   }, []);
+  useEffect(() => { api.settings.config().then(setSysConfig).catch(() => setSysConfig(null)); }, []);
 
   const toggle = (key: keyof AppSettings["logging"]) => {
     if (!settings) return;
@@ -133,17 +135,43 @@ export function Settings() {
         ))}
       </div>
 
-      <div className="panel" style={{ maxWidth: 620 }}>
-        <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-          Note: listener ports and the spool worker count are <strong>not</strong> editable here — changing
-          them requires a service restart.
-        </p>
-      </div>
-
       <div style={{ display: "flex", gap: 10, alignItems: "center", maxWidth: 620 }}>
         <button onClick={save} disabled={busy}>Save</button>
         {msg && <span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span>}
       </div>
+
+      {sysConfig && (
+        <div className="panel" style={{ maxWidth: 620, marginTop: 18 }}>
+          <h2>System configuration</h2>
+          <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
+            Listener, HTTP API and Web UI settings. Read-only here — these are applied at startup, so changes
+            require a service restart. (Retry, retention and logging above take effect live.)
+          </p>
+          <dl className="kv" style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: "6px 12px", margin: 0, fontSize: 13 }}>
+            <Row label="SMTP ports">{sysConfig.listener.ports.join(", ")}</Row>
+            <Row label="SMTP server name">{sysConfig.listener.serverName}</Row>
+            <Row label="SMTP allow-list">{sysConfig.listener.allowedCidrs.join(", ")}</Row>
+            <Row label="SMTP require AUTH">{sysConfig.listener.requireAuth ? "yes" : "no"}</Row>
+            <Row label="SMTP STARTTLS">{sysConfig.listener.tlsEnabled ? `enabled (${sysConfig.listener.tlsCertPath})` : "disabled"}</Row>
+            <Row label="SMTP max size">{sysConfig.listener.maxMessageBytes > 0 ? `${sysConfig.listener.maxMessageBytes} bytes` : "no limit"}</Row>
+            <Row label="API port">{sysConfig.api.port}</Row>
+            <Row label="API allow-list">{sysConfig.api.allowedCidrs.join(", ")}</Row>
+            <Row label="API rate limit / key">{sysConfig.api.rateLimitPerKey}/min</Row>
+            <Row label="API max size">{sysConfig.api.maxMessageBytes > 0 ? `${sysConfig.api.maxMessageBytes} bytes` : "no limit"}</Row>
+            <Row label="Web UI port">{sysConfig.webui.port}</Row>
+            <Row label="Web UI HTTPS">{sysConfig.webui.requireHttps ? "required" : "not required"}</Row>
+          </dl>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <dt className="muted">{label}</dt>
+      <dd style={{ margin: 0, wordBreak: "break-word" }}>{children}</dd>
     </>
   );
 }

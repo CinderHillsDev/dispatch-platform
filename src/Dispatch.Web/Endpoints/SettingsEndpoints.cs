@@ -20,6 +20,44 @@ public static class SettingsEndpoints
 {
     public static void MapSettings(this RouteGroupBuilder group)
     {
+        // Read-only effective listener / HTTP-API / web-UI configuration for the System/About page (spec §9.2,
+        // §9.3 GET /api/config). These are sourced from appsettings and applied at startup, so they require a
+        // service restart to change — they are surfaced here for visibility, with the TLS passphrase redacted.
+        group.MapGet("/config", (
+            IOptions<ListenerOptions> listener, IOptions<ApiOptions> api, IOptions<WebUiOptions> webui) =>
+        {
+            var l = listener.Value;
+            var a = api.Value;
+            var w = webui.Value;
+            return Results.Ok(new
+            {
+                editableViaRestartOnly = true,
+                listener = new
+                {
+                    ports = l.EffectivePorts,
+                    serverName = l.ServerName,
+                    allowedCidrs = l.EffectiveAllowedCidrs,
+                    maxMessageBytes = l.MaxMessageBytes,
+                    requireAuth = l.RequireAuth,
+                    tlsEnabled = !string.IsNullOrWhiteSpace(l.TlsCertPath),
+                    tlsCertPath = l.TlsCertPath,
+                    tlsCertPassword = string.IsNullOrEmpty(l.TlsCertPassword) ? null : "********",
+                },
+                api = new
+                {
+                    port = a.Port,
+                    allowedCidrs = a.EffectiveAllowedCidrs,
+                    maxMessageBytes = a.MaxMessageBytes,
+                    rateLimitPerKey = a.RateLimitPerKey,
+                },
+                webui = new
+                {
+                    port = w.Port,
+                    requireHttps = w.RequireHttps,
+                },
+            });
+        });
+
         group.MapGet("/settings", async (
             IConfigRepository config,
             IOptions<RetryOptions> retryDefaults,
