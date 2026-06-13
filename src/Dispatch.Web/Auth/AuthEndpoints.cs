@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using Dispatch.Core.Configuration;
-using Dispatch.Web.Ingestion;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
@@ -18,9 +17,6 @@ public static class AuthEndpoints
 {
     public const string PasswordHashKey = "webui.password_hash";
 
-    /// <summary>Max web-UI login attempts per client IP per minute before further attempts are 429'd.</summary>
-    private const int LoginAttemptsPerMinute = 10;
-
     public static void MapAuth(this RouteGroupBuilder group)
     {
         group.MapGet("/auth/status", async (HttpContext ctx, IConfigRepository config) =>
@@ -34,21 +30,25 @@ public static class AuthEndpoints
             });
         });
 
-        group.MapPost("/auth/login", async (LoginRequest req, HttpContext ctx, IConfigRepository config, RateLimiter limiter) =>
+        group.MapPost("/auth/login", async (LoginRequest req, HttpContext ctx, IConfigRepository config, LoginThrottle throttle) =>
         {
-            // Throttle login attempts per client IP to blunt online brute force (spec §17). bcrypt-12 already
-            // makes each verify costly; this caps the attempt rate on top of that.
+            // Per-IP lockout (spec §17.3): 10 failed attempts within 5 minutes → 15-minute lockout. bcrypt-12
+            // makes each verify costly; the lockout caps sustained online brute force on top of that.
             var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-            if (!limiter.TryAcquire($"login:{ip}", LoginAttemptsPerMinute))
+            if (throttle.IsLocked(ip, out var retryAfter))
             {
-                ctx.Response.Headers.RetryAfter = "60";
+                ctx.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
             }
 
             var hash = await config.GetAsync(PasswordHashKey, ctx.RequestAborted);
             if (string.IsNullOrEmpty(hash) || string.IsNullOrEmpty(req.Password) || !BCrypt.Net.BCrypt.Verify(req.Password, hash))
+            {
+                throttle.RecordFailure(ip);
                 return Results.Unauthorized();
+            }
 
+            throttle.RecordSuccess(ip);
             var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "admin")], CookieAuthenticationDefaults.AuthenticationScheme);
             await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
             return Results.Ok(new { ok = true });
@@ -92,14 +92,14 @@ public static class AuthEndpoints
     };
 
     /// <summary>
-    /// Enforces the web-UI password policy (spec §17.3): minimum 8 characters with at least one
+    /// Enforces the web-UI password policy (spec §17.3): minimum 12 characters with at least one
     /// uppercase letter, one lowercase letter and one digit, and not in the common-password list.
     /// Returns a human-readable error message when the password is rejected, or <c>null</c> when it passes.
     /// </summary>
     internal static string? ValidatePassword(string? password)
     {
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
-            return "Password must be at least 8 characters.";
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 12)
+            return "Password must be at least 12 characters.";
         if (!password.Any(char.IsUpper) || !password.Any(char.IsLower) || !password.Any(char.IsDigit))
             return "Password must contain at least one uppercase letter, one lowercase letter and one digit.";
         if (CommonPasswords.Contains(password))

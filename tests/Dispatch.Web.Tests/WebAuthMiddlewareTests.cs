@@ -22,8 +22,12 @@ public class WebAuthMiddlewareTests
         return (ctx, () => called);
     }
 
-    private static WebAuthMiddleware Middleware() =>
-        new(Options.Create(new WebUiOptions { Port = WebPort }));
+    private static WebAuthMiddleware Middleware()
+    {
+        var cache = new ConfigCache();
+        cache.LoadFrom(new Dictionary<string, string> { [ConfigKeys.WebUiPort] = WebPort.ToString() });
+        return new WebAuthMiddleware(cache);
+    }
 
     private static Task Invoke(HttpContext ctx) =>
         Middleware().InvokeAsync(ctx, (RequestDelegate)ctx.Items["__next"]!);

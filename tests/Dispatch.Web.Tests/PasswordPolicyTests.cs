@@ -7,7 +7,7 @@ namespace Dispatch.Web.Tests;
 public class PasswordPolicyTests
 {
     [Theory]
-    [InlineData("Abcdef12")]      // 8 chars, upper+lower+digit
+    [InlineData("Abcdef123456")]  // 12 chars, upper+lower+digit
     [InlineData("Str0ngPassphrase")]
     public void Accepts_compliant_passwords(string password)
     {
@@ -17,18 +17,19 @@ public class PasswordPolicyTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData("Ab1cdef")]       // 7 chars — too short
+    [InlineData("Ab1cdef")]        // 7 chars — too short
+    [InlineData("Abcdef12345")]    // 11 chars — just under the 12-char minimum
     public void Rejects_short_passwords(string? password)
     {
         var error = AuthEndpoints.ValidatePassword(password);
         Assert.NotNull(error);
-        Assert.Contains("8 characters", error);
+        Assert.Contains("12 characters", error);
     }
 
     [Theory]
-    [InlineData("abcdefg1")]      // no uppercase
-    [InlineData("ABCDEFG1")]      // no lowercase
-    [InlineData("Abcdefgh")]      // no digit
+    [InlineData("abcdefghij12")]   // no uppercase
+    [InlineData("ABCDEFGHIJ12")]   // no lowercase
+    [InlineData("Abcdefghijkl")]   // no digit
     public void Rejects_passwords_missing_character_classes(string password)
     {
         var error = AuthEndpoints.ValidatePassword(password);

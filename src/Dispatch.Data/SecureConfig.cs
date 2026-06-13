@@ -4,9 +4,10 @@ using System.Text;
 namespace Dispatch.Data;
 
 /// <summary>
-/// Transparent encryption for <c>config</c> rows flagged encrypted (spec §19.5). Uses AES-256-GCM with a
-/// machine-derived key (PBKDF2 from /etc/machine-id where available, else the machine name). The key is
-/// held in memory only. Blob layout: base64( nonce[12] | tag[16] | ciphertext ).
+/// Transparent encryption for <c>config</c> rows flagged encrypted (spec §17.5, §19.5). On Windows it uses
+/// DPAPI (<see cref="ProtectedData"/>, LocalMachine scope) so no key material is stored. On Linux/macOS it
+/// uses AES-256-GCM with a machine-derived key (PBKDF2 from /etc/machine-id where available, else the machine
+/// name), held in memory only. A given machine always uses one scheme. AES blob: base64( nonce[12] | tag[16] | ct ).
 /// </summary>
 public static class SecureConfig
 {
@@ -17,6 +18,10 @@ public static class SecureConfig
 
     public static string Encrypt(string plaintext)
     {
+        if (OperatingSystem.IsWindows())
+            return Convert.ToBase64String(
+                ProtectedData.Protect(Encoding.UTF8.GetBytes(plaintext), AppSalt, DataProtectionScope.LocalMachine));
+
         var nonce = RandomNumberGenerator.GetBytes(NonceSize);
         var pt = Encoding.UTF8.GetBytes(plaintext);
         var ct = new byte[pt.Length];
@@ -34,6 +39,10 @@ public static class SecureConfig
 
     public static string Decrypt(string ciphertext)
     {
+        if (OperatingSystem.IsWindows())
+            return Encoding.UTF8.GetString(
+                ProtectedData.Unprotect(Convert.FromBase64String(ciphertext), AppSalt, DataProtectionScope.LocalMachine));
+
         var blob = Convert.FromBase64String(ciphertext);
         var nonce = blob.AsSpan(0, NonceSize);
         var tag = blob.AsSpan(NonceSize, TagSize);

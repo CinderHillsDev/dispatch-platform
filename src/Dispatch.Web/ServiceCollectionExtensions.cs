@@ -23,6 +23,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<RelayEventStream>();
         services.AddSingleton<ProviderTestService>();
         services.AddSingleton<RateLimiter>();
+        services.AddSingleton<Auth.LoginThrottle>();
         services.AddSingleton<ApiMessageHandler>();
         services.AddScoped<ApiKeyMiddleware>();
         services.AddScoped<WebAuthMiddleware>();
