@@ -15,9 +15,13 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
 
+  <!-- Version defaults to 1.0.0 for local builds; the release workflow overrides it from the git tag
+       with `wix build -d Version=1.2.3` (see .github/workflows/release.yml). -->
+  <?ifndef Version?><?define Version="1.0.0"?><?endif?>
+
   <Package Name="Dispatch SMTP Relay"
            Manufacturer="CinderHills"
-           Version="1.0.0"
+           Version="$(var.Version)"
            UpgradeCode="6d6a0e2c-7d1e-4f4a-9d3a-2b9b1d5e0a10"
            Scope="perMachine">
 

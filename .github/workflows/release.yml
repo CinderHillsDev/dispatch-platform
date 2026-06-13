@@ -1,0 +1,290 @@
+name: Release
+
+# Cut a release by pushing a semver tag:
+#   git tag v1.2.3 && git push origin v1.2.3
+#
+# This builds the distributable artifacts, stamps them with the tag version, optionally Authenticode-signs
+# the Windows installer via Azure Artifact Signing, and publishes a GitHub Release with:
+#   - DispatchSetup.exe          the single-file Windows installer (the one users download)
+#   - Dispatch.msi               the bare MSI (advanced / existing-SQL installs)
+#   - dispatch-<ver>-linux-x64.tar.gz   self-contained Linux bundle (no .NET SDK needed on the box)
+#   - SHA256SUMS                 checksums for all of the above
+#
+# Code signing is OPT-IN and dormant until you provision Azure Artifact Signing (renamed from Trusted
+# Signing, Jan 2026) and set these repo settings:
+#   Variables: AZURE_SIGNING_ENDPOINT (e.g. https://eus.codesigning.azure.net/),
+#              AZURE_SIGNING_ACCOUNT, AZURE_CERT_PROFILE
+#   Secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   (federated/OIDC service principal)
+# Until AZURE_SIGNING_ACCOUNT is set, the release still publishes — just unsigned.
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Allow a dry run against the current ref without tagging (publishes a draft prerelease).
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version for a manual dry-run build (e.g. 0.0.0-test)"
+        type: string
+        default: "0.0.0-dryrun"
+
+permissions:
+  contents: write   # create the GitHub Release
+  id-token: write   # Azure OIDC login for signing
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="${{ inputs.version }}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Building version $v"
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        shell: pwsh
+        run: |
+          Push-Location src/Dispatch.UI; npm ci; npm run build; Pop-Location
+          Remove-Item -Recurse -Force src/Dispatch.Web/wwwroot -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force src/Dispatch.Web/wwwroot | Out-Null
+          Copy-Item -Recurse -Force src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
+          if (-not (Test-Path src/Dispatch.Web/wwwroot/index.html)) { throw "embedded UI missing index.html" }
+
+      - name: Publish the service
+        run: dotnet publish src/Dispatch.Service -c Release -p:Version=${{ steps.ver.outputs.version }} -o installer/windows/publish
+
+      - name: Install the WiX toolset
+        shell: pwsh
+        env:
+          WIX_VERSION: "6.0.2"
+        run: |
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          wix extension add -g "WixToolset.Firewall.wixext/$env:WIX_VERSION"
+          wix extension add -g "WixToolset.BootstrapperApplications.wixext/$env:WIX_VERSION"
+          wix extension add -g "WixToolset.Util.wixext/$env:WIX_VERSION"
+
+      - name: Build the MSI
+        working-directory: installer/windows
+        run: wix build Dispatch.wxs -d PublishDir=publish -d Version=${{ steps.ver.outputs.version }} -ext WixToolset.Firewall.wixext -o Dispatch.msi
+
+      # --- Sign the MSI (opt-in) ----------------------------------------------------------------
+      - name: Azure login (signing)
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign the MSI
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/trusted-signing-action@v0.5
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}/installer/windows
+          files-folder-filter: msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Build the SQL Express launcher
+        run: dotnet build installer/windows/sql-express/SqlExpressLauncher.csproj -c Release
+
+      - name: Build the bundle
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          wix build bundle/Bundle.wxs -d Version=${{ steps.ver.outputs.version }} `
+            -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext `
+            -bindpath "SqlLauncher=sql-express/bin/Release/net472" -bindpath "Msi=." -o DispatchSetup.exe
+
+      # --- Sign the Burn bundle (opt-in) --------------------------------------------------------
+      # A Burn bundle has an attached engine; the engine must be signed too, so detach it, sign it,
+      # reattach, then sign the final bundle (WiX-recommended; otherwise UAC flags the inner engine).
+      # installer/windows holds other .exe files (publish/, sql-express/), so each Azure sign step
+      # targets a folder containing ONLY the one file to sign, and we copy the result back in place.
+      - name: Detach the bundle engine
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force engine | Out-Null
+          wix burn detach DispatchSetup.exe -engine engine/engine.exe
+
+      - name: Sign the engine
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/trusted-signing-action@v0.5
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}/installer/windows/engine
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Reattach the signed engine + stage bundle for signing
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          wix burn reattach DispatchSetup.exe -engine engine/engine.exe -o DispatchSetup.exe
+          New-Item -ItemType Directory -Force bundlesign | Out-Null
+          Copy-Item -Force DispatchSetup.exe bundlesign/DispatchSetup.exe
+
+      - name: Sign the bundle
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/trusted-signing-action@v0.5
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}/installer/windows/bundlesign
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Put the signed bundle back in place
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        working-directory: installer/windows
+        shell: pwsh
+        run: Copy-Item -Force bundlesign/DispatchSetup.exe DispatchSetup.exe
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            installer/windows/DispatchSetup.exe
+            installer/windows/Dispatch.msi
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="${{ inputs.version }}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        run: |
+          ( cd src/Dispatch.UI && npm ci && npm run build )
+          rm -rf src/Dispatch.Web/wwwroot
+          mkdir -p src/Dispatch.Web/wwwroot
+          cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
+          test -f src/Dispatch.Web/wwwroot/index.html || { echo "embedded UI missing index.html"; exit 1; }
+
+      - name: Publish self-contained (linux-x64)
+        run: |
+          dotnet publish src/Dispatch.Service -c Release -r linux-x64 --self-contained true \
+            -p:Version=${{ steps.ver.outputs.version }} -o publish/linux
+
+      - name: Assemble the tarball
+        run: |
+          ver="${{ steps.ver.outputs.version }}"
+          stage="dispatch-${ver}-linux-x64"
+          mkdir -p "staging/${stage}/bin"
+          cp -r publish/linux/. "staging/${stage}/bin/"
+          cp installer/linux/install.sh "staging/${stage}/install.sh"
+          cp installer/linux/dispatch.service "staging/${stage}/dispatch.service"
+          chmod +x "staging/${stage}/install.sh" "staging/${stage}/bin/Dispatch.Service"
+          cat > "staging/${stage}/README.txt" <<EOF
+          Dispatch SMTP Relay ${ver} — Linux x64 (self-contained; no .NET SDK required).
+
+          Install with a local SQL Server Express:
+            sudo ./install.sh --prebuilt ./bin --install-sql \\
+              --sa-password '<StrongSaPassw0rd!>' --admin-password '<DashboardPassword!>'
+
+          Or against an existing SQL Server / Azure SQL:
+            sudo ./install.sh --prebuilt ./bin \\
+              --sql-connection 'Server=...;Database=DispatchLog;User Id=...;Password=...;TrustServerCertificate=True;Encrypt=True' \\
+              --admin-password '<DashboardPassword!>'
+
+          Then open http://localhost:8420 and log in with the admin password you set.
+          Run ./install.sh --help-style flags are documented at the top of install.sh.
+          EOF
+          tar -czf "${stage}.tar.gz" -C staging "${stage}"
+          ls -lh "${stage}.tar.gz"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dispatch-*-linux-x64.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Stage release files + checksums
+        run: |
+          mkdir -p release
+          cp dist/windows/DispatchSetup.exe dist/windows/Dispatch.msi release/
+          cp dist/linux/dispatch-*-linux-x64.tar.gz release/
+          ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.windows.outputs.version) }}
+          name: Dispatch ${{ needs.windows.outputs.version }}
+          draft: ${{ github.ref_type != 'tag' }}
+          prerelease: ${{ contains(needs.windows.outputs.version, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/DispatchSetup.exe
+            release/Dispatch.msi
+            release/dispatch-*-linux-x64.tar.gz
+            release/SHA256SUMS

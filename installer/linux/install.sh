@@ -14,6 +14,9 @@
 #   # Or have the installer set up SQL Server Express locally (Ubuntu/Debian or RHEL/Fedora):
 #   sudo ./install.sh --install-sql --sa-password "<StrongSaPassw0rd!>" --admin-password "<pw>" [--generate-cert]
 #
+#   # From a release tarball (self-contained binaries; no .NET SDK / Node required on the box):
+#   sudo ./install.sh --prebuilt ./bin --install-sql --sa-password "<pw>" --admin-password "<pw>"
+#
 # Flags:
 #   --sql-connection <s>   Connection string for an existing server (omit when using --install-sql).
 #   --install-sql          Install SQL Server (Express edition, free) locally, create the DispatchLog DB.
@@ -23,7 +26,9 @@
 #   --http-port <n>        Firewall/URL dashboard port (default 8420; change in the dashboard to differ).
 #   --api-port <n>         Firewall ingestion API port (default 8421).
 #   --smtp-ports <a,b>     Firewall SMTP ports (default 2525; set 25,587 in the dashboard for production).
-#   --source <path>        Repo source root (default: two levels up from this script).
+#   --source <path>        Repo source root (default: two levels up from this script). Build-from-source mode.
+#   --prebuilt <dir>       Install pre-published self-contained binaries from <dir> instead of building from
+#                          source. Used by the release tarball; needs neither the .NET SDK nor Node.
 #
 set -euo pipefail
 
@@ -39,6 +44,7 @@ SMTP_PORTS="2525"
 SQL_CONNECTION=""
 ADMIN_PASSWORD=""
 SOURCE_DIR=""
+PREBUILT_DIR=""
 INSTALL_SQL="0"
 SA_PASSWORD=""
 GENERATE_CERT="0"
@@ -56,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --api-port) API_PORT="$2"; shift 2;;
     --smtp-ports) SMTP_PORTS="$2"; shift 2;;
     --source) SOURCE_DIR="$2"; shift 2;;
+    --prebuilt) PREBUILT_DIR="$2"; shift 2;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -129,18 +136,28 @@ fi
 
 [[ "$GENERATE_CERT" == "1" ]] && generate_cert
 
-# Resolve repo source (default: two levels up from this script).
-SOURCE_DIR="${SOURCE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "==> Building the web UI"
-( cd "$SOURCE_DIR/src/Dispatch.UI" && npm ci && npm run build )
-rm -rf "$SOURCE_DIR/src/Dispatch.Web/wwwroot"
-mkdir -p "$SOURCE_DIR/src/Dispatch.Web/wwwroot"
-cp -r "$SOURCE_DIR/src/Dispatch.UI/dist/." "$SOURCE_DIR/src/Dispatch.Web/wwwroot/"
-
-echo "==> Publishing the service to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
-dotnet publish "$SOURCE_DIR/src/Dispatch.Service" -c Release -o "$INSTALL_DIR"
+if [[ -n "$PREBUILT_DIR" ]]; then
+  # Release-tarball mode: copy the self-contained publish output as-is (no SDK / Node build).
+  [[ -d "$PREBUILT_DIR" ]] || { echo "--prebuilt dir not found: $PREBUILT_DIR" >&2; exit 1; }
+  [[ -f "$PREBUILT_DIR/Dispatch.Service" ]] || { echo "--prebuilt dir has no Dispatch.Service executable: $PREBUILT_DIR" >&2; exit 1; }
+  echo "==> Installing pre-built binaries from $PREBUILT_DIR to $INSTALL_DIR"
+  cp -r "$PREBUILT_DIR/." "$INSTALL_DIR/"
+  chmod +x "$INSTALL_DIR/Dispatch.Service"
+else
+  # Build-from-source mode: needs the .NET SDK + Node.
+  SOURCE_DIR="${SOURCE_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+  echo "==> Building the web UI"
+  ( cd "$SOURCE_DIR/src/Dispatch.UI" && npm ci && npm run build )
+  rm -rf "$SOURCE_DIR/src/Dispatch.Web/wwwroot"
+  mkdir -p "$SOURCE_DIR/src/Dispatch.Web/wwwroot"
+  cp -r "$SOURCE_DIR/src/Dispatch.UI/dist/." "$SOURCE_DIR/src/Dispatch.Web/wwwroot/"
+
+  echo "==> Publishing the service to $INSTALL_DIR"
+  dotnet publish "$SOURCE_DIR/src/Dispatch.Service" -c Release -o "$INSTALL_DIR"
+fi
 
 echo "==> Creating the 'dispatch' service account and directories"
 id -u dispatch >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dispatch
@@ -174,7 +191,13 @@ chown -R dispatch:dispatch "$DATA_DIR/.dispatch-spool"
 chmod 700 "$DATA_DIR/.dispatch-spool" "$DATA_DIR/.dispatch-spool/incoming" "$DATA_DIR/.dispatch-spool/processing" "$DATA_DIR/.dispatch-spool/failed"
 
 echo "==> Installing systemd unit"
-install -m 644 "$SOURCE_DIR/installer/linux/dispatch.service" /etc/systemd/system/dispatch.service
+# The unit lives next to this script in a release tarball, or under installer/linux in a source tree.
+if [[ -f "$SCRIPT_DIR/dispatch.service" ]]; then
+  UNIT_SRC="$SCRIPT_DIR/dispatch.service"
+else
+  UNIT_SRC="$SOURCE_DIR/installer/linux/dispatch.service"
+fi
+install -m 644 "$UNIT_SRC" /etc/systemd/system/dispatch.service
 systemctl daemon-reload
 systemctl enable --now dispatch
 

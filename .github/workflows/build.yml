@@ -80,49 +80,5 @@ jobs:
           path: TestResults/**/*.trx
           if-no-files-found: ignore
 
-  # On a version tag push (refs/tags/v*) publish the service (spec §18) and upload it as a build
-  # artifact. Runs after build-test so a tagged release is only produced from a green build.
-  release:
-    needs: build-test
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-
-    env:
-      DOTNET_NOLOGO: "true"
-      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: src/Dispatch.UI/package-lock.json
-
-      - name: Build React UI
-        working-directory: src/Dispatch.UI
-        run: |
-          npm ci
-          npm run build
-
-      - name: Embed UI into Dispatch.Web
-        run: |
-          rm -rf src/Dispatch.Web/wwwroot
-          mkdir -p src/Dispatch.Web/wwwroot
-          cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
-
-      - name: Publish service (Release)
-        run: dotnet publish src/Dispatch.Service -c Release -o publish/dispatch-service
-
-      - name: Upload service artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dispatch-service-${{ github.ref_name }}
-          path: publish/dispatch-service
+  # NOTE: tagged releases (refs/tags/v*) are handled by release.yml, which builds the signed Windows
+  # installer + Linux tarball and publishes a GitHub Release. This workflow only runs build + tests.

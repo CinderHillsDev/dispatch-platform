@@ -78,41 +78,15 @@ jobs:
           wix build bundle/Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext `
             -bindpath "SqlLauncher=sql-express/bin/Release/net472" -bindpath "Msi=." -o DispatchSetup.exe
 
-      - name: Upload installer artifacts (unsigned)
-        id: upload-unsigned
+      # CI installer builds are intentionally unsigned (signing happens only on tagged releases via
+      # release.yml + Azure Artifact Signing). This artifact proves the WiX sources + launcher compile.
+      - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dispatch-windows-installer
           path: |
             installer/windows/Dispatch.msi
             installer/windows/DispatchSetup.exe
-          if-no-files-found: error
-
-      # --- Code signing via SignPath Foundation (free for OSS) ----------------------------------
-      # Dormant until the repo is provisioned. To activate: get the project approved at signpath.org,
-      # then in repo Settings add variables SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
-      # SIGNPATH_POLICY_SLUG and secret SIGNPATH_API_TOKEN. The SignPath side needs an "artifact
-      # configuration" that authenticode-signs BOTH Dispatch.msi and the Burn bundle DispatchSetup.exe
-      # (the bundle's engine is detached/re-signed by SignPath automatically). Until the org-id variable
-      # is set, both steps below are skipped and the unsigned artifact above stands.
-      - name: Submit to SignPath for signing
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-        uses: signpath/github-action-submit-signing-request@v1.2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
-          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: installer/windows/signed
-
-      - name: Upload installer artifacts (signed)
-        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: dispatch-windows-installer-signed
-          path: installer/windows/signed/**
           if-no-files-found: error
 
       - name: Full install + smoke (opt-in)

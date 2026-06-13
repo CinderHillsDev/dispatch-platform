@@ -18,8 +18,11 @@
      xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
+  <!-- Overridden from the git tag by release.yml (`wix build -d Version=1.2.3`); defaults for local builds. -->
+  <?ifndef Version?><?define Version="1.0.0"?><?endif?>
+
   <Bundle Name="Dispatch SMTP Relay"
-          Version="1.0.0"
+          Version="$(var.Version)"
           Manufacturer="CinderHills"
           UpgradeCode="3f2a7c10-9b4e-4d2a-8e51-7c0d1a2b3c4d"
           Compressed="yes">
