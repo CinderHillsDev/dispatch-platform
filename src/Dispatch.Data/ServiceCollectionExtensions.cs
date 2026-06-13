@@ -1,0 +1,34 @@
+using Dispatch.Core.ApiKeys;
+using Dispatch.Core.Configuration;
+using Dispatch.Core.Counters;
+using Dispatch.Core.Logging;
+using Dispatch.Core.Relays;
+using Dispatch.Data.Repositories;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Dispatch.Data;
+
+public static class ServiceCollectionExtensions
+{
+    /// <summary>Registers the SQL connection factory, migration runner, and all SQL repositories.</summary>
+    public static IServiceCollection AddDispatchData(this IServiceCollection services, string connectionString)
+    {
+        services.AddSingleton(new SqlConnectionFactory(connectionString));
+        services.AddSingleton<DatabaseInitializer>();
+
+        services.AddSingleton<SqlLogRepository>();
+        services.AddSingleton<ILogRepository>(sp => sp.GetRequiredService<SqlLogRepository>());
+
+        services.AddSingleton<SqlCounterRepository>();
+        services.AddSingleton<ICounterRepository>(sp => sp.GetRequiredService<SqlCounterRepository>());
+        services.AddSingleton<ICounterReader>(sp => sp.GetRequiredService<SqlCounterRepository>());
+
+        services.AddSingleton<IConfigRepository, SqlConfigRepository>();
+        services.AddSingleton<IRelaySettingsStore, SqlRelaySettingsStore>();
+        services.AddSingleton<IRelayRepository, SqlRelayRepository>();
+        services.AddSingleton<IApiKeyRepository, SqlApiKeyRepository>();
+        services.AddSingleton<IMessageLogQuery, SqlMessageLogQuery>();
+
+        return services;
+    }
+}
