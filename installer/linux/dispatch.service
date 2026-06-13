@@ -3,7 +3,8 @@ Description=Dispatch SMTP Relay
 After=network.target
 
 [Service]
-Type=simple
+# notify: the service signals readiness via sd_notify (Program.cs UseSystemd) so systemd knows when it's up.
+Type=notify
 User=dispatch
 Group=dispatch
 # Binaries live in /opt/dispatch; appsettings.json + the spool live under the data dir (the content root).

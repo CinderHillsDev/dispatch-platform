@@ -28,6 +28,10 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
     builder.Host.UseSerilog();
+    // Integrate with the host service manager so it reports "running" correctly: Windows SCM (otherwise the
+    // MSI's service start times out → 1603) and systemd Type=notify. Both are no-ops when run interactively.
+    builder.Host.UseWindowsService();
+    builder.Host.UseSystemd();
 
     // --- Bootstrap (spec §12.1, §12.6, §12.8) -------------------------------------------------
     // appsettings.json holds ONLY the DB connection string and the Web UI TLS cert. Everything else lives
