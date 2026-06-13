@@ -22,11 +22,10 @@ dist/
 # Generated: UI build copied here for embedding (run npm build + copy)
 src/Dispatch.Web/wwwroot/
 
-# Spool / runtime data
-spool/
+# Spool / runtime data (the runtime spool dir; NOT the src/.../Spool source folder —
+# git's core.ignorecase makes a bare "spool/" match "Spool/", so scope it to the dev path)
 .dispatch-spool/
 logs/
-*.eml
 
 # OS
 .DS_Store
