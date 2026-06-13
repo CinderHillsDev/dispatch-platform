@@ -60,6 +60,15 @@ export interface SimulateResult {
 export interface InboxItem { id: string; from: string; to: string; subject: string; date: string; sizeBytes: number; }
 export interface InboxMessage extends InboxItem { cc: string; text: string | null; html: string | null; }
 
+export interface FailedItem {
+  id: string; from: string; to: string[]; subject: string;
+  retryCount: number; lastError: string | null; ingestSource: string; failedAt: string; sizeBytes: number;
+}
+export interface FailedMessage {
+  id: string; from: string; to: string; subject: string;
+  text: string | null; html: string | null; retryCount: number; lastError: string | null;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -109,5 +118,12 @@ export const api = {
     get: (id: string) => getJson<InboxMessage>(`/api/local/messages/${encodeURIComponent(id)}`),
     remove: (id: string) => sendJson<{ ok: boolean }>(`/api/local/messages/${encodeURIComponent(id)}`, "DELETE", {}),
     clear: () => sendJson<{ ok: boolean }>("/api/local/messages", "DELETE", {}),
+  },
+
+  failed: {
+    list: () => getJson<FailedItem[]>("/api/failed"),
+    get: (id: string) => getJson<FailedMessage>(`/api/failed/${encodeURIComponent(id)}`),
+    retry: (id: string) => sendJson<{ ok: boolean }>(`/api/failed/${encodeURIComponent(id)}/retry`, "POST", {}),
+    remove: (id: string) => sendJson<{ ok: boolean }>(`/api/failed/${encodeURIComponent(id)}`, "DELETE", {}),
   },
 };

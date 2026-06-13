@@ -98,8 +98,9 @@ public static class WebEndpoints
             });
         });
 
-        group.MapRelayRouting();   // /api/relays/* and /api/routing/* (see RoutingEndpoints)
-        group.MapLocalInbox();     // /api/local/messages (see LocalInboxEndpoints)
+        group.MapRelayRouting();    // /api/relays/* and /api/routing/* (see RoutingEndpoints)
+        group.MapLocalInbox();      // /api/local/messages (see LocalInboxEndpoints)
+        group.MapFailedMessages();  // /api/failed/* (see FailedMessageEndpoints)
 
         group.MapGet("/keys", async (IApiKeyRepository keys, CancellationToken ct) =>
             Results.Ok((await keys.ListAsync(includeRevoked: true, ct)).Select(Public)));
