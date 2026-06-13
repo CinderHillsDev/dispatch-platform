@@ -9,8 +9,10 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
+      # Full SQL Server on the amd64 runner (Azure SQL Edge is retired / blocked on MCR for CI pulls).
+      # Identical wire protocol / T-SQL to the local Azure SQL Edge container; the app code is unchanged.
       sql:
-        image: mcr.microsoft.com/azure-sql-edge:latest
+        image: mcr.microsoft.com/mssql/server:2022-latest
         env:
           ACCEPT_EULA: "Y"
           MSSQL_SA_PASSWORD: "Dispatch_Dev_Pass123"
