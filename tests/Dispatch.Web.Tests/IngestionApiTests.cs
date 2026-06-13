@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Dispatch.Core.Spool;
 
 namespace Dispatch.Web.Tests;
 
@@ -51,6 +52,31 @@ public class IngestionApiTests(WebTestHost host) : IClassFixture<WebTestHost>
 
         var after = Directory.GetFiles(host.Spool.IncomingDir, "*.eml").Length;
         Assert.Equal(before + 1, after);
+    }
+
+    [Fact]
+    public async Task Ingest_multipart_writes_spool_with_meta_and_tags()
+    {
+        var content = new MultipartFormDataContent
+        {
+            { new StringContent("App <a@x.com>"), "from" },
+            { new StringContent("b@y.com"), "to" },
+            { new StringContent("Multipart hi"), "subject" },
+            { new StringContent("hello"), "text" },
+            { new StringContent("welcome"), "o:tag" },
+        };
+        var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/messages") { Content = content };
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", WebTestHost.ValidKey);
+
+        var res = await host.Api.SendAsync(req);
+        Assert.Equal(HttpStatusCode.Accepted, res.StatusCode);
+
+        var newest = new DirectoryInfo(host.Spool.IncomingDir).GetFiles("*.eml")
+            .OrderByDescending(f => f.LastWriteTimeUtc).First().FullName;
+        var meta = SpoolMeta.Load(newest);
+        Assert.Equal("API", meta.IngestSource);
+        Assert.Equal("a@x.com", meta.FromAddress);
+        Assert.Contains("welcome", meta.Tags!);
     }
 
     [Fact]

@@ -1,11 +1,15 @@
 using Dapper;
 using Dispatch.Core.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Dispatch.Data.Repositories;
 
 /// <summary>Key/value config store with transparent encryption for sensitive rows (spec §12.3, §19.5).</summary>
-public sealed class SqlConfigRepository(SqlConnectionFactory factory) : IConfigRepository
+public sealed class SqlConfigRepository(SqlConnectionFactory factory, ILogger<SqlConfigRepository>? logger = null) : IConfigRepository
 {
+    private readonly ILogger _log = logger ?? NullLogger<SqlConfigRepository>.Instance;
+
     public async Task<string?> GetAsync(string key, CancellationToken ct = default)
     {
         await using var cn = await factory.OpenAsync(ct);
@@ -13,7 +17,7 @@ public sealed class SqlConfigRepository(SqlConnectionFactory factory) : IConfigR
             new CommandDefinition("SELECT value AS Value, encrypted AS Encrypted FROM config WHERE [key] = @key",
                 new { key }, cancellationToken: ct));
         if (row is null) return null;
-        return row.Value.Encrypted ? SecureConfig.Decrypt(row.Value.Value) : row.Value.Value;
+        return row.Value.Encrypted ? TryDecrypt(key, row.Value.Value) : row.Value.Value;
     }
 
     public async Task SetAsync(string key, string value, bool encrypted = false, CancellationToken ct = default)
@@ -36,8 +40,21 @@ public sealed class SqlConfigRepository(SqlConnectionFactory factory) : IConfigR
             new CommandDefinition("SELECT [key] AS [Key], value AS Value, encrypted AS Encrypted, updated_at AS UpdatedAt FROM config",
                 cancellationToken: ct));
         return rows
-            .Select(r => new ConfigEntry(
-                r.Key, r.Encrypted ? SecureConfig.Decrypt(r.Value) : r.Value, r.Encrypted, r.UpdatedAt))
+            .Select(r => new ConfigEntry(r.Key, r.Encrypted ? TryDecrypt(r.Key, r.Value) ?? "" : r.Value, r.Encrypted, r.UpdatedAt))
             .ToList();
+    }
+
+    // A machine-key change (or corrupt value) shouldn't crash config reads — log and treat as unset.
+    private string? TryDecrypt(string key, string ciphertext)
+    {
+        try
+        {
+            return SecureConfig.Decrypt(ciphertext);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to decrypt config value for {Key} (machine key changed?); treating as unset", key);
+            return null;
+        }
     }
 }

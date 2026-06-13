@@ -197,20 +197,6 @@ More providers planned — see [Appendix A of the spec](docs/SPEC.md) and [open 
 
 </details>
 
-<details>
-<summary>Provider Settings with live test log</summary>
-
-![Provider Settings](docs/images/provider-settings.png)
-
-</details>
-
-<details>
-<summary>Storage & Retention</summary>
-
-![Storage and Retention](docs/images/retention.png)
-
-</details>
-
 ---
 
 ## Requirements
@@ -226,51 +212,73 @@ More providers planned — see [Appendix A of the spec](docs/SPEC.md) and [open 
 
 ---
 
-## Building from Source
+## Building & running locally
+
+Prerequisites: the **.NET 10 SDK**, **Node.js 20+**, and **Docker** (for SQL).
 
 ```bash
-# Clone
 git clone https://github.com/chrismuench/Dispatch-SMTP-Relay.git
-cd dispatch
+cd Dispatch-SMTP-Relay
 
-# Build the React UI
-cd src/Dispatch.UI
-npm install
-npm run build
-cd ../..
+# 1. Start SQL (Azure SQL Edge, arm64-native) — schema is created/migrated on first run
+docker compose up -d
 
-# Build and run
-dotnet run --project src/Dispatch.Service
+# 2. Build the React dashboard and embed it into Dispatch.Web
+cd src/Dispatch.UI && npm install && npm run build && cd ../..
+rm -rf src/Dispatch.Web/wwwroot && mkdir -p src/Dispatch.Web/wwwroot
+cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
 
-# Run tests
-dotnet test
+# 3. Run the service (Development reads src/Dispatch.Service/appsettings.Development.json)
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service
 ```
 
-The web UI is served at `http://localhost:8420` and the SMTP listener starts on ports 25 and 587.
+Ports (defaults): **dashboard `http://localhost:8420`**, **HTTP ingestion API `8421`**, **SMTP `2525`** in
+dev (25/587 in production, which require elevated privileges). The dashboard requires an admin password —
+set `AdminPassword` in `appsettings.Development.json`, or use the one-time first-run setup screen.
 
-> **Note:** You need SQL Server Express (or any SQL Server instance) running locally and a connection string in `src/Dispatch.Service/appsettings.Development.json` before the service will start.
+`appsettings.Development.json` (git-ignored) needs at least the SQL connection string:
+
+```json
+{
+  "ConnectionStrings": { "DispatchLog": "Server=localhost,1433;Database=DispatchLog;User Id=sa;Password=Dispatch_Dev_Pass123;TrustServerCertificate=True;Encrypt=True" },
+  "AdminPassword": "change-me-please"
+}
+```
+
+### Tests
+
+```bash
+# Unit/Web tests run without SQL. Data integration tests run when DISPATCH_TEST_SQL is set
+# (auto-skipped otherwise):
+DISPATCH_TEST_SQL="Server=localhost,1433;User Id=sa;Password=Dispatch_Dev_Pass123;TrustServerCertificate=True;Encrypt=True" \
+  dotnet test
+```
+
+For production installs see [`installer/`](installer/README.md) (Linux systemd + Windows).
 
 ---
 
 ## Project Structure
 
 ```
-dispatch/
+Dispatch-SMTP-Relay/
   src/
-    Dispatch.Core/         # SMTP listener, relay pipeline, queue, models, purge
-    Dispatch.Web/          # ASP.NET Core host, REST API, SignalR hub
-    Dispatch.UI/           # React + Vite SPA (embedded in Dispatch.Web at build time)
-    Dispatch.Providers/    # Mailgun, SendGrid, Azure, SMTP provider implementations
-    Dispatch.Service/      # Entry point and DI wiring
+    Dispatch.Core/         # SMTP listener store, spool pipeline, worker pool, routing, purge, models
+    Dispatch.Providers/    # Local, generic SMTP, Mailgun, SendGrid, Azure provider implementations
+    Dispatch.Data/         # SQL schema/migrations, Dapper repositories, encryption
+    Dispatch.Web/          # REST API, SignalR hub, ingestion API, auth, embedded React UI
+    Dispatch.UI/           # React + Vite SPA (built, then embedded into Dispatch.Web)
+    Dispatch.Service/      # Entry point: WebApplication host wiring SMTP + workers + web in one process
   installer/
-    windows/            # WiX v5 MSI source
-    linux/              # systemd unit template and install.sh
+    linux/                 # systemd unit + install.sh
+    windows/               # install.ps1 + WiX v5 MSI source
   tests/
-    Dispatch.Core.Tests/
-    Dispatch.Web.Tests/
-    Dispatch.Integration.Tests/
+    Dispatch.Core.Tests/        # spool/worker/routing/counters (no DB)
+    Dispatch.Providers.Tests/   # provider + factory (no DB)
+    Dispatch.Web.Tests/         # API/auth via a real-Kestrel fixture (no DB)
+    Dispatch.Data.Tests/        # SQL repository integration (auto-skip without DISPATCH_TEST_SQL)
   docs/
-    SPEC.md             # Full technical specification
+    SPEC.md                # Full technical specification
 ```
 
 ---

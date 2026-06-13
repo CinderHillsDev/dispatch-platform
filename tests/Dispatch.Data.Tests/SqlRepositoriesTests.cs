@@ -148,6 +148,33 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         Assert.Null(await keys.VerifyAsync(created.PlaintextKey));
     }
 
+    [Fact]
+    public async Task MessageLog_keyset_pagination_walks_all_rows_once()
+    {
+        if (!sql.Available) return;
+        var log = new SqlLogRepository(sql.Factory);
+        var query = new SqlMessageLogQuery(sql.Factory);
+        var domain = "page-" + Guid.NewGuid().ToString("N")[..8] + ".test";
+
+        for (var i = 0; i < 3; i++)
+            await log.InsertAsync(new RelayLogEntry
+            {
+                Event = "Delivered", Status = "OK", SpoolId = Guid.NewGuid().ToString("N"),
+                FromAddress = $"u{i}@x.com", FromDomain = "x.com", ToAddresses = [$"a@{domain}"], ToDomain = domain,
+            });
+
+        var page1 = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Limit = 2 });
+        Assert.Equal(2, page1.Rows.Count);
+        Assert.NotNull(page1.NextCursor);
+
+        var page2 = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Limit = 2, Cursor = page1.NextCursor });
+        Assert.Single(page2.Rows);
+        Assert.Null(page2.NextCursor);
+
+        var ids = page1.Rows.Concat(page2.Rows).Select(r => r.Id).ToList();
+        Assert.Equal(3, ids.Distinct().Count());   // no overlap, all walked once
+    }
+
     [Theory]
     [InlineData("x.com'; DROP TABLE relay_log; --")]
     [InlineData("' OR '1'='1")]

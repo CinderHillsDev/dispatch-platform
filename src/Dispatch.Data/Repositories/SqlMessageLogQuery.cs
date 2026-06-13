@@ -1,3 +1,4 @@
+using System.Data;
 using System.Text;
 using Dapper;
 using Dispatch.Core.Logging;
@@ -18,8 +19,10 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         var p = new DynamicParameters();
         p.Add("Limit", limit);
 
-        if (filter.FromUtc is { } from) { where.Append(" AND logged_at >= @FromUtc"); p.Add("FromUtc", from); }
-        if (filter.ToUtc is { } to) { where.Append(" AND logged_at < @ToUtc"); p.Add("ToUtc", to); }
+        // Bind dates as datetime2 to match the column precision (a default DateTime param maps to the
+        // lower-precision SQL `datetime`, which breaks the keyset tie-break at high insert rates).
+        if (filter.FromUtc is { } from) { where.Append(" AND logged_at >= @FromUtc"); p.Add("FromUtc", from, DbType.DateTime2); }
+        if (filter.ToUtc is { } to) { where.Append(" AND logged_at < @ToUtc"); p.Add("ToUtc", to, DbType.DateTime2); }
         if (filter.Statuses is { Length: > 0 } s) { where.Append(" AND status IN @Statuses"); p.Add("Statuses", s); }
         if (!string.IsNullOrWhiteSpace(filter.IngestSource)) { where.Append(" AND ingest_source = @IngestSource"); p.Add("IngestSource", filter.IngestSource); }
         if (!string.IsNullOrWhiteSpace(filter.FromDomain)) { where.Append(" AND from_domain = @FromDomain"); p.Add("FromDomain", filter.FromDomain); }
@@ -28,7 +31,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         if (filter.Cursor is { } cursor)
         {
             where.Append(" AND (logged_at < @CursorLoggedAt OR (logged_at = @CursorLoggedAt AND id < @CursorId))");
-            p.Add("CursorLoggedAt", cursor.LoggedAt);
+            p.Add("CursorLoggedAt", cursor.LoggedAt, DbType.DateTime2);
             p.Add("CursorId", cursor.Id);
         }
 
