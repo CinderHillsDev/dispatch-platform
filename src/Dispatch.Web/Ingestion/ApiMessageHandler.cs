@@ -1,6 +1,8 @@
+using Dispatch.Core.Configuration;
 using Dispatch.Core.Spool;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using MimeKit;
 
@@ -11,10 +13,16 @@ namespace Dispatch.Web.Ingestion;
 /// builds a <see cref="MimeMessage"/>, writes the RFC5322 <c>.eml</c> plus its <c>.meta</c> sidecar to
 /// <c>spool/incoming/</c> (so the worker can claim it exactly as an SMTP message), and returns 202.
 /// </summary>
-public sealed class ApiMessageHandler(SpoolDirectory spool, ILogger<ApiMessageHandler> log)
+public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions> apiOptions, ILogger<ApiMessageHandler> log)
 {
     public async Task<IResult> HandleAsync(HttpContext ctx, CancellationToken ct)
     {
+        var maxBytes = apiOptions.Value.MaxMessageBytes;
+
+        // Reject oversized uploads early when the client declares Content-Length.
+        if (maxBytes > 0 && ctx.Request.ContentLength is { } declared && declared > maxBytes)
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
         MimeMessage mime;
         string[] tags;
         try
@@ -44,6 +52,11 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, ILogger<ApiMessageHa
             await mime.WriteToAsync(ms, ct);
             bytes = ms.ToArray();
         }
+
+        // Enforce the size ceiling on the serialized message (catches uploads without Content-Length).
+        if (maxBytes > 0 && bytes.Length > maxBytes)
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
         await File.WriteAllBytesAsync(emlPath, bytes, ct);
 
         new SpoolMeta
