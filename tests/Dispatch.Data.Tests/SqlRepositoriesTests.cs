@@ -149,6 +149,56 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     }
 
     [Fact]
+    public async Task Log_row_with_api_key_is_returned_by_per_key_query()
+    {
+        if (!sql.Available) return;
+        var keys = new SqlApiKeyRepository(sql.Factory);
+        var log = new SqlLogRepository(sql.Factory);
+        var query = new SqlMessageLogQuery(sql.Factory);
+
+        // Two distinct keys so we can assert scoping (api_key_id has an FK to api_keys).
+        var keyA = (await keys.CreateAsync("per-key A", rateLimitPerMinute: 0)).Key;
+        var keyB = (await keys.CreateAsync("per-key B", rateLimitPerMinute: 0)).Key;
+
+        var spoolOk = Guid.NewGuid().ToString("N");
+        var spoolErr = Guid.NewGuid().ToString("N");
+
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = spoolOk,
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@y.com"], ToDomain = "y.com",
+            IngestSource = "API", ApiKeyId = keyA.Id, ApiKeyName = keyA.Name, Provider = "None",
+        });
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Failed", Status = "Error", SpoolId = spoolErr,
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@y.com"], ToDomain = "y.com",
+            IngestSource = "API", ApiKeyId = keyA.Id, ApiKeyName = keyA.Name, Error = "boom",
+        });
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = Guid.NewGuid().ToString("N"),
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@y.com"], ToDomain = "y.com",
+            IngestSource = "API", ApiKeyId = keyB.Id, ApiKeyName = keyB.Name,
+        });
+
+        // Key A sees both of its rows, never key B's.
+        var forA = await query.RecentByApiKeyAsync(keyA.Id, limit: 50, statuses: null);
+        Assert.Contains(forA, r => r.SpoolId == spoolOk);
+        Assert.Contains(forA, r => r.SpoolId == spoolErr);
+        Assert.Equal(2, forA.Count(r => r.SpoolId == spoolOk || r.SpoolId == spoolErr));
+
+        // Status filter narrows to the matching row only.
+        var failedOnly = await query.RecentByApiKeyAsync(keyA.Id, limit: 50, statuses: ["Error"]);
+        Assert.Contains(failedOnly, r => r.SpoolId == spoolErr);
+        Assert.DoesNotContain(failedOnly, r => r.SpoolId == spoolOk);
+
+        // The detail projection carries the api key name through.
+        var detail = await query.GetByIdAsync(forA.First(r => r.SpoolId == spoolOk).Id);
+        Assert.Equal(keyA.Name, detail!.ApiKeyName);
+    }
+
+    [Fact]
     public async Task MessageLog_keyset_pagination_walks_all_rows_once()
     {
         if (!sql.Available) return;

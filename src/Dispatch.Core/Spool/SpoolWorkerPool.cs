@@ -281,6 +281,8 @@ public sealed class SpoolWorkerPool : BackgroundService
                 DurationMs = (int)sw.ElapsedMilliseconds,
                 IngestSource = meta.IngestSource,
                 SourceIp = meta.SourceIp,
+                ApiKeyId = meta.ApiKeyId,
+                ApiKeyName = meta.ApiKeyName,
                 Tags = meta.Tags,
             }, ct);
 
@@ -408,6 +410,8 @@ public sealed class SpoolWorkerPool : BackgroundService
         RoutingMatched = relay.RoutingMatched,
         IngestSource = meta.IngestSource,
         SourceIp = meta.SourceIp,
+        ApiKeyId = meta.ApiKeyId,
+        ApiKeyName = meta.ApiKeyName,
         Tags = meta.Tags,
     };
 

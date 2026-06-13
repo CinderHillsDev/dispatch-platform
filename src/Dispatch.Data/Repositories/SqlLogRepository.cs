@@ -11,11 +11,13 @@ public sealed class SqlLogRepository(SqlConnectionFactory factory) : ILogReposit
         INSERT INTO relay_log
             (spool_id, event, status, retry_attempt, from_address, from_domain, to_addresses, to_domain,
              subject, size_bytes, relay_id, relay_name, routing_rule_id, routing_rule_name, routing_matched,
-             provider, provider_message_id, provider_response, duration_ms, error, ingest_source, source_ip, tags)
+             provider, provider_message_id, provider_response, duration_ms, error, ingest_source, source_ip,
+             api_key_id, api_key_name, tags)
         VALUES
             (@SpoolId, @Event, @Status, @RetryAttempt, @FromAddress, @FromDomain, @ToAddresses, @ToDomain,
              @Subject, @SizeBytes, @RelayId, @RelayName, @RoutingRuleId, @RoutingRuleName, @RoutingMatched,
-             @Provider, @ProviderMessageId, @ProviderResponse, @DurationMs, @Error, @IngestSource, @SourceIp, @Tags);
+             @Provider, @ProviderMessageId, @ProviderResponse, @DurationMs, @Error, @IngestSource, @SourceIp,
+             @ApiKeyId, @ApiKeyName, @Tags);
         """;
 
     public async Task InsertAsync(RelayLogEntry entry, CancellationToken ct = default)
@@ -45,6 +47,8 @@ public sealed class SqlLogRepository(SqlConnectionFactory factory) : ILogReposit
             entry.Error,
             IngestSource = Trunc(entry.IngestSource, 16),
             SourceIp = Trunc(entry.SourceIp, 64),
+            entry.ApiKeyId,
+            ApiKeyName = Trunc(entry.ApiKeyName, 256),
             Tags = entry.Tags is { Count: > 0 } ? JsonSerializer.Serialize(entry.Tags) : null,
         }, cancellationToken: ct));
     }

@@ -14,6 +14,8 @@ public sealed class SpoolMeta
     public string[] ToAddresses { get; set; } = [];
     public string IngestSource { get; set; } = "SMTP";   // SMTP | API
     public string? SourceIp { get; set; }
+    public int? ApiKeyId { get; set; }
+    public string? ApiKeyName { get; set; }
     public string[]? Tags { get; set; }
     public int RetryCount { get; set; }
     public DateTime? NextRetryAt { get; set; }

@@ -39,5 +39,7 @@ public sealed class RelayLogEntry
     // Ingest source
     public string IngestSource { get; init; } = "SMTP";
     public string? SourceIp { get; init; }
+    public int? ApiKeyId { get; init; }
+    public string? ApiKeyName { get; init; }
     public IReadOnlyList<string>? Tags { get; init; }
 }

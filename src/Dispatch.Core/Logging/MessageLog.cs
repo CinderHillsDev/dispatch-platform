@@ -14,6 +14,7 @@ public sealed class MessageLogFilter
     public string? ToDomain { get; init; }
     public string? RelayName { get; init; }
     public string? Tag { get; init; }
+    public int? ApiKeyId { get; init; }            // restrict to one API key (per-key list, §7.4)
     public int Limit { get; init; } = 50;
     public MessageLogCursor? Cursor { get; init; }
 }
@@ -76,6 +77,9 @@ public interface IMessageLogQuery
 
     /// <summary>Most recent log row for a spool id, for delivery-status lookups (spec §7.4).</summary>
     Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, CancellationToken ct = default);
+
+    /// <summary>Recent log rows submitted with a given API key, newest first (per-key list, spec §7.4).</summary>
+    Task<IReadOnlyList<MessageLogRow>> RecentByApiKeyAsync(int apiKeyId, int limit, string[]? statuses, CancellationToken ct = default);
 
     /// <summary>Full detail for a single log row by id, for the row-detail panel (spec §9.2). Null if missing.</summary>
     Task<MessageLogDetail?> GetByIdAsync(long id, CancellationToken ct = default);

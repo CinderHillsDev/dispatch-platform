@@ -9,6 +9,7 @@ import { Routing } from "./pages/Routing";
 import { LocalInbox } from "./pages/LocalInbox";
 import { Failed } from "./pages/Failed";
 import { SmtpAuth } from "./pages/SmtpAuth";
+import { ApiKeys } from "./pages/ApiKeys";
 import { Settings } from "./pages/Settings";
 import { AuthGate, logout } from "./auth";
 import "./index.css";
@@ -25,6 +26,7 @@ function Layout() {
           <NavLink to="/relays">Relays</NavLink>
           <NavLink to="/routing">Routing</NavLink>
           <NavLink to="/smtp-auth">SMTP Auth</NavLink>
+          <NavLink to="/api-keys">API Keys</NavLink>
           <NavLink to="/inbox">Local Inbox</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
@@ -45,6 +47,7 @@ const router = createBrowserRouter([
       { path: "/relays", element: <Relays /> },
       { path: "/routing", element: <Routing /> },
       { path: "/smtp-auth", element: <SmtpAuth /> },
+      { path: "/api-keys", element: <ApiKeys /> },
       { path: "/inbox", element: <LocalInbox /> },
       { path: "/settings", element: <Settings /> },
     ],

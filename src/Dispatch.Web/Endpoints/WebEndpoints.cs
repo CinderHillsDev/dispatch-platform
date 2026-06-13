@@ -30,6 +30,22 @@ public static class WebEndpoints
         group.MapPost("/messages", (HttpContext ctx, ApiMessageHandler handler, CancellationToken ct) =>
             handler.HandleAsync(ctx, ct));
 
+        // Per-key recent message list (spec §7.4). Scoped to the calling key — never leaks other keys' messages.
+        group.MapGet("/messages", async (HttpContext ctx, IMessageLogQuery logs, CancellationToken ct) =>
+        {
+            if (ctx.Items[ApiKeyMiddleware.ApiKeyItem] is not ApiKey key)
+                return Results.Unauthorized();
+
+            var q = ctx.Request.Query;
+            var limit = int.TryParse(q["limit"], out var l) ? Math.Clamp(l, 1, 200) : 20;
+            var statuses = q["status"].Count > 0
+                ? q["status"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                : null;
+
+            var rows = await logs.RecentByApiKeyAsync(key.Id, limit, statuses, ct);
+            return Results.Ok(new { messages = rows });
+        });
+
         group.MapGet("/messages/{id}", async (string id, SpoolDirectory spool, IMessageLogQuery logs, CancellationToken ct) =>
         {
             var raw = id.StartsWith("spl_", StringComparison.OrdinalIgnoreCase) ? id[4..] : id;

@@ -30,6 +30,7 @@ public sealed class WebTestHost : IAsyncLifetime
     public const int ApiPort = 18091;
     public const string ValidKey = "dsp_live_validkey00000000000000000000000";
     public const string LimitedKey = "dsp_live_limited000000000000000000000000";
+    public const string OtherKey = "dsp_live_other00000000000000000000000000";
 
     private WebApplication _app = null!;
     public string SpoolDir { get; } = Path.Combine(Path.GetTempPath(), "dispatch-web-tests", Guid.NewGuid().ToString("N"));
@@ -101,6 +102,7 @@ internal sealed class FakeApiKeyRepository : IApiKeyRepository
     {
         [WebTestHost.ValidKey] = new ApiKey { Id = 1, KeyId = "dsp_live_val", Name = "valid", RateLimitPerMinute = 0 },
         [WebTestHost.LimitedKey] = new ApiKey { Id = 2, KeyId = "dsp_live_lim", Name = "limited", RateLimitPerMinute = 2 },
+        [WebTestHost.OtherKey] = new ApiKey { Id = 3, KeyId = "dsp_live_oth", Name = "other", RateLimitPerMinute = 0 },
     };
 
     public Task<ApiKey?> VerifyAsync(string rawKey, CancellationToken ct = default) =>
@@ -120,6 +122,10 @@ internal sealed class FakeMessageLogQuery : IMessageLogQuery
         Task.FromResult(new MessageLogPage([], null));
     public Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, CancellationToken ct = default) =>
         Task.FromResult<MessageLogRow?>(null);
+    public Task<IReadOnlyList<MessageLogRow>> RecentByApiKeyAsync(int apiKeyId, int limit, string[]? statuses, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<MessageLogRow>>(apiKeyId == 1
+            ? [new MessageLogRow { Id = 7, Status = "OK", Event = "Delivered", SpoolId = "spool-7", FromAddress = "a@x.com", ToDomain = "y.com", IngestSource = "API" }]
+            : []);
     public Task<MessageLogDetail?> GetByIdAsync(long id, CancellationToken ct = default) =>
         Task.FromResult<MessageLogDetail?>(id == 42
             ? new MessageLogDetail

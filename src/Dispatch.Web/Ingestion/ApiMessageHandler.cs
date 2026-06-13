@@ -1,3 +1,4 @@
+using Dispatch.Core.ApiKeys;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Spool;
 using Microsoft.AspNetCore.Http;
@@ -59,6 +60,9 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
 
         await File.WriteAllBytesAsync(emlPath, bytes, ct);
 
+        // The verified API key is stashed in HttpContext.Items by ApiKeyMiddleware (spec §7.4 per-key list).
+        var apiKey = ctx.Items[ApiKeyMiddleware.ApiKeyItem] as ApiKey;
+
         new SpoolMeta
         {
             SpoolId = id,
@@ -67,6 +71,8 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
             ToAddresses = to,
             IngestSource = "API",
             SourceIp = ctx.Connection.RemoteIpAddress?.ToString(),
+            ApiKeyId = apiKey?.Id,
+            ApiKeyName = apiKey?.Name,
             Tags = tags.Length > 0 ? tags : null,
         }.Save(emlPath);
 

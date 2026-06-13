@@ -29,6 +29,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         if (!string.IsNullOrWhiteSpace(filter.FromDomain)) { where.Append(" AND from_domain = @FromDomain"); p.Add("FromDomain", filter.FromDomain); }
         if (!string.IsNullOrWhiteSpace(filter.ToDomain)) { where.Append(" AND to_domain = @ToDomain"); p.Add("ToDomain", filter.ToDomain); }
         if (!string.IsNullOrWhiteSpace(filter.RelayName)) { where.Append(" AND relay_name = @RelayName"); p.Add("RelayName", filter.RelayName); }
+        if (filter.ApiKeyId is { } apiKeyId) { where.Append(" AND api_key_id = @ApiKeyId"); p.Add("ApiKeyId", apiKeyId); }
         // Tag: tags is a JSON array string (e.g. ["a","b"]); match the parameterised pattern %"tag"% — the value
         // stays a Dapper parameter, only the LIKE wildcards are literal (no interpolation of user input).
         if (!string.IsNullOrWhiteSpace(filter.Tag)) { where.Append(" AND tags LIKE @TagPattern"); p.Add("TagPattern", "%\"" + filter.Tag + "\"%"); }
@@ -76,6 +77,18 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         await using var cn = await factory.OpenAsync(ct);
         return await cn.QuerySingleOrDefaultAsync<MessageLogRow>(
             new CommandDefinition(sql, new { spoolId }, cancellationToken: ct));
+    }
+
+    public async Task<IReadOnlyList<MessageLogRow>> RecentByApiKeyAsync(
+        int apiKeyId, int limit, string[]? statuses, CancellationToken ct = default)
+    {
+        var page = await QueryAsync(new MessageLogFilter
+        {
+            ApiKeyId = apiKeyId,
+            Statuses = statuses is { Length: > 0 } ? statuses : null,
+            Limit = limit,
+        }, ct);
+        return page.Rows;
     }
 
     public async Task<MessageLogDetail?> GetByIdAsync(long id, CancellationToken ct = default)

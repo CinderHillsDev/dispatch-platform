@@ -98,6 +98,24 @@ export interface FailedMessage {
 
 export interface SmtpCredential { id: number; username: string; createdAt: string; lastUsedAt: string | null; }
 
+export interface ApiKeyItem {
+  id: number;
+  keyId: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  messageCount: number;
+  revoked: boolean;
+  rateLimitPerMinute: number;
+}
+export interface ApiKeyCreated {
+  id: number;
+  keyId: string;
+  name: string;
+  rateLimitPerMinute: number;
+  key: string;   // plaintext, shown once
+}
+
 export interface RelayStat {
   id: number; name: string; provider: string; isDefault: boolean; enabled: boolean;
   received: number; delivered: number; failed: number; inFlight: number;
@@ -169,6 +187,13 @@ export const api = {
     list: () => getJson<SmtpCredential[]>("/api/smtp-credentials"),
     add: (username: string, password: string) => sendJson<{ ok: boolean }>("/api/smtp-credentials", "POST", { username, password }),
     remove: (username: string) => sendJson<{ ok: boolean }>(`/api/smtp-credentials/${encodeURIComponent(username)}`, "DELETE", {}),
+  },
+
+  keys: {
+    list: () => getJson<ApiKeyItem[]>("/api/keys"),
+    create: (name: string, rateLimitPerMinute: number | null) =>
+      sendJson<ApiKeyCreated>("/api/keys", "POST", { name, rateLimitPerMinute }),
+    revoke: (id: number) => sendJson<Record<string, never>>(`/api/keys/${id}`, "DELETE", {}),
   },
 
   settings: {
