@@ -10,8 +10,8 @@
     1) dotnet publish ..\..\..\src\Dispatch.Service -c Release -o ..\publish
     2) wix build ..\Dispatch.wxs -d PublishDir=..\publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
     3) dotnet build ..\sql-express\SqlExpressLauncher.csproj -c Release   (-> InstallSqlExpress.exe)
-    4) wix build Bundle.wxs -ext WixToolset.Bal.wixext -ext WixToolset.Util.wixext ^
-         -bindpath:SqlLauncher=..\sql-express\bin\Release\net472 -bindpath:Msi=. ^
+    4) wix build Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext ^
+         -bindpath "SqlLauncher=..\sql-express\bin\Release\net472" -bindpath "Msi=." ^
          -o DispatchSetup.exe
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"

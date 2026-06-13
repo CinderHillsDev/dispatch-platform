@@ -76,7 +76,7 @@ jobs:
         shell: pwsh
         run: |
           wix build bundle/Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext `
-            -bindpath:SqlLauncher=sql-express/bin/Release/net472 -bindpath:Msi=. -o DispatchSetup.exe
+            -bindpath "SqlLauncher=sql-express/bin/Release/net472" -bindpath "Msi=." -o DispatchSetup.exe
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
