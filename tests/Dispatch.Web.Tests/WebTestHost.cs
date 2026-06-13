@@ -64,6 +64,7 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton<IRelaySettingsStore, FakeRelaySettingsStore>();
         builder.Services.AddSingleton<IRoutingRuleRepository, FakeRoutingRuleRepository>();
         builder.Services.AddSingleton<IConfigRepository, FakeConfigRepository>();
+        builder.Services.AddSingleton<IDatabaseHealth, FakeDatabaseHealth>();
         builder.Services.AddSingleton<IRelayProviderFactory, FakeProviderFactory>();
         builder.Services.AddSingleton<IRelayResolver, RoutingEngine>();
         builder.Services.AddSingleton<ILogRepository, NullLogRepository>();   // decorated by AddDispatchWeb
@@ -144,6 +145,11 @@ internal sealed class FakeRelaySettingsStore : Dispatch.Core.Relays.IRelaySettin
         _settings = settings;
         return Task.CompletedTask;
     }
+}
+
+internal sealed class FakeDatabaseHealth : IDatabaseHealth
+{
+    public Task<bool> IsReachableAsync(CancellationToken ct = default) => Task.FromResult(true);
 }
 
 internal sealed class FakeConfigRepository : IConfigRepository

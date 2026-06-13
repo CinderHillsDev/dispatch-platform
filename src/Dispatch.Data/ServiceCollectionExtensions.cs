@@ -31,6 +31,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IApiKeyRepository, SqlApiKeyRepository>();
         services.AddSingleton<IMessageLogQuery, SqlMessageLogQuery>();
         services.AddSingleton<ILogMaintenance, SqlLogMaintenance>();
+        services.AddSingleton<IDatabaseHealth, SqlDatabaseHealth>();
 
         return services;
     }

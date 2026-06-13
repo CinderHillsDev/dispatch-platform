@@ -17,6 +17,11 @@ namespace Dispatch.Web.Endpoints;
 
 public static class WebEndpoints
 {
+    private static readonly DateTime ProcessStartUtc =
+        System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime();
+    private static readonly string Version =
+        typeof(WebEndpoints).Assembly.GetName().Version?.ToString() ?? "dev";
+
     /// <summary>Ingestion API (spec §7), reachable only on the API port; auth is enforced by middleware.</summary>
     public static void MapIngestionApi(this IEndpointRouteBuilder app, int apiPort)
     {
@@ -55,7 +60,23 @@ public static class WebEndpoints
     /// <summary>Dashboard read/stats API + admin, reachable only on the web port (spec §9.2).</summary>
     public static void MapDashboardApi(this IEndpointRouteBuilder app, int webPort)
     {
-        app.MapGet("/health", () => Results.Ok(new { status = "ok" }));   // no auth, any port (§14)
+        // No auth, any port (§14). Liveness ("status") never depends on SQL; a short, non-throwing probe
+        // adds a database-reachability flag plus version/uptime/queue depth for monitoring.
+        app.MapGet("/health", async (SpoolDirectory spool, IDatabaseHealth db, MinuteCounterRing ring, CancellationToken ct) =>
+        {
+            var reachable = await db.IsReachableAsync(ct);
+            return Results.Ok(new
+            {
+                status = "ok",
+                version = Version,
+                startedAtUtc = ProcessStartUtc,
+                uptimeSeconds = (long)(DateTime.UtcNow - ProcessStartUtc).TotalSeconds,
+                timeUtc = DateTime.UtcNow,
+                database = new { reachable },
+                last5Minutes = new { received = ring.SumReceived(5), sentToProvider = ring.SumDelivered(5) },
+                spool = SpoolCounts(spool),
+            });
+        });
 
         var group = app.MapGroup("/api").RequireLocalPort(webPort);
 
@@ -100,6 +121,7 @@ public static class WebEndpoints
         });
 
         group.MapAuth();            // /api/auth/* (see AuthEndpoints)
+        group.MapServiceOps();      // /api/service/* (see ServiceEndpoints)
         group.MapRelayRouting();    // /api/relays/* and /api/routing/* (see RoutingEndpoints)
         group.MapLocalInbox();      // /api/local/messages (see LocalInboxEndpoints)
         group.MapFailedMessages();  // /api/failed/* (see FailedMessageEndpoints)

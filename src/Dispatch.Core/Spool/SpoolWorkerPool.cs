@@ -223,7 +223,10 @@ public sealed class SpoolWorkerPool : BackgroundService
 
         // Count each message as received once, on its first dispatch attempt (off the hot path).
         if (meta.RetryCount == 0)
+        {
             await SafeIncrement(relay.Id, CounterField.Received, ct);
+            _minuteRing.RecordReceived();
+        }
 
         try
         {
@@ -246,7 +249,7 @@ public sealed class SpoolWorkerPool : BackgroundService
 
             // Counters are always accurate; the relay_log row is best-effort.
             await SafeIncrement(relay.Id, CounterField.Delivered, ct);
-            _minuteRing.Increment();
+            _minuteRing.RecordDelivered();
             await SafeLog(new RelayLogEntry
             {
                 Event = "Delivered",
