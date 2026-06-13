@@ -61,10 +61,10 @@ public class CidrMailboxFilterTests
         var filter = Build(relayMaxBytes: 0, intake: intake);
         var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Loopback, 4242));
 
-        var accepted = await filter.CanAcceptFromAsync(
-            ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None);
-
-        Assert.False(accepted);
+        // Suspended intake yields a transient 452 (SmtpResponseException) so senders retry (spec §14.1).
+        var ex = await Assert.ThrowsAsync<SmtpServer.Protocol.SmtpResponseException>(() =>
+            filter.CanAcceptFromAsync(ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None));
+        Assert.Equal(SmtpServer.Protocol.SmtpReplyCode.InsufficientStorage, ex.Response.ReplyCode);
     }
 
     [Fact]

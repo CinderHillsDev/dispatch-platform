@@ -33,6 +33,8 @@ public sealed class SpoolWorkerPool : BackgroundService
     private readonly IRetrySettings _retry;
 
     private readonly ConcurrentDictionary<int, SemaphoreSlim> _semaphores = new();
+    private readonly Dictionary<int, int> _semaphoreMax = new();   // relayId → the max the semaphore was sized for
+    private readonly Lock _semLock = new();
     private FileSystemWatcher? _watcher;
 
     public SpoolWorkerPool(
@@ -217,7 +219,7 @@ public sealed class SpoolWorkerPool : BackgroundService
             if (meta.NextRetryAt is { } due && due > DateTime.UtcNow) continue;  // back-off not elapsed
 
             var relay = await _routing.ResolveAsync(meta.FromAddress, meta.ToAddresses, ct);
-            var sem = _semaphores.GetOrAdd(relay.Id, _ => CreateSemaphore(relay.MaxConcurrency));
+            var sem = GetSemaphoreFor(relay.Id, relay.MaxConcurrency);
 
             if (!sem.Wait(0)) continue;                                   // relay at capacity — try next file
 
@@ -254,6 +256,28 @@ public sealed class SpoolWorkerPool : BackgroundService
     {
         var max = maxConcurrency <= 0 ? int.MaxValue : maxConcurrency;
         return new SemaphoreSlim(max, max);
+    }
+
+    /// <summary>
+    /// Returns the per-relay concurrency gate, creating it on first use and REPLACING it when the relay's
+    /// max_concurrency has changed (spec §6.5). Workers already holding the old semaphore release the exact
+    /// instance they acquired (carried in <see cref="ClaimedFile"/>), so swapping the map entry is safe.
+    /// </summary>
+    private SemaphoreSlim GetSemaphoreFor(int relayId, int maxConcurrency)
+    {
+        lock (_semLock)
+        {
+            if (_semaphores.TryGetValue(relayId, out var existing)
+                && _semaphoreMax.TryGetValue(relayId, out var curMax) && curMax == maxConcurrency)
+                return existing;
+
+            var sem = CreateSemaphore(maxConcurrency);
+            _semaphores[relayId] = sem;
+            _semaphoreMax[relayId] = maxConcurrency;
+            if (existing is not null)
+                _log.LogInformation("Relay {Relay} max_concurrency changed to {Max}; concurrency gate resized", relayId, maxConcurrency);
+            return sem;
+        }
     }
 
     // ---- Dispatch + outcomes (spec §6.6) ---------------------------------------------------

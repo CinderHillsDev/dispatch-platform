@@ -18,8 +18,10 @@ using Serilog;
 
 var logDirectory = Environment.GetEnvironmentVariable("DISPATCH_LOG_DIR") ?? "logs";
 Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
     .WriteTo.Console()
-    .WriteTo.File(Path.Combine(logDirectory, "dispatch-.log"), rollingInterval: RollingInterval.Day)
+    .WriteTo.File(Path.Combine(logDirectory, "dispatch-.log"),
+        rollingInterval: RollingInterval.Day, retainedFileCountLimit: 31)   // spec §13: rolling daily with retention
     .CreateLogger();
 
 try
@@ -112,7 +114,8 @@ try
     builder.Services.AddDispatchData(connectionString);
 
     // Web/ingestion services (SignalR, live feed, rate limiter, API-key middleware) — must follow AddDispatchData.
-    builder.Services.AddDispatchWeb(webSnapshot.RequireHttps);
+    builder.Services.AddDispatchWeb(webSnapshot.RequireHttps,
+        configCache.GetInt(ConfigKeys.WebUiSessionTimeoutMinutes, 480));
 
     // Hosted services: relay worker pool + SMTP listener.
     builder.Services.AddHostedService<SpoolWorkerPool>();

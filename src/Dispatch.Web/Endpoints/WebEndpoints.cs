@@ -63,12 +63,13 @@ public static class WebEndpoints
             var row = await logs.GetBySpoolIdAsync(guid.ToString(), ct);
             if (row is null) return Results.NotFound(new { id, status = "unknown" });
 
+            // Clamp to the documented status enum (spec §7.4: queued|processing|delivered|retrying|failed).
             var status = row.Event switch
             {
                 "Delivered" => "delivered",
                 "Retrying" => "retrying",
                 "Failed" => "failed",
-                _ => row.Event.ToLowerInvariant(),
+                _ => "queued",
             };
             return Results.Ok(new { id, status, provider = row.Provider, deliveredAt = row.LoggedAt, durationMs = row.DurationMs });
         });

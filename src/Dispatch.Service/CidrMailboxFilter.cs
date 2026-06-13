@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using SmtpServer;
 using SmtpServer.Mail;
 using SmtpServer.Net;
+using SmtpServer.Protocol;
 using SmtpServer.Storage;
 using System.Net;
 
@@ -81,7 +82,9 @@ public sealed class CidrMailboxFilter : IMailboxFilter
                     "Intake suspended (spool disk critically low)", cancellationToken);
                 _log.LogWarning("Rejecting MAIL FROM {From}: intake suspended (spool disk critically low)",
                     from.AsAddress());
-                return false;
+                // Transient 452 (RFC 5321) so senders retry rather than treating it as a permanent failure (spec §14.1).
+                throw new SmtpResponseException(
+                    new SmtpResponse(SmtpReplyCode.InsufficientStorage, "Insufficient system storage, try again later"));
             case IntakeLevel.Throttled:
                 try { await Task.Delay(IntakeState.ThrottleDelay, cancellationToken); }
                 catch (OperationCanceledException) { return false; }

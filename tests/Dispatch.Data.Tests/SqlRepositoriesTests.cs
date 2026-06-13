@@ -17,8 +17,9 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         if (!sql.Available) return;
         await using var cn = await sql.Factory.OpenAsync();
 
+        // All embedded migrations applied (0001_init, 0002_relay_log_indexes, …).
         var version = await cn.ExecuteScalarAsync<int>("SELECT MAX(version) FROM schema_version");
-        Assert.Equal(1, version);
+        Assert.True(version >= 2, $"expected at least migration 2 applied, got {version}");
 
         var (name, provider, isDefault) = await cn.QuerySingleAsync<(string, string, bool)>(
             "SELECT name, provider, is_default FROM relays WHERE is_default = 1");

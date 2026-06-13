@@ -17,6 +17,7 @@ namespace Dispatch.Web.Ingestion;
 public sealed class ApiKeyMiddleware(
     IApiKeyRepository keys,
     RateLimiter limiter,
+    ApiKeyCache keyCache,
     ConfigCache config,
     ILogRepository logRepo,
     ILoggingSettings loggingSettings,
@@ -53,12 +54,18 @@ public sealed class ApiKeyMiddleware(
         }
 
         var raw = header.ToString()["Bearer ".Length..];
-        var key = await keys.VerifyAsync(raw, ctx.RequestAborted);
+        // 30s verified-key cache to avoid a bcrypt compare on every request (spec §7.7).
+        var key = keyCache.Get(raw);
         if (key is null)
         {
-            await DenyAsync(ctx, null, "Invalid or revoked API key");
-            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return;
+            key = await keys.VerifyAsync(raw, ctx.RequestAborted);
+            if (key is null)
+            {
+                await DenyAsync(ctx, null, "Invalid or revoked API key");
+                ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+            keyCache.Set(raw, key);
         }
 
         var limit = key.RateLimitPerMinute > 0 ? key.RateLimitPerMinute : o.RateLimitPerKey;

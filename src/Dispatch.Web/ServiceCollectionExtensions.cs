@@ -17,12 +17,13 @@ public static class ServiceCollectionExtensions
     /// <see cref="BroadcastingLogRepository"/> so persisted events drive the live feed. Call AFTER the
     /// data layer is registered (so an inner <see cref="ILogRepository"/> exists to decorate).
     /// </summary>
-    public static IServiceCollection AddDispatchWeb(this IServiceCollection services, bool secureCookies = false)
+    public static IServiceCollection AddDispatchWeb(this IServiceCollection services, bool secureCookies = false, int sessionTimeoutMinutes = 480)
     {
         services.AddSignalR();
         services.AddSingleton<RelayEventStream>();
         services.AddSingleton<ProviderTestService>();
         services.AddSingleton<RateLimiter>();
+        services.AddSingleton<ApiKeyCache>();
         services.AddSingleton<Auth.LoginThrottle>();
         services.AddSingleton<ApiMessageHandler>();
         services.AddScoped<ApiKeyMiddleware>();
@@ -38,7 +39,7 @@ public static class ServiceCollectionExtensions
                 // Secure when the dashboard is fronted by TLS (WebUi:RequireHttps); SameAsRequest keeps the
                 // cookie working over plain HTTP in local dev. Set RequireHttps=true in production.
                 o.Cookie.SecurePolicy = secureCookies ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
-                o.ExpireTimeSpan = TimeSpan.FromHours(8);
+                o.ExpireTimeSpan = TimeSpan.FromMinutes(Math.Max(1, sessionTimeoutMinutes));   // spec §17.3 webui.session_timeout_minutes
                 o.SlidingExpiration = true;
                 o.Events.OnRedirectToLogin = c => { c.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
                 o.Events.OnRedirectToAccessDenied = c => { c.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
