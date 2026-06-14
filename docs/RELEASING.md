@@ -41,6 +41,21 @@ and publishes a **draft** release you can inspect and delete — nothing goes pu
 | Any      | `ghcr.io/chrismuench/dispatch-smtp-relay:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |
 | All      | `SHA256SUMS` | Verify downloads: `sha256sum -c SHA256SUMS`. |
 
+## First release — one-time setup
+
+The first tag push creates the GHCR package, but **GHCR packages are private by default**, so anonymous
+`docker pull` will fail until you make it public:
+
+1. Push the first tag (e.g. `v1.0.0`) and let the **Release** workflow's `docker` job publish the image.
+2. Go to the repo's **Packages** → `dispatch-smtp-relay` → **Package settings** → **Change visibility → Public**
+   (and, optionally, **Connect repository** so the package shows on the repo page).
+3. Verify anonymous pull works on a clean machine:
+   ```bash
+   docker pull ghcr.io/chrismuench/dispatch-smtp-relay:1.0.0
+   ```
+
+Subsequent releases reuse the same (now public) package — this step is only needed once.
+
 ## Code signing (Azure Artifact Signing)
 
 Signing is **opt-in and dormant** until provisioned — until then releases publish unsigned (Windows
