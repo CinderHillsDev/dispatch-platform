@@ -205,13 +205,16 @@ Open **http://localhost:8420** after installation. On first run, all settings ha
 | **SMTP (generic)** | Host, Port, Username, Password, TLS mode |
 | **Local (developer mode)** | — captures mail to the spool; never delivers externally |
 
-### Retention
+### Retention & storage safety
 
-Delivered log entries are purged after **30 days** by default. Failed entries are kept for **90 days**. Spool files in `failed/` are purged after **30 days**.
+A purge runs every **6 hours** (and on demand via **Settings → Storage maintenance** or `POST /api/purge/run`). By default it removes:
 
-Dispatch also monitors database size and automatically purges the oldest log rows when the database approaches **9.5 GB** — keeping it safely below the SQL Server Express 10 GB limit.
+- **Delivered** log rows after **30 days**; **failed** after **90 days**
+- Spool files in `failed/` after **30 days**; captured (Local mode) files after **7 days**
 
-All retention periods and size thresholds are configurable under **Settings → Storage & Retention**.
+Dispatch also watches the database file size and purges the oldest log rows once it reaches **9.5 GB**, down to **9.0 GB** — keeping it safely below the SQL Server Express 10 GB limit.
+
+These retention periods and the size thresholds are editable under **Settings → Retention** (the 6-hour schedule and the retrying/test-message retention are fixed defaults). Separately, Dispatch monitors free disk on the spool volume: as it runs low it throttles, then temporarily refuses new SMTP intake with a transient `4xx` (senders retry) until space recovers — so a full disk never corrupts the spool.
 
 ---
 
