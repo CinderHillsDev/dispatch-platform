@@ -59,6 +59,12 @@ The shipped implementation intentionally diverges from a few details described l
 - **Web UI HTTPS** is served when `WebUi:TlsCertPath` is configured (appsettings, §12.2); with no cert it falls back to plain HTTP with a startup warning, so local development works without a certificate. (Refines §17.2's "HTTPS-only".)
 - **Config provider settings** are edited per-relay via `PUT /api/relays/{id}` (named relays, §10), not a global `PUT /api/config/provider`; live in-flight counts are part of `GET /api/stats/relays`. (Affects §9.3.)
 - **Default source-IP allow-lists are deployment-friendly, not loopback-only.** A loopback-only default makes the dashboard unreachable on the common deployment shapes (headless servers have no local browser; containers NAT every request). So the seeded defaults are: `webui.allowed_cidrs` and `api.allowed_cidrs` = **empty (allow all)** — these surfaces are gated by the dashboard password and API keys respectively, with the CIDR list as optional hardening; `listener.allowed_cidrs` = **loopback + private ranges** (`127.0.0.1/32`, `::1/128`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) so same-host apps, private LANs and Docker networks can submit mail while the SMTP listener is **not** an open internet relay out of the box. Operators tighten any of these in the dashboard. (Affects §12.6 defaults, §17.10.)
+- **Provider set is larger than §8 describes.** Implemented providers: `Unconfigured` (default), `Local`, `Smtp`, `Mailgun`, `SendGrid`, `AzureCommunication`, **`AmazonSes`, `Postmark`, `Resend`, `SparkPost`, `Smtp2Go`**. The five bold ones were on Appendix A ("future") but are shipped; their credential field schemas live in `RelayProviderSchema` (Core). Anywhere §8/§10.2 says the default relay provider is `None`, read `Unconfigured`. (Affects §8, §10.2, Appendix A.)
+- **Windows install is a WiX Burn bundle, not a WinForms wizard.** §15.2 describes a standalone .NET WinForms setup wizard; the actual installer is `DispatchSetup.exe`, a WiX Burn bundle (`bundle/Bundle.wxs`) that chains a thin `InstallSqlExpress.exe` launcher (runs `InstallSqlExpress.ps1` to install **SQL Server 2025 Express**, instance `DISPATCHSQL`) then the Dispatch MSI. There is no interactive multi-step UI and no certificate-generation step on Windows — automatic self-signed cert generation exists only on Linux via `install.sh --generate-cert`. (Affects §15.2, §17.2.)
+- **The ingestion API is HTTP-only; no API-TLS config keys.** There are no `api.tls_cert_path` / `api.tls_cert_password` config keys and no API-TLS UI controls — Kestrel serves the ingestion port over plain HTTP (terminate TLS at a reverse proxy if needed). The `webui.tls_cert_path` / `webui.tls_cert_password` settings live in **appsettings.json** (§12.2), not the SQL `config` table, so they are not rows in the §12.3 table. There is also no `webui.require_auth` key — the dashboard requires auth whenever an admin password hash is set. Two config keys exist that §12.3 omits: `listener.server_name` (default `Dispatch`) and `purge.captured_retention_days` (default `7`). (Affects §9.2, §12.3.)
+- **Some §-pseudocode signatures are illustrative.** The internal method shapes shown in §10.7 (`RoutingEngine.ResolveAsync`) and §11.5 (provider-test service) differ from the code — e.g. `ResolveAsync` returns `ValueTask<ResolvedRelay>` over `IReadOnlyList<string>` recipients, and starting a provider test is synchronous and returns a `TestRun`. Treat those listings as intent, not literal API.
+- **SMTP source-IP denial happens at MAIL FROM, not the greeting.** The CIDR allow-list and intake/back-pressure checks run in the mailbox filter (`CanAcceptFromAsync`); a disallowed source is refused there (and a `Denied` row is logged), rather than with a `554` at the SMTP banner. (Refines §5.3, §17.10.)
+- **Not yet implemented (vs spec):** (a) §17.10's **SMTP AUTH brute-force lockout** — SMTP AUTH works, but there is no per-IP AUTH-failure lockout (the *dashboard* login throttle, 10 fails / 5 min → 15 min, is implemented). (b) §17.4's claim that API-key revocation has **no grace period** — revoked keys are honored until the 30-second `ApiKeyCache` TTL expires; there is no explicit cache invalidation on revoke. Both are candidate fixes, not intended behavior.
 
 ---
 
@@ -115,7 +121,7 @@ ASP.NET Core minimal API hosts a React/Vite SPA on port 8420 (default). The UI r
 | Configuration store | SQL Server `config` table (connection string only in `appsettings.json`) |
 | Structured logging | Serilog — file sink + SQL Server sink (`relay_log`) + in-memory ring buffer |
 | Windows service host | .NET Worker Service (IHostedService) |
-| Windows installer | WiX Toolset v5 (MSI) |
+| Windows installer | WiX Toolset v6 (MSI) |
 | Linux service | systemd unit file |
 
 ---
@@ -131,13 +137,14 @@ Dispatch/
     Dispatch.Providers/     # Upstream relay provider implementations
     Dispatch.Service/       # Entry point, IHostedService wiring, DI setup
   installer/
-    windows/                # WiX v5 .wxs files for MSI
+    windows/                # WiX v6 .wxs files for MSI
     linux/                  # dispatch.service systemd unit template + install.sh
   docs/                     # Architecture diagrams, user guide
   tests/
     Dispatch.Core.Tests/
+    Dispatch.Providers.Tests/
     Dispatch.Web.Tests/
-    Dispatch.Integration.Tests/
+    Dispatch.Data.Tests/
 ```
 
 **Spool directory locations (runtime, not in repo):**
@@ -595,7 +602,7 @@ Deletes run in batches of 1,000 rows with a 100 ms pause between batches to avoi
 
 #### relay_log Purge — Size-Based Pressure
 
-The purge worker also checks database size on every run and on service startup. If the `DispatchQueue` database reaches **9.5 GB**, it deletes the oldest `relay_log` rows in batches of 500 until the database drops below **9.0 GB**:
+The purge worker also checks database size on every run and on service startup. If the `DispatchLog` database reaches **9.5 GB**, it deletes the oldest `relay_log` rows in batches of 500 until the database drops below **9.0 GB**:
 
 ```csharp
 // Priority order for size-based purge (oldest first in each phase):
@@ -2625,13 +2632,13 @@ When the user chooses **Connect to an existing SQL Server**:
 - **Test Connection** button — attempts `SELECT 1` and reports success or the exact error message
 - The user cannot proceed until Test Connection succeeds
 
-The bootstrap needs `db_creator` rights on the target instance (to create the `DispatchQueue` database). After initial setup, Dispatch only needs `db_datawriter` + `db_datareader` on that database. The bootstrap creates a dedicated `dispatch` SQL login with minimal rights after database creation (when SQL Auth is used).
+The bootstrap needs `db_creator` rights on the target instance (to create the `DispatchLog` database). After initial setup, Dispatch only needs `db_datawriter` + `db_datareader` on that database. The bootstrap creates a dedicated `dispatch` SQL login with minimal rights after database creation (when SQL Auth is used).
 
 #### Database Initialisation
 
 After a successful connection test:
 
-1. `CREATE DATABASE DispatchQueue` (if it does not already exist)
+1. `CREATE DATABASE DispatchLog` (if it does not already exist)
 2. Runs embedded schema SQL scripts in order to create tables and indexes
 3. If the database already exists and has the schema table, applies any pending migration scripts (idempotent)
 4. Writes the final connection string (encrypted) to `C:\ProgramData\Dispatch\appsettings.json`
@@ -2650,7 +2657,7 @@ The MSI finds the pre-written `appsettings.json` in `ProgramData` and does not t
 
 ### 15.3 MSI (`Dispatch-{version}-x64.msi`)
 
-Authored with WiX Toolset v5. Targets x64 Windows 10 / Server 2019 and later. The MSI assumes SQL Server and the database are already configured (by the bootstrap) — it does not interact with SQL Server.
+Authored with WiX Toolset v6. Targets x64 Windows 10 / Server 2019 and later. The MSI assumes SQL Server and the database are already configured (by the bootstrap) — it does not interact with SQL Server.
 
 **MSI Actions:**
 
@@ -2951,7 +2958,7 @@ Choice [1]: _
 
 **If option 1 — Install SQL Server Express:**
 ```
-Downloading Microsoft SQL Server 2022 Express...
+Downloading Microsoft SQL Server 2025 Express...
 Adding Microsoft package repository...
 Installing mssql-server...
 Running initial configuration (SA password required)...
@@ -2971,7 +2978,7 @@ Choice [2]: _
 Username: _
 Password: _
 
-Testing connection...  ✓  Connected to SQL Server 2022 Express (14.0.3456)
+Testing connection...  ✓  Connected to SQL Server 2025 Express
 ```
 
 **Then for both paths:**
@@ -3014,8 +3021,8 @@ The script checks for a running `sqlservr` process and attempts `sqlcmd -S local
 # Add Microsoft package repository
 curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor \
   -o /usr/share/keyrings/microsoft-prod.gpg
-curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/mssql-server-2022.list \
-  -o /etc/apt/sources.list.d/mssql-server-2022.list
+curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2025.list \
+  -o /etc/apt/sources.list.d/mssql-server-2025.list
 
 apt-get update
 apt-get install -y mssql-server
@@ -3035,7 +3042,7 @@ The SA password is prompted interactively and validated for SQL Server complexit
 
 After a successful connection:
 
-1. `sqlcmd` creates `DispatchQueue` if it does not exist
+1. `sqlcmd` creates `DispatchLog` if it does not exist
 2. Embedded schema SQL scripts are applied in order
 3. A dedicated `dispatch` SQL login is created with `db_datawriter` + `db_datareader` rights only
 4. The SQL Server connection string is written to `/etc/dispatch/appsettings.json` (connection string only — no other settings)
@@ -3493,7 +3500,7 @@ GitHub Actions handles all CI/CD automation.
 | Publish Windows x64 service | `dotnet publish -r win-x64 --self-contained` |
 | Publish Windows bootstrap EXE | `dotnet publish Dispatch.Bootstrap.Windows -r win-x64 --self-contained` |
 | Publish Linux x64 | `dotnet publish -r linux-x64 --self-contained` |
-| Build MSI | `dotnet build installer/windows` (WiX v5 MSBuild integration) |
+| Build MSI | `dotnet build installer/windows` (WiX v6 MSBuild integration) |
 | Bundle bootstrap + MSI → Setup.exe | WiX Burn bootstrapper chain |
 | Build Linux tarball | `tar` packaging of binary + `install.sh` |
 | GitHub Release | Triggered on version tag push (`v*`) |
@@ -3520,7 +3527,7 @@ Build projects in this order to avoid circular dependency issues:
 4. **Dispatch.UI** — React SPA; wire Vite build into Dispatch.Web via MSBuild `EmbeddedResource`
 5. **Dispatch.Service** — `Program.cs`; wire `SpoolWorkerPool` + `PurgeWorker` as `IHostedService`
 6. **Dispatch.Bootstrap.Windows** — WinForms setup wizard (SQL detect/install, schema migration, MSI launch)
-7. **installer/windows** — WiX v5 `.wxs` MSI; WiX Burn chain wrapping `DispatchSetup.exe`
+7. **installer/windows** — WiX v6 `.wxs` MSI; WiX Burn chain wrapping `DispatchSetup.exe`
 8. **installer/linux** — systemd unit + `install.sh`
 
 ### 19.2 SmtpServer Wiring Pattern
@@ -3873,8 +3880,8 @@ public static async Task InitialiseDatabaseAsync(string connectionString)
     using (var conn = new SqlConnection(builder.ToString()))
     {
         await conn.ExecuteAsync("""
-            IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = 'DispatchQueue')
-                CREATE DATABASE DispatchQueue;
+            IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = 'DispatchLog')
+                CREATE DATABASE DispatchLog;
             """);
     }
 
