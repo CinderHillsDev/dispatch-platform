@@ -177,7 +177,7 @@ public class IngestionApiTests(WebTestHost host)
         var newest = new DirectoryInfo(host.Spool.IncomingDir).GetFiles("*.eml")
             .OrderByDescending(f => f.LastWriteTimeUtc).First().FullName;
         var msg = MimeMessage.Load(newest);
-        var atts = msg.Attachments.OfType<MimePart>().ToDictionary(p => p.FileName, p => p);
+        var atts = msg.Attachments.OfType<MimePart>().ToDictionary(p => p.FileName!, p => p);
 
         Assert.Equal(2, atts.Count);
         Assert.Equal("see attached", msg.TextBody);
