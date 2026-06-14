@@ -58,6 +58,7 @@ The shipped implementation intentionally diverges from a few details described l
 - **`api_keys.rate_limit_per_minute` default is `100`** (the spec is internally inconsistent — §6.11 says 0, §7.6 says 100; code uses 100; 0 still means "use the global default").
 - **Web UI HTTPS** is served when `WebUi:TlsCertPath` is configured (appsettings, §12.2); with no cert it falls back to plain HTTP with a startup warning, so local development works without a certificate. (Refines §17.2's "HTTPS-only".)
 - **Config provider settings** are edited per-relay via `PUT /api/relays/{id}` (named relays, §10), not a global `PUT /api/config/provider`; live in-flight counts are part of `GET /api/stats/relays`. (Affects §9.3.)
+- **Default source-IP allow-lists are deployment-friendly, not loopback-only.** A loopback-only default makes the dashboard unreachable on the common deployment shapes (headless servers have no local browser; containers NAT every request). So the seeded defaults are: `webui.allowed_cidrs` and `api.allowed_cidrs` = **empty (allow all)** — these surfaces are gated by the dashboard password and API keys respectively, with the CIDR list as optional hardening; `listener.allowed_cidrs` = **loopback + private ranges** (`127.0.0.1/32`, `::1/128`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) so same-host apps, private LANs and Docker networks can submit mail while the SMTP listener is **not** an open internet relay out of the box. Operators tighten any of these in the dashboard. (Affects §12.6 defaults, §17.10.)
 
 ---
 

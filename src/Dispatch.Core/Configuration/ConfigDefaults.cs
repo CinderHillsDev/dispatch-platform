@@ -8,14 +8,21 @@ namespace Dispatch.Core.Configuration;
 /// </summary>
 public static class ConfigDefaults
 {
-    private const string Localhost = "[\"127.0.0.1/32\",\"::1/128\"]";
+    // The dashboard (password-protected) and ingestion API (API-key protected) default to an empty
+    // allow-list = allow all, so a headless server or a NAT'd container is reachable out of the box;
+    // operators tighten the source-IP allow-list in the dashboard. The SMTP listener is NOT auth-gated
+    // by default, so to avoid shipping an open relay it defaults to loopback + private ranges (RFC1918 +
+    // IPv6 ULA): same-host apps, private LANs and Docker networks can submit; the public internet can't.
+    private const string AllowAll = "[]";
+    private const string PrivateRanges =
+        "[\"127.0.0.1/32\",\"::1/128\",\"10.0.0.0/8\",\"172.16.0.0/12\",\"192.168.0.0/16\",\"fc00::/7\"]";
 
     /// <summary>The default key/value pairs, all non-encrypted. Values are stored verbatim (JSON for arrays).</summary>
     public static readonly IReadOnlyDictionary<string, string> Defaults = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         [ConfigKeys.ListenerPorts] = "[2525]",
         [ConfigKeys.ListenerServerName] = "Dispatch",
-        [ConfigKeys.ListenerAllowedCidrs] = Localhost,
+        [ConfigKeys.ListenerAllowedCidrs] = PrivateRanges,
         [ConfigKeys.ListenerMaxMessageBytes] = "0",
         [ConfigKeys.ListenerRequireAuth] = "false",
         [ConfigKeys.ListenerTlsCertPath] = "",
@@ -29,12 +36,12 @@ public static class ConfigDefaults
 
         [ConfigKeys.ApiEnabled] = "true",
         [ConfigKeys.ApiPort] = "8421",
-        [ConfigKeys.ApiAllowedCidrs] = Localhost,
+        [ConfigKeys.ApiAllowedCidrs] = AllowAll,
         [ConfigKeys.ApiMaxMessageBytes] = "0",
         [ConfigKeys.ApiRateLimitPerKey] = "100",
 
         [ConfigKeys.WebUiPort] = "8420",
-        [ConfigKeys.WebUiAllowedCidrs] = Localhost,
+        [ConfigKeys.WebUiAllowedCidrs] = AllowAll,
         [ConfigKeys.WebUiSessionTimeoutMinutes] = "480",
         [ConfigKeys.WebUiRequireHttps] = "false",
 
