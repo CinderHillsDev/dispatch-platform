@@ -61,7 +61,8 @@ public sealed class ConfigCache
     {
         Ports = GetIntArray(ConfigKeys.ListenerPorts, ListenerOptions.DefaultPorts),
         ServerName = GetString(ConfigKeys.ListenerServerName, "Dispatch"),
-        AllowedCidrs = GetStringArray(ConfigKeys.ListenerAllowedCidrs, ListenerOptions.DefaultAllowedCidrs),
+        // Empty = allow all; the safe baseline is the seeded default (ConfigDefaults), not a code fallback.
+        AllowedCidrs = GetStringArray(ConfigKeys.ListenerAllowedCidrs, []),
         MaxMessageBytes = GetLong(ConfigKeys.ListenerMaxMessageBytes, 0),
         RequireAuth = GetBool(ConfigKeys.ListenerRequireAuth, false),
         TlsCertPath = GetString(ConfigKeys.ListenerTlsCertPath, ""),
@@ -73,7 +74,7 @@ public sealed class ConfigCache
     public ApiOptions Api() => new()
     {
         Port = GetInt(ConfigKeys.ApiPort, 8421),
-        AllowedCidrs = GetStringArray(ConfigKeys.ApiAllowedCidrs, ApiOptions.DefaultAllowedCidrs),
+        AllowedCidrs = GetStringArray(ConfigKeys.ApiAllowedCidrs, []),
         MaxMessageBytes = GetLong(ConfigKeys.ApiMaxMessageBytes, 0),
         RateLimitPerKey = GetInt(ConfigKeys.ApiRateLimitPerKey, 100),
     };

@@ -11,14 +11,15 @@ public sealed class ListenerOptions
 
     public string ServerName { get; set; } = "Dispatch";
 
-    /// <summary>Application-layer allow-list. Empty falls back to <see cref="DefaultAllowedCidrs"/> (localhost only).</summary>
+    /// <summary>Application-layer source-IP allow-list. Empty = allow all; the safe baseline comes from the
+    /// seeded defaults (loopback + private ranges for the listener — see <see cref="ConfigDefaults"/>), not a
+    /// code-level fallback, so an operator who clears the list in the dashboard is opting in to allow-all.</summary>
     public string[] AllowedCidrs { get; set; } = [];
 
     public static readonly int[] DefaultPorts = [2525];
-    public static readonly string[] DefaultAllowedCidrs = ["127.0.0.1/32", "::1/128"];
 
     public int[] EffectivePorts => Ports is { Length: > 0 } ? Ports : DefaultPorts;
-    public string[] EffectiveAllowedCidrs => AllowedCidrs is { Length: > 0 } ? AllowedCidrs : DefaultAllowedCidrs;
+    public string[] EffectiveAllowedCidrs => AllowedCidrs;
 
     /// <summary>Global max message size ceiling in bytes. 0 = no limit.</summary>
     public long MaxMessageBytes { get; set; } = 0;

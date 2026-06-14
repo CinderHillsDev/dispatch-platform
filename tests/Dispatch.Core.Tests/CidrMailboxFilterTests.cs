@@ -85,8 +85,50 @@ public class CidrMailboxFilterTests
             $"expected throttle delay, took {sw.ElapsedMilliseconds}ms");
     }
 
+    [Fact]
+    public async Task CanAcceptFrom_rejects_source_ip_outside_allow_list()
+    {
+        // The listener default ships loopback + private ranges; a public source IP must be refused so the
+        // SMTP listener is not an open relay (spec §1.1 / §17.10).
+        var filter = Build(relayMaxBytes: 0, allowedCidrs: ConfigPrivateRanges);
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Parse("203.0.113.7"), 4242));
+
+        Assert.False(await filter.CanAcceptFromAsync(
+            ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("172.17.0.1")]   // Docker bridge gateway
+    [InlineData("10.4.5.6")]     // private LAN
+    [InlineData("192.168.1.20")] // home/office LAN
+    [InlineData("127.0.0.1")]    // same-host app
+    public async Task CanAcceptFrom_allows_private_and_loopback_sources(string ip)
+    {
+        var filter = Build(relayMaxBytes: 0, allowedCidrs: ConfigPrivateRanges);
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Parse(ip), 4242));
+
+        Assert.True(await filter.CanAcceptFromAsync(
+            ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CanAcceptFrom_allows_any_source_when_allow_list_empty()
+    {
+        // Empty allow-list = allow all; confirms an operator can intentionally open the listener.
+        var filter = Build(relayMaxBytes: 0, allowedCidrs: "[]");
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Parse("8.8.8.8"), 4242));
+
+        Assert.True(await filter.CanAcceptFromAsync(
+            ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None));
+    }
+
+    // The real seeded listener default (kept in sync with ConfigDefaults by ConfigDefaultsTests).
+    private const string ConfigPrivateRanges =
+        "[\"127.0.0.1/32\",\"::1/128\",\"10.0.0.0/8\",\"172.16.0.0/12\",\"192.168.0.0/16\",\"fc00::/7\"]";
+
     private static CidrMailboxFilter Build(long relayMaxBytes, IntakeState? intake = null,
-        Dispatch.Service.ConnectionTracker? connections = null, int maxConnections = 0)
+        Dispatch.Service.ConnectionTracker? connections = null, int maxConnections = 0,
+        string? allowedCidrs = null)
     {
         var resolver = new StubRelayResolver(new ResolvedRelay
         {
@@ -94,7 +136,7 @@ public class CidrMailboxFilterTests
         });
         var values = new Dictionary<string, string>
         {
-            [ConfigKeys.ListenerAllowedCidrs] = "[\"0.0.0.0/0\",\"::/0\"]",
+            [ConfigKeys.ListenerAllowedCidrs] = allowedCidrs ?? "[\"0.0.0.0/0\",\"::/0\"]",
         };
         if (maxConnections > 0) values[ConfigKeys.ListenerMaxConnections] = maxConnections.ToString();
         var cache = new ConfigCache();
