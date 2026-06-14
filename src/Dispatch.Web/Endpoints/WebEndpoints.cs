@@ -236,8 +236,12 @@ public static class WebEndpoints
             });
         });
 
-        group.MapDelete("/keys/{id:int}", async (int id, IApiKeyRepository keys, CancellationToken ct) =>
-            await keys.RevokeAsync(id, ct) ? Results.Ok() : Results.NotFound());
+        group.MapDelete("/keys/{id:int}", async (int id, IApiKeyRepository keys, ApiKeyCache cache, CancellationToken ct) =>
+        {
+            if (!await keys.RevokeAsync(id, ct)) return Results.NotFound();
+            cache.Invalidate(id);   // stop the key working now, not after the 30s cache TTL (spec §17.4)
+            return Results.Ok();
+        });
     }
 
     private static object SpoolCounts(SpoolDirectory spool) => new

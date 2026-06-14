@@ -120,6 +120,7 @@ try
     builder.Services.AddSingleton<DiskMonitor>();
     builder.Services.AddSingleton<ConnectionTracker>();
     builder.Services.AddSingleton<CidrMailboxFilter>();
+    builder.Services.AddSingleton<SmtpAuthThrottle>();
     builder.Services.AddSingleton<ConfiguredUserAuthenticator>();
 
     // SQL persistence (relay_log, relay_counters, relays, config, api_keys, message-log queries).
