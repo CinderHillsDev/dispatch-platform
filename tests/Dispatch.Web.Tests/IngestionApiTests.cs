@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dispatch.Core.Spool;
+using MimeKit;
 
 namespace Dispatch.Web.Tests;
 
@@ -143,6 +144,60 @@ public class IngestionApiTests(WebTestHost host)
         // Neither text nor html.
         var res = await host.Api.SendAsync(Post(WebTestHost.ValidKey,
             new { from = "a@x.com", to = new[] { "b@y.com" }, subject = "hi" }));
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task Ingest_multipart_with_attachments_preserves_them_in_the_spooled_message()
+    {
+        var csv = System.Text.Encoding.UTF8.GetBytes("id,name\n1,alice\n");
+        var png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4 }; // PNG magic + bytes
+
+        var file1 = new ByteArrayContent(csv);
+        file1.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
+        var file2 = new ByteArrayContent(png);
+        file2.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+
+        var content = new MultipartFormDataContent
+        {
+            { new StringContent("App <a@x.com>"), "from" },
+            { new StringContent("b@y.com"), "to" },
+            { new StringContent("With attachments"), "subject" },
+            { new StringContent("see attached"), "text" },
+        };
+        content.Add(file1, "attachment", "report.csv");
+        content.Add(file2, "attachment", "logo.png");
+
+        var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/messages") { Content = content };
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", WebTestHost.ValidKey);
+        var res = await host.Api.SendAsync(req);
+        Assert.Equal(HttpStatusCode.Accepted, res.StatusCode);
+
+        // The spooled .eml must carry both attachments, with names + bytes intact.
+        var newest = new DirectoryInfo(host.Spool.IncomingDir).GetFiles("*.eml")
+            .OrderByDescending(f => f.LastWriteTimeUtc).First().FullName;
+        var msg = MimeMessage.Load(newest);
+        var atts = msg.Attachments.OfType<MimePart>().ToDictionary(p => p.FileName, p => p);
+
+        Assert.Equal(2, atts.Count);
+        Assert.Equal("see attached", msg.TextBody);
+        AssertContent(atts["report.csv"], csv);
+        AssertContent(atts["logo.png"], png);
+
+        static void AssertContent(MimePart part, byte[] expected)
+        {
+            using var ms = new MemoryStream();
+            part.Content.DecodeTo(ms);
+            Assert.Equal(expected, ms.ToArray());
+        }
+    }
+
+    [Fact]
+    public async Task Ingest_malformed_from_address_is_400_not_500()
+    {
+        // A bad address makes MailboxAddress.Parse throw; the handler must surface 400, never a 500.
+        var res = await host.Api.SendAsync(Post(WebTestHost.ValidKey,
+            new { from = "not an address <<<", to = new[] { "b@y.com" }, subject = "hi", text = "yo" }));
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
     }
 

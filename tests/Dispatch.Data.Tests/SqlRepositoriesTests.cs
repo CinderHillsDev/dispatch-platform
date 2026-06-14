@@ -226,6 +226,47 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     }
 
     [Fact]
+    public async Task MessageLog_all_filter_fields_are_injection_safe()
+    {
+        // Complements the FromDomain [Theory] above by exercising the other filter fields, including the
+        // LIKE-based Subject/Tag matches (the more interesting injection surfaces).
+        if (!sql.Available) return;
+        var log = new SqlLogRepository(sql.Factory);
+        var query = new SqlMessageLogQuery(sql.Factory);
+        var spoolId = Guid.NewGuid().ToString("N");
+
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = spoolId,
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@y.com"], ToDomain = "y.com",
+            Subject = "legit", IngestSource = "API", RelayName = "default", Provider = "Local",
+            Tags = ["welcome"],
+        });
+
+        // Every filter value is a Dapper parameter (spec §17), so these payloads are treated as literal
+        // text: they must not error and must not match the real row — and the table must survive.
+        const string drop = "x'; DROP TABLE relay_log; --";
+        MessageLogFilter[] hostile =
+        [
+            new() { FromDomain = drop, Limit = 50 },
+            new() { ToDomain = drop, Limit = 50 },
+            new() { RelayName = drop, Limit = 50 },
+            new() { IngestSource = drop, Limit = 50 },
+            new() { Subject = "legit'; DELETE FROM relay_log; --", Limit = 50 },
+            new() { Tag = "welcome\"); DROP TABLE relay_log; --", Limit = 50 },
+        ];
+        foreach (var f in hostile)
+        {
+            var page = await query.QueryAsync(f);                       // must not throw
+            Assert.DoesNotContain(page.Rows, r => r.SpoolId == spoolId); // literal value → no match
+        }
+
+        // The table is intact and the row is still retrievable with a legitimate filter.
+        var ok = await query.QueryAsync(new MessageLogFilter { FromDomain = "x.com", Limit = 50 });
+        Assert.Contains(ok.Rows, r => r.SpoolId == spoolId);
+    }
+
+    [Fact]
     public async Task MessageLog_keyset_pagination_walks_all_rows_once()
     {
         if (!sql.Available) return;
