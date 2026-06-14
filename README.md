@@ -9,7 +9,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/chrismuench/Dispatch-SMTP-Relay)](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](#installation)
 
-Point your applications and devices at Dispatch on port 25 or 587. Dispatch queues every message durably and forwards it to Mailgun, SendGrid, Azure Communication Services, or any SMTP smart host — with a live web dashboard to monitor, configure, and troubleshoot everything.
+Point your applications and devices at Dispatch over SMTP (port 2525 by default; 25/587 for production). Dispatch queues every message durably and forwards it to Mailgun, SendGrid, Amazon SES, Postmark, Azure Communication Services, or any SMTP smart host — with a live web dashboard to monitor, configure, and troubleshoot everything.
 
 ![Dispatch Dashboard Screenshot](docs/images/dashboard.png)
 
@@ -48,21 +48,21 @@ Your apps / scripts  →  Dispatch API  (port 8421)      ─┘
 
 | | |
 |---|---|
-| 📨 **SMTP listener** | Accepts on ports 25 and 587; STARTTLS, AUTH; app-layer CIDR allow-list; denied connections logged |
+| 📨 **SMTP listener** | Configurable ports (2525 by default; set 25/587 for production); STARTTLS, AUTH; app-layer CIDR allow-list; denied connections logged |
 | 🌐 **HTTP ingestion API** | `POST /api/v1/messages` on port 8421; multipart or JSON; API key auth; Mailgun-compatible |
 | ⚡ **Instant 250 OK** | Message written to spool directory before acknowledging sender — no DB or network on the hot path |
 | 📁 **Spool queue** | Local `.eml` files are the durable queue; survive crashes, restarts, and SQL outages |
-| 🔀 **Relay routing** | Named relay configs; domain/subdomain routing rules; default relay catch-all; simulate tool |
-| ☁️ **Provider support** | Mailgun, SendGrid, Azure Communication Services, generic SMTP, dev/none mode |
+| 🔀 **Relay routing** | Named relay configs; recipient/sender routing rules; default relay catch-all; simulate tool |
+| ☁️ **Provider support** | Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Azure Communication Services, generic SMTP, plus Local (developer capture) mode |
 | 🔄 **Auto-retry** | Exponential back-off (30 s → 5 min → 30 min); failed messages in `spool/failed/` with retry-from-UI |
 | 🖥️ **Web UI** | Embedded React dashboard; no separate web server needed |
-| 📊 **Message log** | After-the-fact history in SQL Server; searchable, filterable; CSV export |
+| 📊 **Message log** | After-the-fact history in SQL Server; searchable and filterable |
 | 🧪 **Provider testing** | Send a real test email from the settings page; watch the relay log live |
 | 🗑️ **Auto-purge** | Time-based retention + size-based pressure purge (triggers at 9.5 GB, target 9.0 GB) |
-| 🔒 **Security** | Encrypted credential storage; required admin password (set at install); localhost-first defaults |
-| 🪟 **Windows** | Installs as a Windows Service; MSI with firewall rules; GUI bootstrap wizard |
+| 🔒 **Security** | Encrypted credential storage; required admin password (set at install); dashboard/API gated by auth, SMTP limited to private ranges by default |
+| 🪟 **Windows** | Installs as a Windows Service; MSI + bundled SQL Express bootstrapper with firewall rules |
 | 🐧 **Linux** | Runs as a systemd unit; interactive bash installer |
-| ⬆️ **Upgrades** | Spool drain → schema migration → binary swap; rollback on failure |
+| ⬆️ **Upgrades** | In-place MSI/major upgrade with additive schema migrations; config + history preserved (manual queue drain available) |
 
 ---
 
@@ -183,11 +183,11 @@ Open **http://localhost:8420** after installation. On first run, all settings ha
 
 | Setting | Default | Notes |
 |---|---|---|
-| Ports | 25, 587 | Comma-separated list |
+| Ports | 2525 | Comma-separated list; set `25,587` for production (require elevation) |
 | Bind address | 0.0.0.0 | Listens on all interfaces |
-| Allowed IPs / CIDRs | `127.0.0.1/32` | Add your subnet, e.g. `192.168.1.0/24`; denied connections are logged |
+| Allowed IPs / CIDRs | loopback + private ranges | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (so it isn't an open relay); add your subnet, clear to allow all; denied connections are logged |
 | Require AUTH | false | Enable to require username/password from senders |
-| Max message size | 25 MB | Capped to active provider limit automatically |
+| Max message size | 0 (no limit) | Effective limit is auto-capped to the active provider's maximum |
 | TLS certificate | — | Path to PFX file for STARTTLS support |
 
 ### Relay Providers
@@ -196,9 +196,14 @@ Open **http://localhost:8420** after installation. On first run, all settings ha
 |---|---|
 | **Mailgun** | API Key, Domain, Region (US/EU) |
 | **SendGrid** | API Key |
+| **Amazon SES** | Access Key ID, Secret Access Key, Region |
+| **Postmark** | Server Token (Message Stream optional) |
+| **Resend** | API Key |
+| **SparkPost** | API Key (Region optional) |
+| **SMTP2GO** | API Key |
 | **Azure Communication Services** | Connection String, Sender Address |
 | **SMTP (generic)** | Host, Port, Username, Password, TLS mode |
-| **Local (developer mode)** | — captures mail to a local inbox; never delivers externally |
+| **Local (developer mode)** | — captures mail to the spool; never delivers externally |
 
 ### Retention
 
@@ -216,10 +221,15 @@ All retention periods and size thresholds are configurable under **Settings → 
 |---|---|
 | [Mailgun](https://mailgun.com) | REST API |
 | [SendGrid](https://sendgrid.com) | Web API v3 (official SDK) |
+| [Amazon SES](https://aws.amazon.com/ses/) | SES v2 API (official SDK, raw MIME) |
+| [Postmark](https://postmarkapp.com) | REST API |
+| [Resend](https://resend.com) | REST API |
+| [SparkPost](https://www.sparkpost.com) | REST API |
+| [SMTP2GO](https://www.smtp2go.com) | REST API |
 | [Azure Communication Services](https://azure.microsoft.com/en-us/products/communication-services) | SDK |
-| Any SMTP smart host | SMTP via MailKit (AWS SES, Office 365, Postfix, …) |
+| Any SMTP smart host | SMTP via MailKit (Office 365, Postfix, …) |
 
-More providers planned — see [Appendix A of the spec](docs/SPEC.md) and [open issues](https://github.com/chrismuench/Dispatch-SMTP-Relay/issues?q=label%3Aprovider).
+More providers welcome — see the [provider issues](https://github.com/chrismuench/Dispatch-SMTP-Relay/issues?q=label%3Aprovider) and the **Adding a provider** note under [Contributing](#contributing).
 
 ---
 
@@ -246,11 +256,12 @@ More providers planned — see [Appendix A of the spec](docs/SPEC.md) and [open 
 ### Windows
 - Windows 10 / Windows Server 2019 or later (x64)
 - .NET 10 runtime (bundled in the installer)
-- SQL Server Express 2019+ or any SQL Server edition (installer can download and set up Express for you)
+- SQL Server (the bundled installer sets up **SQL Server 2025 Express** for you; or point Dispatch at any existing SQL Server 2019+ / Azure SQL)
 
 ### Linux
-- Ubuntu 20.04+ / Debian 11+ / RHEL 8+ (x64)
-- SQL Server 2019+ for Linux (installer can set it up)
+- Ubuntu / Debian or RHEL / Fedora (x64) — `--install-sql` targets SQL Server 2025 (Ubuntu 24.04+ for the bundled SQL)
+- Or any existing SQL Server 2019+ / Azure SQL via `--sql-connection`
+- arm64: use the [Docker image](#docker) or an external SQL Server (SQL Server has no arm64 Linux build)
 
 ---
 
@@ -306,14 +317,16 @@ For production installs see [`installer/`](installer/README.md) (Linux systemd +
 Dispatch-SMTP-Relay/
   src/
     Dispatch.Core/         # SMTP listener store, spool pipeline, worker pool, routing, purge, models
-    Dispatch.Providers/    # Local, generic SMTP, Mailgun, SendGrid, Azure provider implementations
+    Dispatch.Providers/    # Local, generic SMTP, Mailgun, SendGrid, Amazon SES, Postmark, Resend,
+                           #   SparkPost, SMTP2GO, Azure provider implementations
     Dispatch.Data/         # SQL schema/migrations, Dapper repositories, encryption
     Dispatch.Web/          # REST API, SignalR hub, ingestion API, auth, embedded React UI
     Dispatch.UI/           # React + Vite SPA (built, then embedded into Dispatch.Web)
     Dispatch.Service/      # Entry point: WebApplication host wiring SMTP + workers + web in one process
   installer/
     linux/                 # systemd unit + install.sh
-    windows/               # install.ps1 + WiX v5 MSI source
+    windows/               # install.ps1, WiX MSI (Dispatch.wxs) + Burn bundle, SQL Express bootstrap
+  Dockerfile               # multi-arch container image; docker-compose.yml runs Dispatch + SQL
   tests/
     Dispatch.Core.Tests/        # spool/worker/routing/counters (no DB)
     Dispatch.Providers.Tests/   # provider + factory (no DB)
@@ -327,16 +340,14 @@ Dispatch-SMTP-Relay/
 
 ## Upgrading
 
-Run the new `DispatchSetup-{version}-x64.exe` (Windows) or re-run `install.sh` (Linux). The installer:
+To upgrade in place:
 
-1. Detects the existing version automatically
-2. Drains the in-flight queue (waits up to 60 s for processing messages to complete)
-3. Stops the service
-4. Applies any new database schema migrations (additive only — no data loss)
-5. Replaces the binary
-6. Restarts the service
+- **Windows** — run the new `DispatchSetup-{version}-x64.exe` (or `Dispatch-{version}-x64.msi`). The MSI `MajorUpgrade` stops the service, replaces the binaries, and restarts it.
+- **Linux** — download the new tarball and re-run `sudo ./install.sh --prebuilt ./bin` (with your existing `--sql-connection`); it republishes `/opt/dispatch` and restarts the service.
 
-Configuration and all message history are preserved across upgrades.
+Database schema migrations are **additive** and applied automatically on startup, so configuration and all message history are preserved. The spool is durable across the restart.
+
+To finish in-flight messages before upgrading, drain the queue first from **Settings** (or `POST /api/service/drain`, which waits up to 60 s for processing messages to complete). Automatic rollback is not yet implemented — take a database backup before upgrading production.
 
 ---
 
@@ -352,7 +363,7 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 ## Security
 
-The admin web UI is **HTTPS-only** — the bootstrap generates a self-signed certificate if you don't have one. The HTTP ingestion API supports both HTTP and HTTPS, since many internal devices (printers, scanners, legacy apps) can't do HTTPS. All listeners enforce access via configurable IP/CIDR allow-lists at the application layer; denied connections are logged with the source IP. Credentials are stored AES-256 encrypted (API keys, provider secrets) or bcrypt-hashed (SMTP sender passwords) in SQL Server. If you find a security issue please report it privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new) rather than a public issue.
+The admin web UI serves **HTTPS when a TLS certificate is configured** (`WebUi:TlsCertPath` in `appsettings.json`); otherwise it falls back to plain HTTP with a startup warning. The Linux installer can generate a self-signed certificate for you with the optional `--generate-cert` flag. Run the dashboard behind TLS (and ideally a reverse proxy) for production. All listeners enforce access via configurable IP/CIDR allow-lists at the application layer (dashboard and API allow all by default — gated by the admin password and API keys respectively; the SMTP listener is limited to loopback + private ranges so it isn't an open relay); denied connections are logged with the source IP. At rest: API keys and the admin password are **bcrypt-hashed**; provider secrets and SMTP credentials are **encrypted** (AES-256-GCM on Linux/macOS, Windows DPAPI). If you find a security issue please report it privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new) rather than a public issue.
 
 ---
 
