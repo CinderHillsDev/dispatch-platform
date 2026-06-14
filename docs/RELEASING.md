@@ -14,7 +14,7 @@ git push origin v1.0.0
 That triggers the **Release** workflow, which:
 
 1. Stamps the version (`v1.0.0` → `1.0.0`) into the published service, the MSI, and the Burn bundle.
-2. Builds the **Windows installer** (`DispatchSetup.exe` + `Dispatch.msi`) and, if signing is configured,
+2. Builds the **Windows installer** (`DispatchSetup-<ver>-x64.exe` + `Dispatch-<ver>-x64.msi`) and, if signing is configured,
    Authenticode-signs both (engine detached, signed, reattached, then the bundle is signed).
 3. Builds the **Linux self-contained tarball** (`dispatch-<ver>-linux-x64.tar.gz`) — runs on a box with no
    .NET SDK via `install.sh --prebuilt ./bin`.
@@ -35,9 +35,10 @@ and publishes a **draft** release you can inspect and delete — nothing goes pu
 
 | Platform | Asset | Notes |
 |----------|-------|-------|
-| Windows  | **`DispatchSetup.exe`** | The single file. Installs SQL Server 2025 Express → the MSI → the service. |
-| Windows  | `Dispatch.msi` | Advanced: install against an existing SQL Server (`msiexec /i Dispatch.msi SQLCONN="..."`). |
+| Windows  | **`DispatchSetup-<ver>-x64.exe`** | The single file. Installs SQL Server 2025 Express → the MSI → the service. |
+| Windows  | `Dispatch-<ver>-x64.msi` | Advanced: install against an existing SQL Server (`msiexec /i Dispatch-<ver>-x64.msi SQLCONN="..."`). |
 | Linux    | `dispatch-<ver>-linux-x64.tar.gz` | Extract, then `sudo ./install.sh --prebuilt ./bin --install-sql ...`. |
+| Any      | `ghcr.io/chrismuench/dispatch-smtp-relay:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |
 | All      | `SHA256SUMS` | Verify downloads: `sha256sum -c SHA256SUMS`. |
 
 ## Code signing (Azure Artifact Signing)

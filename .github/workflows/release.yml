@@ -313,9 +313,14 @@ jobs:
           path: dist
 
       - name: Stage release files + checksums
+        env:
+          VER: ${{ needs.windows.outputs.version }}
         run: |
           mkdir -p release
-          cp dist/windows/DispatchSetup.exe dist/windows/Dispatch.msi release/
+          # Version the Windows asset names so each release's downloads are distinguishable
+          # (the Linux tarball already carries the version). Names match the README.
+          cp "dist/windows/DispatchSetup.exe" "release/DispatchSetup-${VER}-x64.exe"
+          cp "dist/windows/Dispatch.msi"      "release/Dispatch-${VER}-x64.msi"
           cp dist/linux/dispatch-*-linux-x64.tar.gz release/
           ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
 
@@ -329,7 +334,7 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            release/DispatchSetup.exe
-            release/Dispatch.msi
+            release/DispatchSetup-*-x64.exe
+            release/Dispatch-*-x64.msi
             release/dispatch-*-linux-x64.tar.gz
             release/SHA256SUMS

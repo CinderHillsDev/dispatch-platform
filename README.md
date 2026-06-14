@@ -70,26 +70,41 @@ Your apps / scripts  →  Dispatch API  (port 8421)      ─┘
 
 ### Windows
 
-Download and run `DispatchSetup-{version}-x64.exe` from the [latest release](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest).
+Download and run `DispatchSetup-{version}-x64.exe` from the [latest release](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest). It's a single bundled installer that:
 
-The setup wizard:
-1. Detects any existing SQL Server instance on your machine
-2. Offers to install SQL Server Express silently if none is found, or lets you connect to an existing instance
-3. Creates the `DispatchQueue` database and applies the schema
-4. Installs Dispatch as a Windows Service and opens the dashboard in your browser
+1. Installs **SQL Server 2025 Express** (a dedicated `DISPATCHSQL` instance) — skipped automatically if that instance already exists
+2. Installs the Dispatch MSI; the `DispatchLog` database and schema are created on first service start
+3. Installs and starts Dispatch as a Windows Service
 
-**Silent install** (SQL Server already present):
+**Silent install:**
 ```bat
-DispatchSetup-1.0.0-x64.exe --silent --server "localhost\SQLEXPRESS" --auth windows
+DispatchSetup-1.0.0-x64.exe /quiet
+```
+
+**Against an existing SQL Server** (skip the bundled SQL Express — install the MSI directly and point it at your server):
+```bat
+msiexec /i Dispatch-1.0.0-x64.msi /qn SQLCONN="Server=YOURHOST;Database=DispatchLog;User Id=sa;Password=***;TrustServerCertificate=True;Encrypt=True"
 ```
 
 ### Linux
 
+Download `dispatch-{version}-linux-x64.tar.gz` from the [latest release](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest) (it's self-contained — no .NET SDK needed), then:
+
 ```bash
-curl -sSL https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest/download/install.sh | sudo bash
+tar xzf dispatch-*-linux-x64.tar.gz && cd dispatch-*-linux-x64
+
+# Install with a bundled SQL Server 2025 Express (Ubuntu/Debian or RHEL/Fedora, x64):
+sudo ./install.sh --prebuilt ./bin --install-sql \
+  --sa-password '<StrongSaPassw0rd!>' --admin-password '<DashboardPassword!>'
+
+# ...or against an existing SQL Server / Azure SQL:
+sudo ./install.sh --prebuilt ./bin \
+  --sql-connection 'Server=YOURHOST;Database=DispatchLog;User Id=sa;Password=***;TrustServerCertificate=True;Encrypt=True' \
+  --admin-password '<DashboardPassword!>'
 ```
 
-The script detects or installs SQL Server Express, creates the database, installs the systemd service, and prints the dashboard URL when done.
+The script lays out `/opt/dispatch`, writes config, installs the systemd unit, and starts the service.
+(SQL Server has no arm64 Linux build, so on ARM use `--sql-connection` to an external instance, or run the [Docker image](#docker).)
 
 **Check the service:**
 ```bash
@@ -128,11 +143,11 @@ and private/RFC1918 ranges so it isn't an open relay) — tighten them in **Sett
 
 ## Quick Start
 
-1. Open the dashboard at **https://localhost:8420** (accept the self-signed certificate warning on first visit, or replace the cert with one from your internal CA)
+1. Open the dashboard at **http://localhost:8420** and log in with the admin password you set at install (Dispatch serves HTTPS instead when you configure a TLS cert — see [Configuration](#configuration))
 2. Go to **Settings → Relay Provider** and enter your provider credentials
 3. Click **Send Test Email** to verify the credentials work — watch the live relay log
 4. Click **Save Settings**
-5. Point your application at `localhost:25` or `localhost:587` and send mail
+5. Point your application at `localhost:2525` and send mail (the default port; set `25`/`587` in **Settings → SMTP Listener** for production)
 
 That's it. Dispatch handles everything from there.
 
@@ -158,7 +173,7 @@ Supports `multipart/form-data` (with file attachments) and `application/json`. T
 
 ## Configuration
 
-All settings are managed through the web UI and stored in SQL Server. The only thing in `appsettings.json` is the database connection string — there is nothing else to edit manually.
+All settings are managed through the web UI and stored in SQL Server. The only things in `appsettings.json` are the database connection string and (optionally) the Web UI TLS certificate (spec §12.1) — everything else lives in the SQL config table, seeded with sensible defaults on first run.
 
 ### Getting to the UI
 
