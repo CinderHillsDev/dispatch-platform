@@ -97,6 +97,33 @@ sudo systemctl status dispatch
 sudo journalctl -u dispatch -f
 ```
 
+### Docker
+
+The container image is multi-arch (`linux/amd64` + `linux/arm64`), so the same tag runs natively on
+x86 servers and Apple Silicon.
+
+**Try it locally** — one command brings up Dispatch + SQL together (Azure SQL Edge, arm64-native):
+```bash
+docker compose up --build      # from a clone of this repo
+# dashboard → http://localhost:8420   (default login password: see docker-compose.yml)
+```
+
+**Run from GHCR** against your own SQL Server / Azure SQL:
+```bash
+docker run -d --name dispatch \
+  -p 8420:8420 -p 8421:8421 -p 2525:2525 \
+  -e ConnectionStrings__DispatchLog="Server=<host>,1433;Database=DispatchLog;User Id=sa;Password=<pw>;TrustServerCertificate=True;Encrypt=True" \
+  -e AdminPassword="<DashboardPassword!>" \
+  -v dispatch-spool:/app/.dispatch-spool \
+  ghcr.io/chrismuench/dispatch-smtp-relay:latest
+```
+
+Only two settings are passed in (spec §12.1): the SQL connection string and the first-run admin
+password. Everything else is seeded into the SQL config table and managed in the dashboard. The schema
+is created/migrated automatically on first start. The default source-IP allow-lists are container-aware
+(dashboard + API allow all and are gated by the password / API keys; the SMTP listener accepts loopback
+and private/RFC1918 ranges so it isn't an open relay) — tighten them in **Settings**.
+
 ---
 
 ## Quick Start
