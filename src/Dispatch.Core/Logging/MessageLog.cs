@@ -85,8 +85,10 @@ public interface IMessageLogQuery
 {
     Task<MessageLogPage> QueryAsync(MessageLogFilter filter, CancellationToken ct = default);
 
-    /// <summary>Most recent log row for a spool id, for delivery-status lookups (spec §7.4).</summary>
-    Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, CancellationToken ct = default);
+    /// <summary>Most recent log row for a spool id, for delivery-status lookups (spec §7.4). When
+    /// <paramref name="apiKeyId"/> is non-null the lookup is scoped to that key, so one key can't read
+    /// another key's message status by guessing its id.</summary>
+    Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, int? apiKeyId, CancellationToken ct = default);
 
     /// <summary>Recent log rows submitted with a given API key, newest first (per-key list, spec §7.4).</summary>
     Task<IReadOnlyList<MessageLogRow>> RecentByApiKeyAsync(int apiKeyId, int limit, string[]? statuses, CancellationToken ct = default);

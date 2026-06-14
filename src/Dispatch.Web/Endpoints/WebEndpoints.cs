@@ -49,18 +49,28 @@ public static class WebEndpoints
             return Results.Ok(new { messages = rows });
         });
 
-        group.MapGet("/messages/{id}", async (string id, SpoolDirectory spool, IMessageLogQuery logs, CancellationToken ct) =>
+        group.MapGet("/messages/{id}", async (string id, HttpContext ctx, SpoolDirectory spool, IMessageLogQuery logs, CancellationToken ct) =>
         {
+            // Scope to the calling key so one key can't probe another key's message by guessing its id
+            // (spec §7.4 — per-key). The spool fast-path checks the .meta's api key; the log lookup filters by it.
+            if (ctx.Items[ApiKeyMiddleware.ApiKeyItem] is not ApiKey callerKey)
+                return Results.Unauthorized();
+
             var raw = id.StartsWith("spl_", StringComparison.OrdinalIgnoreCase) ? id[4..] : id;
             if (!Guid.TryParse(raw, out var guid))
                 return Results.BadRequest(new { error = "Invalid message id." });
 
             var file = $"{guid}.eml";
-            if (File.Exists(Path.Combine(spool.IncomingDir, file))) return Status(id, "queued");
-            if (File.Exists(Path.Combine(spool.ProcessingDir, file))) return Status(id, "processing");
-            if (File.Exists(Path.Combine(spool.FailedDir, file))) return Status(id, "failed");
+            bool OwnedIn(string dir)
+            {
+                var path = Path.Combine(dir, file);
+                return File.Exists(path) && SpoolMeta.Peek(path)?.ApiKeyId == callerKey.Id;
+            }
+            if (OwnedIn(spool.IncomingDir)) return Status(id, "queued");
+            if (OwnedIn(spool.ProcessingDir)) return Status(id, "processing");
+            if (OwnedIn(spool.FailedDir)) return Status(id, "failed");
 
-            var row = await logs.GetBySpoolIdAsync(guid.ToString(), ct);
+            var row = await logs.GetBySpoolIdAsync(guid.ToString(), callerKey.Id, ct);
             if (row is null) return Results.NotFound(new { id, status = "unknown" });
 
             // Clamp to the documented status enum (spec §7.4: queued|processing|delivered|retrying|failed).

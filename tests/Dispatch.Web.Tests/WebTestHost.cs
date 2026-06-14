@@ -146,7 +146,7 @@ internal sealed class FakeMessageLogQuery : IMessageLogQuery
 {
     public Task<MessageLogPage> QueryAsync(MessageLogFilter filter, CancellationToken ct = default) =>
         Task.FromResult(new MessageLogPage([], null));
-    public Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, CancellationToken ct = default) =>
+    public Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, int? apiKeyId, CancellationToken ct = default) =>
         Task.FromResult<MessageLogRow?>(null);
     public Task<IReadOnlyList<MessageLogRow>> RecentByApiKeyAsync(int apiKeyId, int limit, string[]? statuses, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<MessageLogRow>>(apiKeyId == 1

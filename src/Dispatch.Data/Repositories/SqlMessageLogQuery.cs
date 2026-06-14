@@ -71,7 +71,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         return new MessageLogPage(rows, next);
     }
 
-    public async Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, CancellationToken ct = default)
+    public async Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, int? apiKeyId, CancellationToken ct = default)
     {
         const string sql = """
             SELECT TOP 1
@@ -80,12 +80,12 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
                 provider AS Provider, duration_ms AS DurationMs, size_bytes AS SizeBytes,
                 ingest_source AS IngestSource, retry_attempt AS RetryAttempt, error AS Error
             FROM relay_log
-            WHERE spool_id = @spoolId
+            WHERE spool_id = @spoolId AND (@apiKeyId IS NULL OR api_key_id = @apiKeyId)
             ORDER BY logged_at DESC, id DESC;
             """;
         await using var cn = await factory.OpenAsync(ct);
         return await cn.QuerySingleOrDefaultAsync<MessageLogRow>(
-            new CommandDefinition(sql, new { spoolId }, cancellationToken: ct));
+            new CommandDefinition(sql, new { spoolId, apiKeyId }, cancellationToken: ct));
     }
 
     public async Task<IReadOnlyList<MessageLogRow>> RecentByApiKeyAsync(

@@ -200,6 +200,32 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     }
 
     [Fact]
+    public async Task GetBySpoolId_is_scoped_to_the_calling_key()
+    {
+        if (!sql.Available) return;
+        var keys = new SqlApiKeyRepository(sql.Factory);
+        var log = new SqlLogRepository(sql.Factory);
+        var query = new SqlMessageLogQuery(sql.Factory);
+
+        var keyA = (await keys.CreateAsync("spoolid A", rateLimitPerMinute: 0)).Key;
+        var keyB = (await keys.CreateAsync("spoolid B", rateLimitPerMinute: 0)).Key;
+        var spoolId = Guid.NewGuid().ToString("N");
+
+        await log.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = spoolId,
+            FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@y.com"], ToDomain = "y.com",
+            IngestSource = "API", ApiKeyId = keyA.Id, ApiKeyName = keyA.Name, Provider = "Local",
+        });
+
+        // The owning key sees it; another key must not (no cross-key status/provider leak).
+        Assert.NotNull(await query.GetBySpoolIdAsync(spoolId, keyA.Id));
+        Assert.Null(await query.GetBySpoolIdAsync(spoolId, keyB.Id));
+        // A null key id means "no scoping" (internal/admin callers) and still resolves the row.
+        Assert.NotNull(await query.GetBySpoolIdAsync(spoolId, null));
+    }
+
+    [Fact]
     public async Task MessageLog_keyset_pagination_walks_all_rows_once()
     {
         if (!sql.Available) return;
