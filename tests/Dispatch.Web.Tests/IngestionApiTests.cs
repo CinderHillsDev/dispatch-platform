@@ -187,7 +187,7 @@ public class IngestionApiTests(WebTestHost host)
         static void AssertContent(MimePart part, byte[] expected)
         {
             using var ms = new MemoryStream();
-            part.Content.DecodeTo(ms);
+            part.Content!.DecodeTo(ms);
             Assert.Equal(expected, ms.ToArray());
         }
     }
