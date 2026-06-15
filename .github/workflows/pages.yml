@@ -1,0 +1,77 @@
+name: Pages
+
+# Publishes a GitHub Pages site that renders README.md through the Slate theme (dark). The README stays
+# the single source of truth: index.md is generated from it at build time, with repo-file links rewritten
+# to absolute github.com URLs so they don't 404 on the site (images under docs/ resolve as-is).
+#
+# Enable once in repo Settings → Pages → Source = "GitHub Actions". Then every push to main that touches
+# the README (or this workflow / theme) rebuilds and deploys the site.
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - _config.yml
+      - assets/css/style.scss
+      - docs/images/**
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate index.md from README (theme layout + site-safe links)
+        run: |
+          repo="https://github.com/${{ github.repository }}/blob/main"
+          {
+            printf -- '---\nlayout: default\ntitle: Dispatch SMTP Relay\n---\n\n'
+            # Rewrite links to repo files (which aren't served as pages) to absolute GitHub URLs.
+            # Image links under docs/ and in-page #anchors are left untouched so they resolve on the site.
+            sed -E \
+              -e "s#\]\(LICENSE\)#](${repo}/LICENSE)#g" \
+              -e "s#\]\(CONTRIBUTING\.md\)#](${repo}/CONTRIBUTING.md)#g" \
+              -e "s#\]\(SECURITY\.md\)#](${repo}/SECURITY.md)#g" \
+              -e "s#\]\(docs/SPEC\.md\)#](${repo}/docs/SPEC.md)#g" \
+              -e "s#\]\(docs/RELEASING\.md\)#](${repo}/docs/RELEASING.md)#g" \
+              -e "s#\]\(docs/licence-faq\.md\)#](${repo}/docs/licence-faq.md)#g" \
+              -e "s#\]\(installer/README\.md\)#](${repo}/installer/README.md)#g" \
+              README.md
+          } > index.md
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

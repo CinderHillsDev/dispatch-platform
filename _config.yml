@@ -1,0 +1,35 @@
+title: Dispatch SMTP Relay
+description: >-
+  Open-source .NET SMTP relay — forward mail from your apps to Mailgun, SendGrid,
+  Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Azure, or any SMTP smart host,
+  with a durable spool and a live web dashboard.
+theme: jekyll-theme-slate
+show_downloads: false
+
+# The README's hero (title, badges, screenshot) lives inside a <div align="center">. kramdown won't parse
+# markdown inside block-level HTML unless told to, so without this the hero renders as raw markdown.
+markdown: kramdown
+kramdown:
+  parse_block_html: true
+
+# The site is just the README rendered through the theme (index.md is generated from README.md by
+# .github/workflows/pages.yml). Keep the rest of the repo out of the build; docs/images is kept so the
+# screenshots resolve.
+exclude:
+  - src
+  - tests
+  - installer
+  - Dockerfile
+  - docker-compose.yml
+  - Dispatch.slnx
+  - "*.sln"
+  - "*.csproj"
+  - README.md
+  - LICENSE
+  - SECURITY.md
+  - CONTRIBUTING.md
+  - docs/SPEC.md
+  - docs/RELEASING.md
+  - docs/licence-faq.md
+  - docs/AGENTS.md
+  - "**/appsettings*.json"

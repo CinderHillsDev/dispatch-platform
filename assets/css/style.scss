@@ -1,0 +1,72 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+/* Dark override on top of the Slate theme — GitHub-dark palette for a developer-tool feel. */
+$bg: #0d1117;
+$panel: #161b22;
+$text: #c9d1d9;
+$muted: #8b949e;
+$border: #30363d;
+$link: #58a6ff;
+$accent: #1f6feb;
+
+body {
+  background: $bg;
+  color: $text;
+}
+
+section {
+  color: $text;
+}
+
+a,
+a:hover {
+  color: $link;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #f0f6fc;
+  border-bottom-color: $border;
+}
+
+p, li, dd, dt, td, th, blockquote {
+  color: $text;
+}
+
+strong { color: #f0f6fc; }
+
+/* Code + pre blocks */
+code, pre, tt, kbd, samp {
+  background-color: $panel;
+  color: $text;
+  border-color: $border;
+}
+
+pre {
+  background-color: $panel;
+  border: 1px solid $border;
+}
+
+/* Tables */
+table th, table td {
+  border-color: $border;
+}
+table th { color: #f0f6fc; }
+table tr { background-color: transparent; }
+table tr:nth-child(2n) { background-color: $panel; }
+
+/* Blockquotes / notes */
+blockquote {
+  border-left-color: $accent;
+  color: $muted;
+}
+
+hr {
+  background: $border;
+  border-color: $border;
+}
+
+/* The Slate header band is already dark; keep its links readable. */
+header h1, header h2 { color: #fff; }
