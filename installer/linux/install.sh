@@ -78,11 +78,17 @@ install_sql_server() {
   . /etc/os-release
   echo "==> Installing SQL Server (Express) for $ID $VERSION_ID"
   if command -v apt-get >/dev/null 2>&1; then
+    # Prerequisites the rest of this function needs (a minimal cloud/VM image often lacks gnupg + the
+    # https apt transport); install them before using gpg so the key import can't fail with "gpg: not found".
+    apt-get update -y || true
+    apt-get install -y curl ca-certificates gnupg apt-transport-https
     # SQL Server 2025 (supports Ubuntu 24.04). The 2025 .list uses signed-by=/usr/share/keyrings/microsoft-prod.gpg,
     # so install the Microsoft key there.
     install -d -m 0755 /usr/share/keyrings
     curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
     chmod a+r /usr/share/keyrings/microsoft-prod.gpg
+    # Use the repo list for this distro release; fall back to the newest known LTS list if MS has no list
+    # for this exact ${VERSION_ID} yet (e.g. a brand-new Ubuntu before the SQL repo catches up).
     curl -fsSL "https://packages.microsoft.com/config/${ID}/${VERSION_ID}/mssql-server-2025.list" -o /etc/apt/sources.list.d/mssql-server-2025.list || \
       curl -fsSL "https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2025.list" -o /etc/apt/sources.list.d/mssql-server-2025.list
     apt-get update -y
