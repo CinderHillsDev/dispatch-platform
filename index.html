@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dispatch SMTP Relay</title>
+  <meta name="description" content="Self-hosted .NET SMTP relay — forward mail from your apps to any provider, with a durable spool and a live dashboard." />
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-300 antialiased selection:bg-sky-500/30">
+  <div class="mx-auto max-w-5xl px-6">
+
+    <!-- Hero -->
+    <header class="pt-20 pb-10 text-center">
+      <h1 class="text-5xl sm:text-6xl font-bold tracking-tight text-white">
+        Dispatch <span class="text-sky-400">SMTP Relay</span>
+      </h1>
+      <p class="mt-5 mx-auto max-w-2xl text-lg leading-relaxed text-gray-400">
+        A self-hosted SMTP relay for your apps and devices. Point everything at Dispatch and it
+        forwards mail to any provider — with a durable queue and a live dashboard.
+      </p>
+      <div class="mt-8 flex flex-wrap justify-center gap-3">
+        <a href="https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest"
+           class="rounded-lg bg-sky-500 px-5 py-2.5 font-semibold text-white shadow hover:bg-sky-400 transition">
+          Download / Releases
+        </a>
+        <a href="https://github.com/chrismuench/Dispatch-SMTP-Relay#readme"
+           class="rounded-lg border border-gray-700 px-5 py-2.5 font-semibold text-gray-200 hover:bg-gray-800 transition">
+          Read the docs
+        </a>
+        <a href="https://github.com/chrismuench/Dispatch-SMTP-Relay"
+           class="rounded-lg border border-gray-700 px-5 py-2.5 font-semibold text-gray-200 hover:bg-gray-800 transition">
+          GitHub
+        </a>
+      </div>
+    </header>
+
+    <!-- Screenshot -->
+    <img src="docs/images/dashboard.png" alt="Dispatch dashboard"
+         class="w-full rounded-xl border border-gray-800 shadow-2xl" />
+
+    <!-- Features -->
+    <section class="py-16">
+      <h2 class="text-center text-sm font-semibold uppercase tracking-widest text-sky-400">What it does</h2>
+      <div class="mt-8 grid gap-5 sm:grid-cols-2">
+        <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
+          <h3 class="font-semibold text-white">Any provider</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Azure, or any SMTP smart host.</p>
+        </div>
+        <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
+          <h3 class="font-semibold text-white">Two ways in</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Accept mail over SMTP (25 / 587 / 2525) or a Mailgun-compatible HTTP API.</p>
+        </div>
+        <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
+          <h3 class="font-semibold text-white">Durable spool</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Instant <code class="text-sky-300">250 OK</code> to a local queue — mail keeps flowing even if the database is down.</p>
+        </div>
+        <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
+          <h3 class="font-semibold text-white">Live dashboard</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Counters, throughput, a searchable message log, and one-click provider testing.</p>
+        </div>
+        <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
+          <h3 class="font-semibold text-white">Credentials in one place</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Rotate a key once, not in every app — and watch every message in one log.</p>
+        </div>
+        <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
+          <h3 class="font-semibold text-white">Self-hosted</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Windows &amp; Linux installers, or a multi-arch Docker image. Your servers, your data.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="border-t border-gray-800 py-8 text-center text-sm text-gray-500">
+      <a class="hover:text-gray-300" href="https://github.com/chrismuench/Dispatch-SMTP-Relay#readme">Documentation</a>
+      <span class="px-2 text-gray-700">·</span>
+      <a class="hover:text-gray-300" href="https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest">Releases</a>
+      <span class="px-2 text-gray-700">·</span>
+      <a class="hover:text-gray-300" href="https://github.com/chrismuench/Dispatch-SMTP-Relay">GitHub</a>
+      <p class="mt-3 text-gray-600">AGPL-3.0 with Commons Clause</p>
+    </footer>
+
+  </div>
+</body>
+</html>

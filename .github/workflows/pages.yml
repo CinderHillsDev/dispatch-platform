@@ -1,19 +1,13 @@
 name: Pages
 
-# Publishes a GitHub Pages site that renders README.md through the Slate theme (dark). The README stays
-# the single source of truth: index.md is generated from it at build time, with repo-file links rewritten
-# to absolute github.com URLs so they don't 404 on the site (images under docs/ resolve as-is).
-#
-# Enable once in repo Settings → Pages → Source = "GitHub Actions". Then every push to main that touches
-# the README (or this workflow / theme) rebuilds and deploys the site.
+# Publishes the static landing page (index.html, Tailwind via CDN) to GitHub Pages — no Jekyll/theme.
+# Enable once in repo Settings → Pages → Source = "GitHub Actions".
 on:
   push:
     # TODO(after merge): drop the feature branch — main is the canonical Pages source.
     branches: [main, feat/relay-engine-web-providers]
     paths:
-      - index.md
-      - _config.yml
-      - assets/css/style.scss
+      - index.html
       - docs/images/**
       - .github/workflows/pages.yml
   workflow_dispatch:
@@ -23,7 +17,6 @@ permissions:
   pages: write
   id-token: write
 
-# Allow one concurrent deployment; don't cancel an in-progress one.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -33,18 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@v1
-        with:
-          source: ./
-          destination: ./_site
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Assemble static site
+        run: |
+          mkdir -p _site/docs/images
+          cp index.html _site/index.html
+          cp docs/images/dashboard.png _site/docs/images/dashboard.png
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: ./_site
 
@@ -55,6 +42,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
