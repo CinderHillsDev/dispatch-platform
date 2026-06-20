@@ -199,7 +199,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$INSTALL_DIR"
 if [[ -n "$PREBUILT_DIR" ]]; then
   # Release-tarball mode: copy the self-contained publish output as-is (no SDK / Node build).
-  [[ -d "$PREBUILT_DIR" ]] || { echo "--prebuilt dir not found: $PREBUILT_DIR" >&2; exit 1; }
+  # A relative --prebuilt is resolved against the current dir, then against the script's own dir, so
+  # `--prebuilt ./bin` works whether you run it from inside the extracted folder or by path.
+  if [[ ! -d "$PREBUILT_DIR" && -d "$SCRIPT_DIR/$PREBUILT_DIR" ]]; then PREBUILT_DIR="$SCRIPT_DIR/$PREBUILT_DIR"; fi
+  [[ -d "$PREBUILT_DIR" ]] || { echo "--prebuilt dir not found: $PREBUILT_DIR (cwd: $PWD, script: $SCRIPT_DIR)" >&2; exit 1; }
   [[ -f "$PREBUILT_DIR/Dispatch.Service" ]] || { echo "--prebuilt dir has no Dispatch.Service executable: $PREBUILT_DIR" >&2; exit 1; }
   echo "==> Installing pre-built binaries from $PREBUILT_DIR to $INSTALL_DIR"
   cp -r "$PREBUILT_DIR/." "$INSTALL_DIR/"
