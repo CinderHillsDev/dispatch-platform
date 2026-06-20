@@ -196,6 +196,21 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Auto-select prebuilt binaries by CPU arch when --prebuilt wasn't given, so one tarball + one command
+# works on any Linux. Prefer a per-arch dir (bin-x64 / bin-arm64) shipped in a universal tarball, then a
+# plain bin/ (single-arch tarball). If none are found we fall through to build-from-source (needs the SDK).
+if [[ -z "$PREBUILT_DIR" ]]; then
+  case "$(uname -m)" in
+    x86_64|amd64)  _arch=x64 ;;
+    aarch64|arm64) _arch=arm64 ;;
+    *)             _arch="" ;;
+  esac
+  if [[ -n "$_arch" && -d "$SCRIPT_DIR/bin-$_arch" ]]; then PREBUILT_DIR="$SCRIPT_DIR/bin-$_arch"
+  elif [[ -d "$SCRIPT_DIR/bin" ]]; then PREBUILT_DIR="$SCRIPT_DIR/bin"
+  fi
+  [[ -n "$PREBUILT_DIR" ]] && echo "==> Using prebuilt binaries for $(uname -m): $PREBUILT_DIR"
+fi
+
 mkdir -p "$INSTALL_DIR"
 if [[ -n "$PREBUILT_DIR" ]]; then
   # Release-tarball mode: copy the self-contained publish output as-is (no SDK / Node build).
