@@ -19,7 +19,8 @@
 #
 # Flags:
 #   --sql-connection <s>   Connection string for an existing server (omit when using --install-sql).
-#   --install-sql          Install SQL Server (Express edition, free) locally, create the DispatchLog DB.
+#   --install-sql          Install SQL Server (Express, free) locally + create the DispatchLog DB. On arm64
+#                          (no SQL Server build) this runs Azure SQL Edge in a container instead — needs Docker.
 #   --sa-password <s>      SA password for --install-sql (required with --install-sql; must meet SQL policy).
 #   --admin-password <s>   Dashboard admin password seed (prompted if omitted).
 #   --generate-cert        Generate a self-signed PFX and serve the dashboard over HTTPS (spec §17.2).
@@ -76,7 +77,18 @@ done
 install_sql_server() {
   [[ -n "$SA_PASSWORD" ]] || { echo "--sa-password is required with --install-sql." >&2; exit 1; }
   . /etc/os-release
-  echo "==> Installing SQL Server (Express) for $ID $VERSION_ID"
+
+  # SQL Server has no arm64 Linux build, so on arm64 fall back to Azure SQL Edge, which is arm64-native
+  # but ships only as a container image. This is a dev/test convenience — SQL Edge is deprecated by
+  # Microsoft; for production use an amd64 host with SQL Server, or point --sql-connection at an external
+  # instance.
+  local arch; arch="$(uname -m)"
+  if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
+    install_sql_edge_container
+    return
+  fi
+
+  echo "==> Installing SQL Server (Express) for $ID $VERSION_ID ($arch)"
   if command -v apt-get >/dev/null 2>&1; then
     # Prerequisites the rest of this function needs (a minimal cloud/VM image often lacks gnupg + the
     # https apt transport); install them before using gpg so the key import can't fail with "gpg: not found".
@@ -115,6 +127,46 @@ install_sql_server() {
   done
   "$sqlcmd" -S localhost -U sa -P "$SA_PASSWORD" -C -Q "IF DB_ID('DispatchLog') IS NULL CREATE DATABASE [DispatchLog];"
   SQL_CONNECTION="Server=localhost;Database=DispatchLog;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;Encrypt=True"
+}
+
+# ---- arm64 fallback: Azure SQL Edge in a container ---------------------------------------------
+# SQL Server is amd64-only on Linux; Azure SQL Edge speaks the same wire protocol and runs natively on
+# arm64. Needs a container runtime (docker/podman); the DispatchLog database is created by the service's
+# own DatabaseInitializer on first start, so no sqlcmd is required.
+install_sql_edge_container() {
+  echo "==> arm64 detected — SQL Server has no arm64 Linux build; using Azure SQL Edge (container) instead."
+  local runtime=""
+  if command -v docker >/dev/null 2>&1; then runtime="docker"
+  elif command -v podman >/dev/null 2>&1; then runtime="podman"
+  elif command -v apt-get >/dev/null 2>&1; then
+    echo "==> Installing a container runtime (docker.io)"
+    apt-get update -y || true
+    if apt-get install -y docker.io; then
+      systemctl enable --now docker || true
+      runtime="docker"
+    fi
+  fi
+  [[ -n "$runtime" ]] || {
+    echo "No container runtime found and Docker could not be installed automatically." >&2
+    echo "Install Docker or Podman and re-run, or pass --sql-connection to an external SQL instance." >&2
+    exit 1
+  }
+
+  echo "==> Starting Azure SQL Edge via $runtime (instance 'dispatch-sql' on port 1433)"
+  "$runtime" rm -f dispatch-sql >/dev/null 2>&1 || true
+  "$runtime" run -d --name dispatch-sql \
+    -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=${SA_PASSWORD}" \
+    -p 1433:1433 -v dispatch-sql-data:/var/opt/mssql \
+    --restart unless-stopped \
+    mcr.microsoft.com/azure-sql-edge:latest
+
+  echo "==> Waiting for Azure SQL Edge to accept TCP on 1433"
+  for _ in $(seq 1 36); do
+    if (exec 3<>/dev/tcp/127.0.0.1/1433) 2>/dev/null; then exec 3>&- 3<&-; break; fi
+    sleep 5
+  done
+  # The service's DatabaseInitializer connects to master and creates DispatchLog on first start.
+  SQL_CONNECTION="Server=localhost,1433;Database=DispatchLog;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;Encrypt=True"
 }
 
 # ---- Optional: generate a self-signed TLS cert for the dashboard --------------------------------
