@@ -8,7 +8,8 @@ name: Pages
 # the README (or this workflow / theme) rebuilds and deploys the site.
 on:
   push:
-    branches: [main]
+    # TODO(after merge): drop the feature branch — main is the canonical Pages source.
+    branches: [main, feat/relay-engine-web-providers]
     paths:
       - README.md
       - _config.yml
