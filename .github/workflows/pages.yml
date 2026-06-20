@@ -11,7 +11,7 @@ on:
     # TODO(after merge): drop the feature branch — main is the canonical Pages source.
     branches: [main, feat/relay-engine-web-providers]
     paths:
-      - README.md
+      - index.md
       - _config.yml
       - assets/css/style.scss
       - docs/images/**
@@ -33,24 +33,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Generate index.md from README (theme layout + site-safe links)
-        run: |
-          repo="https://github.com/${{ github.repository }}/blob/main"
-          {
-            printf -- '---\nlayout: default\ntitle: Dispatch SMTP Relay\n---\n\n'
-            # Rewrite links to repo files (which aren't served as pages) to absolute GitHub URLs.
-            # Image links under docs/ and in-page #anchors are left untouched so they resolve on the site.
-            sed -E \
-              -e "s#\]\(LICENSE\)#](${repo}/LICENSE)#g" \
-              -e "s#\]\(CONTRIBUTING\.md\)#](${repo}/CONTRIBUTING.md)#g" \
-              -e "s#\]\(SECURITY\.md\)#](${repo}/SECURITY.md)#g" \
-              -e "s#\]\(docs/SPEC\.md\)#](${repo}/docs/SPEC.md)#g" \
-              -e "s#\]\(docs/RELEASING\.md\)#](${repo}/docs/RELEASING.md)#g" \
-              -e "s#\]\(docs/licence-faq\.md\)#](${repo}/docs/licence-faq.md)#g" \
-              -e "s#\]\(installer/README\.md\)#](${repo}/installer/README.md)#g" \
-              README.md
-          } > index.md
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

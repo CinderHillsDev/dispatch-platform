@@ -70,3 +70,34 @@ hr {
 
 /* The Slate header band is already dark; keep its links readable. */
 header h1, header h2 { color: #fff; }
+
+/* ---- Landing page bits ---- */
+.tagline {
+  font-size: 1.25rem;
+  line-height: 1.5;
+  color: $text;
+  margin: 0 0 1.4rem;
+}
+
+.actions { margin: 1.2rem 0 1.8rem; }
+
+.btn {
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  margin: 0.3rem 0.5rem 0.3rem 0;
+  border: 1px solid $border;
+  border-radius: 6px;
+  background: #21262d;
+  color: #f0f6fc !important;
+  font-weight: 600;
+  text-decoration: none;
+}
+.btn:hover { background: #30363d; border-color: $muted; }
+
+/* Frame the screenshot so it doesn't float as a raw image. */
+section img {
+  max-width: 100%;
+  border: 1px solid $border;
+  border-radius: 8px;
+  margin: 0.5rem 0 1.5rem;
+}
