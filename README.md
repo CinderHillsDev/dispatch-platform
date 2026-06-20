@@ -88,23 +88,23 @@ msiexec /i Dispatch-1.0.0-x64.msi /qn SQLCONN="Server=YOURHOST;Database=Dispatch
 
 ### Linux
 
-Download `dispatch-{version}-linux-x64.tar.gz` from the [latest release](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest) (it's self-contained — no .NET SDK needed), then:
+Download `dispatch-{version}-linux.tar.gz` from the [latest release](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest) — one universal, self-contained bundle (x64 + arm64, no .NET SDK needed). `install.sh` auto-detects your CPU architecture.
 
 ```bash
-tar xzf dispatch-*-linux-x64.tar.gz && cd dispatch-*-linux-x64
+tar xzf dispatch-*-linux.tar.gz && cd dispatch-*-linux
 
-# Install with a bundled SQL Server 2025 Express (Ubuntu/Debian or RHEL/Fedora, x64):
-sudo ./install.sh --prebuilt ./bin --install-sql \
+# Install with a bundled database (SQL Server 2025 Express on x64; Azure SQL Edge container on arm64):
+sudo ./install.sh --install-sql \
   --sa-password '<StrongSaPassw0rd!>' --admin-password '<DashboardPassword!>'
 
 # ...or against an existing SQL Server / Azure SQL:
-sudo ./install.sh --prebuilt ./bin \
+sudo ./install.sh \
   --sql-connection 'Server=YOURHOST;Database=DispatchLog;User Id=sa;Password=***;TrustServerCertificate=True;Encrypt=True' \
   --admin-password '<DashboardPassword!>'
 ```
 
 The script lays out `/opt/dispatch`, writes config, installs the systemd unit, and starts the service.
-(SQL Server has no arm64 Linux build, so on ARM use `--sql-connection` to an external instance, or run the [Docker image](#docker).)
+SQL Server has no arm64 Linux build, so on arm64 `--install-sql` uses an **Azure SQL Edge** container (needs Docker); or point `--sql-connection` at an external instance.
 
 **Check the service:**
 ```bash
@@ -346,7 +346,7 @@ Dispatch-SMTP-Relay/
 To upgrade in place:
 
 - **Windows** — run the new `DispatchSetup-{version}-x64.exe` (or `Dispatch-{version}-x64.msi`). The MSI `MajorUpgrade` stops the service, replaces the binaries, and restarts it.
-- **Linux** — download the new tarball and re-run `sudo ./install.sh --prebuilt ./bin` (with your existing `--sql-connection`); it republishes `/opt/dispatch` and restarts the service.
+- **Linux** — download the new tarball and re-run `sudo ./install.sh` (with your existing `--sql-connection`); it republishes `/opt/dispatch` and restarts the service.
 
 Database schema migrations are **additive** and applied automatically on startup, so configuration and all message history are preserved. The spool is durable across the restart.
 

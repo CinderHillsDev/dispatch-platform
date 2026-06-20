@@ -7,7 +7,7 @@ name: Release
 # the Windows installer via Azure Artifact Signing, and publishes a GitHub Release with:
 #   - DispatchSetup.exe          the single-file Windows installer (the one users download)
 #   - Dispatch.msi               the bare MSI (advanced / existing-SQL installs)
-#   - dispatch-<ver>-linux-x64.tar.gz   self-contained Linux bundle (no .NET SDK needed on the box)
+#   - dispatch-<ver>-linux.tar.gz       universal Linux bundle (x64 + arm64, self-contained)
 #   - SHA256SUMS                 checksums for all of the above
 #
 # Code signing is OPT-IN and dormant until you provision Azure Artifact Signing (renamed from Trusted
@@ -220,34 +220,34 @@ jobs:
           cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
           test -f src/Dispatch.Web/wwwroot/index.html || { echo "embedded UI missing index.html"; exit 1; }
 
-      - name: Publish self-contained (linux-x64)
+      - name: Publish self-contained (x64 + arm64)
         run: |
-          dotnet publish src/Dispatch.Service -c Release -r linux-x64 --self-contained true \
-            -p:Version=${{ steps.ver.outputs.version }} -o publish/linux
+          v=${{ steps.ver.outputs.version }}
+          dotnet publish src/Dispatch.Service -c Release -r linux-x64   --self-contained true -p:Version=$v -o publish/x64
+          dotnet publish src/Dispatch.Service -c Release -r linux-arm64 --self-contained true -p:Version=$v -o publish/arm64
 
-      - name: Assemble the tarball
+      - name: Assemble the universal Linux tarball
         run: |
           ver="${{ steps.ver.outputs.version }}"
-          stage="dispatch-${ver}-linux-x64"
-          mkdir -p "staging/${stage}/bin"
-          cp -r publish/linux/. "staging/${stage}/bin/"
+          stage="dispatch-${ver}-linux"
+          mkdir -p "staging/${stage}/bin-x64" "staging/${stage}/bin-arm64"
+          cp -r publish/x64/.   "staging/${stage}/bin-x64/"
+          cp -r publish/arm64/. "staging/${stage}/bin-arm64/"
           cp installer/linux/install.sh "staging/${stage}/install.sh"
           cp installer/linux/dispatch.service "staging/${stage}/dispatch.service"
-          chmod +x "staging/${stage}/install.sh" "staging/${stage}/bin/Dispatch.Service"
+          chmod +x "staging/${stage}/install.sh" \
+            "staging/${stage}/bin-x64/Dispatch.Service" "staging/${stage}/bin-arm64/Dispatch.Service"
           cat > "staging/${stage}/README.txt" <<EOF
-          Dispatch SMTP Relay ${ver} — Linux x64 (self-contained; no .NET SDK required).
+          Dispatch SMTP Relay ${ver} — Linux (universal: x64 + arm64, self-contained; no .NET SDK required).
 
-          Install with a local SQL Server Express:
-            sudo ./install.sh --prebuilt ./bin --install-sql \\
-              --sa-password '<StrongSaPassw0rd!>' --admin-password '<DashboardPassword!>'
+          install.sh auto-detects your CPU arch (uses bin-x64 or bin-arm64) — no flags needed:
+            sudo ./install.sh --install-sql --sa-password '<StrongSaPassw0rd!>' --admin-password '<DashboardPassword!>'
 
-          Or against an existing SQL Server / Azure SQL:
-            sudo ./install.sh --prebuilt ./bin \\
-              --sql-connection 'Server=...;Database=DispatchLog;User Id=...;Password=...;TrustServerCertificate=True;Encrypt=True' \\
-              --admin-password '<DashboardPassword!>'
+          On arm64, --install-sql runs Azure SQL Edge in a container (SQL Server is amd64-only).
+          Or use an existing SQL Server / Azure SQL:
+            sudo ./install.sh --sql-connection 'Server=...;Database=DispatchLog;User Id=...;Password=...;TrustServerCertificate=True;Encrypt=True' --admin-password '<DashboardPassword!>'
 
           Then open http://localhost:8420 and log in with the admin password you set.
-          Run ./install.sh --help-style flags are documented at the top of install.sh.
           EOF
           tar -czf "${stage}.tar.gz" -C staging "${stage}"
           ls -lh "${stage}.tar.gz"
@@ -256,7 +256,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: dispatch-*-linux-x64.tar.gz
+          path: dispatch-*-linux.tar.gz
           if-no-files-found: error
 
   # Build + push the multi-arch container image (linux/amd64 + linux/arm64) to GHCR. One image tag
@@ -321,7 +321,7 @@ jobs:
           # (the Linux tarball already carries the version). Names match the README.
           cp "dist/windows/DispatchSetup.exe" "release/DispatchSetup-${VER}-x64.exe"
           cp "dist/windows/Dispatch.msi"      "release/Dispatch-${VER}-x64.msi"
-          cp dist/linux/dispatch-*-linux-x64.tar.gz release/
+          cp dist/linux/dispatch-*-linux.tar.gz release/
           ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
 
       - name: Publish GitHub Release
@@ -336,5 +336,5 @@ jobs:
           files: |
             release/DispatchSetup-*-x64.exe
             release/Dispatch-*-x64.msi
-            release/dispatch-*-linux-x64.tar.gz
+            release/dispatch-*-linux.tar.gz
             release/SHA256SUMS
