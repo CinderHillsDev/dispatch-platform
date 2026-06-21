@@ -49,7 +49,6 @@ function toParams(f: Filters): URLSearchParams {
 
 export function Messages() {
   const [filters, setFilters] = useState<Filters>(EMPTY);
-  const [showMore, setShowMore] = useState(false);
   const [relays, setRelays] = useState<RelayListItem[]>([]);
   const [rules, setRules] = useState<RuleItem[]>([]);
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
@@ -131,84 +130,75 @@ export function Messages() {
       <div>
         <h1 className="page-title">Message Log</h1>
 
-        {/* Primary bar: status (single-select) + subject search + a toggle for the rest. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-          <div style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-            {([["All", null], ...EVENT_OPTIONS.map((e) => [e, e] as const)] as [string, string | null][]).map(([label, ev]) => {
-              const active = ev === null ? filters.events.length === 0 : filters.events[0] === ev;
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => selectEvent(ev)}
-                  style={{
-                    border: "none", borderRadius: 0, padding: "6px 12px", fontSize: 13,
-                    background: active ? "var(--blue)" : "transparent",
-                    color: active ? "#fff" : "var(--muted)", fontWeight: active ? 600 : 400,
-                  }}
-                >{label}</button>
-              );
-            })}
-          </div>
-
-          <input
-            placeholder="Search subject…"
-            value={filters.subject}
-            onChange={(e) => set("subject", e.target.value)}
-            style={{ flex: "1 1 200px", minWidth: 160 }}
-          />
-
-          <button type="button" onClick={() => setShowMore((s) => !s)}>
-            {showMore ? "Hide filters ▴" : "More filters ▾"}{advancedActive ? " •" : ""}
-          </button>
-          {anyActive && <button type="button" onClick={() => { setFilters(EMPTY); }}>Clear</button>}
+        {/* Filters live in the column headers below (click a header). This bar just reflects/clears them. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, minHeight: 30 }}>
+          {anyActive
+            ? <>
+                <span className="muted" style={{ fontSize: 12 }}>Filters active</span>
+                <button type="button" onClick={() => setFilters(EMPTY)}>Clear filters</button>
+              </>
+            : <span className="muted" style={{ fontSize: 12 }}>Click a column header to filter.</span>}
         </div>
 
-        {/* Advanced filters: tucked away by default so the bar isn't cluttered. */}
-        {showMore && (
-          <div className="panel" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 14 }}>
-            <Labeled label="Received from"><input type="date" value={filters.from} onChange={(e) => set("from", e.target.value)} style={{ width: "100%" }} /></Labeled>
-            <Labeled label="Received to"><input type="date" value={filters.to} onChange={(e) => set("to", e.target.value)} style={{ width: "100%" }} /></Labeled>
-            <Labeled label="Relay">
-              <select value={filters.relay} onChange={(e) => set("relay", e.target.value)} style={{ width: "100%" }}>
-                <option value="">Any relay</option>
-                {relays.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
-              </select>
-            </Labeled>
-            <Labeled label="Routing rule">
-              <select value={filters.rule} onChange={(e) => set("rule", e.target.value)} style={{ width: "100%" }}>
-                <option value="">Any rule</option>
-                {rules.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
-              </select>
-            </Labeled>
-            <Labeled label="Ingest source">
-              <select value={filters.source} onChange={(e) => set("source", e.target.value)} style={{ width: "100%" }}>
-                <option value="">All sources</option>
-                <option value="SMTP">SMTP</option>
-                <option value="API">API</option>
-                <option value="Dashboard test">Dashboard test</option>
-              </select>
-            </Labeled>
-            {filters.source === "API" && (
-              <Labeled label="API key">
-                <select value={filters.apiKeyId} onChange={(e) => set("apiKeyId", e.target.value)} style={{ width: "100%" }}>
-                  <option value="">Any key</option>
-                  {keys.map((k) => <option key={k.id} value={String(k.id)}>{k.name}</option>)}
-                </select>
-              </Labeled>
-            )}
-            <Labeled label="Sender domain"><input placeholder="e.g. example.com" value={filters.fromDomain} onChange={(e) => set("fromDomain", e.target.value)} style={{ width: "100%" }} /></Labeled>
-            <Labeled label="Recipient domain"><input placeholder="e.g. acme.com" value={filters.toDomain} onChange={(e) => set("toDomain", e.target.value)} style={{ width: "100%" }} /></Labeled>
-            <Labeled label="Tag"><input placeholder="exact tag" value={filters.tag} onChange={(e) => set("tag", e.target.value)} style={{ width: "100%" }} /></Labeled>
-          </div>
-        )}
-
-        <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
           <table>
             <thead>
               <tr>
-                <th>Time</th><th>Status</th><th>From</th><th>To</th><th>Subject</th>
-                <th>Relay</th><th>Provider</th><th>Source</th><th>Duration</th>
+                <HeaderFilter label="Time" active={!!(filters.from || filters.to)}>
+                  <Labeled label="Received from"><input type="date" value={filters.from} onChange={(e) => set("from", e.target.value)} style={{ width: "100%" }} /></Labeled>
+                  <Labeled label="Received to"><input type="date" value={filters.to} onChange={(e) => set("to", e.target.value)} style={{ width: "100%" }} /></Labeled>
+                </HeaderFilter>
+                <HeaderFilter label="Status" active={filters.events.length > 0}>
+                  <FilterChoices
+                    options={[["All", null] as [string, string | null], ...EVENT_OPTIONS.map((e) => [e, e] as [string, string | null])]}
+                    selected={filters.events[0] ?? null}
+                    onSelect={selectEvent}
+                  />
+                </HeaderFilter>
+                <HeaderFilter label="From" active={!!filters.fromDomain}>
+                  <Labeled label="Sender domain"><input placeholder="e.g. example.com" value={filters.fromDomain} onChange={(e) => set("fromDomain", e.target.value)} style={{ width: "100%" }} /></Labeled>
+                </HeaderFilter>
+                <HeaderFilter label="To" active={!!filters.toDomain}>
+                  <Labeled label="Recipient domain"><input placeholder="e.g. acme.com" value={filters.toDomain} onChange={(e) => set("toDomain", e.target.value)} style={{ width: "100%" }} /></Labeled>
+                </HeaderFilter>
+                <HeaderFilter label="Subject" active={!!(filters.subject || filters.tag)}>
+                  <Labeled label="Subject contains"><input placeholder="search subject…" value={filters.subject} onChange={(e) => set("subject", e.target.value)} style={{ width: "100%" }} /></Labeled>
+                  <Labeled label="Tag"><input placeholder="exact tag" value={filters.tag} onChange={(e) => set("tag", e.target.value)} style={{ width: "100%" }} /></Labeled>
+                </HeaderFilter>
+                <HeaderFilter label="Relay" active={!!(filters.relay || filters.rule)}>
+                  <Labeled label="Relay">
+                    <select value={filters.relay} onChange={(e) => set("relay", e.target.value)} style={{ width: "100%" }}>
+                      <option value="">Any relay</option>
+                      {relays.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
+                    </select>
+                  </Labeled>
+                  <Labeled label="Routing rule">
+                    <select value={filters.rule} onChange={(e) => set("rule", e.target.value)} style={{ width: "100%" }}>
+                      <option value="">Any rule</option>
+                      {rules.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
+                    </select>
+                  </Labeled>
+                </HeaderFilter>
+                <th>Provider</th>
+                <HeaderFilter label="Source" active={!!(filters.source || filters.apiKeyId)}>
+                  <Labeled label="Ingest source">
+                    <select value={filters.source} onChange={(e) => set("source", e.target.value)} style={{ width: "100%" }}>
+                      <option value="">All sources</option>
+                      <option value="SMTP">SMTP</option>
+                      <option value="API">API</option>
+                      <option value="Dashboard test">Dashboard test</option>
+                    </select>
+                  </Labeled>
+                  {filters.source === "API" && (
+                    <Labeled label="API key">
+                      <select value={filters.apiKeyId} onChange={(e) => set("apiKeyId", e.target.value)} style={{ width: "100%" }}>
+                        <option value="">Any key</option>
+                        {keys.map((k) => <option key={k.id} value={String(k.id)}>{k.name}</option>)}
+                      </select>
+                    </Labeled>
+                  )}
+                </HeaderFilter>
+                <th>Duration</th>
               </tr>
             </thead>
             <tbody>
@@ -317,6 +307,75 @@ export function Messages() {
         </Modal>
       )}
     </>
+  );
+}
+
+// A column header that doubles as a filter trigger: clicking it opens a small popover with the relevant
+// control(s). The popover is position:fixed (anchored to the header) so the table's horizontal scroll
+// container can't clip it. A dot replaces the chevron when the column has an active filter.
+function HeaderFilter({ label, active, children }: { label: string; active: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ left: r.left, top: r.bottom + 2 });
+    }
+    setOpen((o) => !o);
+  };
+  return (
+    <th style={{ padding: 0 }}>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        style={{
+          display: "flex", alignItems: "center", gap: 5, width: "100%",
+          background: "transparent", border: "none", borderRadius: 0, padding: "9px 10px",
+          color: active ? "var(--blue)" : "var(--muted)", cursor: "pointer",
+          textTransform: "uppercase", fontSize: 11, fontWeight: 500, letterSpacing: ".03em",
+        }}
+      >
+        {label}<span style={{ fontSize: 9 }}>{active ? "●" : "▾"}</span>
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div style={{
+            position: "fixed", left: pos.left, top: pos.top, zIndex: 41,
+            background: "var(--panel)", border: "1px solid var(--border)", borderRadius: 8, padding: 10,
+            minWidth: 220, boxShadow: "0 8px 24px rgba(0,0,0,.45)", textTransform: "none",
+          }}>
+            {children}
+          </div>
+        </>
+      )}
+    </th>
+  );
+}
+
+// Single-select option list used inside a HeaderFilter popover (e.g. Status).
+function FilterChoices({ options, selected, onSelect }: {
+  options: [string, string | null][]; selected: string | null; onSelect: (v: string | null) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {options.map(([label, val]) => {
+        const on = (val ?? null) === (selected ?? null);
+        return (
+          <button
+            key={label}
+            type="button"
+            className="menu-item"
+            onClick={() => onSelect(val)}
+            style={{ textAlign: "left", border: "none", borderRadius: 6, padding: "6px 8px", fontSize: 13, color: on ? "var(--text)" : "var(--muted)", fontWeight: on ? 600 : 400 }}
+          >
+            {on ? "✓ " : "  "}{label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
