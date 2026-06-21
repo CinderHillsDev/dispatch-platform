@@ -108,9 +108,11 @@ public sealed class ApiKeyMiddleware(
 
     private static bool IsAllowed(IPAddress? remote, ApiOptions o)
     {
-        if (remote is null) return true;
+        // Closed model (spec §17.10): only source IPs in the allow-list may call the API. An empty list
+        // denies everyone; to allow all sources, add 0.0.0.0/0 + ::/0 explicitly in Access Control.
         var cidrs = o.EffectiveAllowedCidrs;
-        if (cidrs.Length == 0) return true;
+        if (cidrs.Length == 0) return false;
+        if (remote is null) return false;
 
         var test = remote.IsIPv4MappedToIPv6 ? remote.MapToIPv4() : remote;
         foreach (var c in cidrs)

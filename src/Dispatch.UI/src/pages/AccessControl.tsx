@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type SystemConfig } from "../lib/api";
-
-// Basic CIDR validation (IPv4 a.b.c.d/0-32, or an IPv6-ish addr/0-128) to stop mistyped entries.
-const IPV4_CIDR = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d|[12]\d|3[0-2])$/;
-const IPV6_CIDR = /^[0-9a-fA-F:]+\/(\d|[1-9]\d|1[01]\d|12[0-8])$/;
-function validCidr(v: string): boolean {
-  if (IPV4_CIDR.test(v)) return v.split("/")[0].split(".").every((o) => Number(o) <= 255);
-  return IPV6_CIDR.test(v);
-}
+import { validCidr } from "../lib/cidr";
 
 export function AccessControl() {
   const [cfg, setCfg] = useState<SystemConfig | null>(null);
@@ -18,8 +11,9 @@ export function AccessControl() {
     <>
       <h1 className="page-title">Access Control</h1>
       <p className="muted" style={{ marginTop: -10, marginBottom: 22, maxWidth: 680 }}>
-        Control which source IPs may connect, by network range (CIDR). A list with no ranges accepts
-        connections from <strong>anywhere</strong>; add ranges to restrict it. Changes apply as soon as you save.
+        Control which source IPs may connect, by network range (CIDR). Dispatch is <strong>closed by
+        default</strong>: only listed ranges may connect, and an empty list blocks <strong>everything</strong>.
+        To allow any source, add <code>0.0.0.0/0</code> and <code>::/0</code> explicitly. Changes apply as soon as you save.
       </p>
 
       <AclSection
@@ -52,7 +46,8 @@ function AclSection({ title, intro, initial, onSave, risky }: {
   const [busy, setBusy] = useState(false);
 
   const dirty = JSON.stringify(list) !== JSON.stringify(saved);
-  const open = list.length === 0;
+  const empty = list.length === 0;
+  const allowAll = list.includes("0.0.0.0/0") || list.includes("::/0");
 
   const add = () => {
     const v = entry.trim();
@@ -69,15 +64,20 @@ function AclSection({ title, intro, initial, onSave, risky }: {
     finally { setBusy(false); }
   };
 
-  // Status pill: green when restricted, red/amber when open (red only for the listener, where open = relay risk).
-  const pill = open
-    ? { cls: risky ? "badge error" : "badge denied", text: "Open to all sources" }
-    : { cls: "badge ok", text: `Restricted · ${list.length} range${list.length === 1 ? "" : "s"}` };
-  const explain = open
-    ? (risky
-        ? "Any host that can reach this port can relay mail. Add ranges below to lock it down."
-        : "Any host can reach the API (a valid API key is still required).")
-    : "Only the ranges below may connect.";
+  // Three states under the closed model: empty (blocks everything), explicit allow-all (open to the
+  // internet — a relay risk on the SMTP listener), or a restricted set of ranges.
+  const pill = empty
+    ? { cls: "badge denied", text: "Closed · all sources blocked" }
+    : allowAll
+      ? { cls: risky ? "badge error" : "badge denied", text: "Open to all sources" }
+      : { cls: "badge ok", text: `Restricted · ${list.length} range${list.length === 1 ? "" : "s"}` };
+  const explain = empty
+    ? "No ranges are listed, so every connection is refused. Add the networks that should be able to connect."
+    : allowAll
+      ? (risky
+          ? "0.0.0.0/0 lets any host on the internet relay mail through this listener. Remove it unless that's intended."
+          : "0.0.0.0/0 lets any host reach the API (a valid API key is still required).")
+      : "Only the ranges below may connect.";
 
   return (
     <div className="panel" style={{ maxWidth: 680 }}>
@@ -90,9 +90,9 @@ function AclSection({ title, intro, initial, onSave, risky }: {
 
       {/* CIDR chips */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, minHeight: 34 }}>
-        {open && (
-          <span style={{ fontSize: 13, color: "var(--muted)", alignSelf: "center", fontStyle: "italic" }}>
-            No ranges — accepting all source IPs.
+        {empty && (
+          <span style={{ fontSize: 13, color: "var(--amber)", alignSelf: "center", fontStyle: "italic" }}>
+            No ranges — all connections are blocked.
           </span>
         )}
         {list.map((c) => (

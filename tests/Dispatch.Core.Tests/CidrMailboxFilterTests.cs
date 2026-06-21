@@ -112,10 +112,22 @@ public class CidrMailboxFilterTests
     }
 
     [Fact]
-    public async Task CanAcceptFrom_allows_any_source_when_allow_list_empty()
+    public async Task CanAcceptFrom_denies_all_when_allow_list_empty()
     {
-        // Empty allow-list = allow all; confirms an operator can intentionally open the listener.
+        // Closed model (spec §17.10): an empty allow-list denies everyone — even a private/loopback source —
+        // so an unconfigured listener is never an open relay. Allowing all requires explicit 0.0.0.0/0 + ::/0.
         var filter = Build(relayMaxBytes: 0, allowedCidrs: "[]");
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Parse("127.0.0.1"), 4242));
+
+        Assert.False(await filter.CanAcceptFromAsync(
+            ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CanAcceptFrom_allows_all_when_default_route_present()
+    {
+        // The explicit "allow all" opt-in: 0.0.0.0/0 + ::/0 lets an operator intentionally open the listener.
+        var filter = Build(relayMaxBytes: 0, allowedCidrs: "[\"0.0.0.0/0\",\"::/0\"]");
         var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Parse("8.8.8.8"), 4242));
 
         Assert.True(await filter.CanAcceptFromAsync(

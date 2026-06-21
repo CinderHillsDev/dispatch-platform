@@ -1,13 +1,14 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "./lib/api";
 import { PROVIDER_FIELDS, PROVIDER_LABELS, type ProviderField } from "./lib/providers";
+import { validCidr } from "./lib/cidr";
 
 // Real (deliverable) providers shown first; Local/SMTP at the end.
 const PROVIDER_ORDER = [
   "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Smtp2Go", "AzureCommunication", "Smtp", "Local",
 ];
 
-type Step = "welcome" | "provider" | "test" | "routing" | "done";
+type Step = "welcome" | "provider" | "test" | "routing" | "access" | "done";
 
 export function FirstRunWizard({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<Step>("welcome");
@@ -18,6 +19,7 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
     { id: "provider", label: "Provider" },
     { id: "test", label: "Test" },
     { id: "routing", label: "Routing" },
+    { id: "access", label: "Access" },
   ];
   const activeIdx = steps.findIndex((s) => s.id === step);
 
@@ -54,8 +56,9 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
           <TestStep relayId={catchAll.id} onBack={() => setStep("provider")} onNext={() => setStep("routing")} />
         )}
         {step === "routing" && catchAll && (
-          <RoutingStep catchAllProvider={catchAll.provider} onBack={() => setStep("test")} onNext={() => setStep("done")} />
+          <RoutingStep catchAllProvider={catchAll.provider} onBack={() => setStep("test")} onNext={() => setStep("access")} />
         )}
+        {step === "access" && <AccessStep onBack={() => setStep("routing")} onNext={() => setStep("done")} />}
         {step === "done" && <Done onFinish={onDone} />}
       </div>
     </div>
@@ -218,9 +221,110 @@ function RoutingStep({ catchAllProvider, onBack, onNext }: { catchAllProvider: s
 
       <Nav
         left={<button onClick={onBack} style={ghostBtn}>← Back</button>}
-        right={<button onClick={onNext}>{added.length ? "Finish →" : "Skip & finish →"}</button>}
+        right={<button onClick={onNext}>{added.length ? "Continue →" : "Skip →"}</button>}
       />
     </>
+  );
+}
+
+function AccessStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const [loaded, setLoaded] = useState(false);
+  const [smtp, setSmtp] = useState<string[]>([]);
+  const [http, setHttp] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.settings.config()
+      .then((c) => { setSmtp(c.listener.allowedCidrs); setHttp(c.api.allowedCidrs); })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await api.settings.putListener({ allowedCidrs: smtp });
+      await api.settings.putApi({ allowedCidrs: http });
+      onNext();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  if (!loaded) return <p style={p}>Loading current access settings…</p>;
+
+  const anyEmpty = smtp.length === 0 || http.length === 0;
+
+  return (
+    <>
+      <h2 style={h2}>Who can connect?</h2>
+      <p style={p}>
+        Dispatch is <strong>closed by default</strong>: only the network ranges (CIDRs) you list here may
+        connect — everything else is refused, so you never run an open relay by accident. We've pre-filled
+        your private/loopback networks; adjust them to match where your apps and devices live.
+      </p>
+      <p style={{ ...p, color: "var(--amber)", fontSize: 13 }}>
+        ⚠ Leave a list empty and <strong>nothing</strong> will be able to reach that endpoint. To allow any
+        source, add <code>0.0.0.0/0</code> (and <code>::/0</code>) on purpose.
+      </p>
+
+      <CidrList label="SMTP listener" intro="Hosts allowed to submit mail over SMTP." list={smtp} onChange={setSmtp} />
+      <CidrList label="HTTP API" intro="Hosts allowed to call the ingestion API (also key-protected)." list={http} onChange={setHttp} />
+
+      {anyEmpty && (
+        <p style={{ fontSize: 12, color: "var(--amber)", margin: "10px 0 0" }}>
+          One or more lists is empty — that endpoint will reject all connections until you add a range.
+        </p>
+      )}
+      {err && <p style={{ color: "var(--red)", fontSize: 13 }}>{err}</p>}
+      <Nav
+        left={<button onClick={onBack} style={ghostBtn}>← Back</button>}
+        right={<button onClick={save} disabled={busy}>{busy ? "Saving…" : "Save & continue →"}</button>}
+      />
+    </>
+  );
+}
+
+function CidrList({ label, intro, list, onChange }: {
+  label: string; intro: string; list: string[]; onChange: (next: string[]) => void;
+}) {
+  const [entry, setEntry] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  const add = () => {
+    const v = entry.trim();
+    if (!v) return;
+    if (!validCidr(v)) { setErr("Enter a valid CIDR, e.g. 10.0.0.0/8 or 192.168.1.5/32."); return; }
+    if (list.includes(v)) { setErr("That range is already in the list."); return; }
+    setErr(null); onChange([...list, v]); setEntry("");
+  };
+
+  return (
+    <div className="panel" style={{ marginTop: 12, marginBottom: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <strong style={{ fontSize: 14 }}>{label}</strong>
+        <span className={list.length === 0 ? "badge denied" : "badge ok"}>
+          {list.length === 0 ? "blocks all" : `${list.length} range${list.length === 1 ? "" : "s"}`}
+        </span>
+      </div>
+      <p className="muted" style={{ fontSize: 12, margin: "4px 0 10px" }}>{intro}</p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 }}>
+        {list.length === 0 && <span style={{ fontSize: 12, color: "var(--amber)", fontStyle: "italic", alignSelf: "center" }}>No ranges — all blocked.</span>}
+        {list.map((c) => (
+          <span key={c} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 999, padding: "3px 4px 3px 10px", fontSize: 12 }}>
+            <code style={{ background: "none", padding: 0 }}>{c}</code>
+            <button onClick={() => onChange(list.filter((x) => x !== c))} title="Remove" style={{ border: "none", background: "transparent", padding: "0 3px", lineHeight: 1, fontSize: 14, color: "var(--muted)" }}>×</button>
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+        <input placeholder="Add a range, e.g. 10.0.0.0/8" value={entry}
+          onChange={(e) => { setEntry(e.target.value); if (err) setErr(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") add(); }} style={{ flex: 1 }} />
+        <button onClick={add} disabled={!entry.trim()}>Add</button>
+      </div>
+      {err && <p style={{ color: "var(--red)", fontSize: 12, margin: "6px 0 0" }}>{err}</p>}
+    </div>
   );
 }
 

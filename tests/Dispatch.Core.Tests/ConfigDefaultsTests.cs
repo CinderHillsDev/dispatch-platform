@@ -12,19 +12,22 @@ public class ConfigDefaultsTests
     private static string Default(string key) =>
         ConfigDefaults.Defaults.TryGetValue(key, out var v) ? v : throw new Xunit.Sdk.XunitException($"no default for {key}");
 
-    [Theory]
-    [InlineData(ConfigKeys.WebUiAllowedCidrs)]
-    [InlineData(ConfigKeys.ApiAllowedCidrs)]
-    public void Dashboard_and_api_default_to_allow_all(string key)
+    [Fact]
+    public void Dashboard_defaults_to_allow_all()
     {
-        // Empty list = allow all; these surfaces are gated by the dashboard password / API keys.
-        Assert.Equal("[]", Default(key));
+        // The dashboard is password-protected and governed by its own middleware (empty = allow all),
+        // so a headless/NAT'd server stays reachable for first login.
+        Assert.Equal("[]", Default(ConfigKeys.WebUiAllowedCidrs));
     }
 
-    [Fact]
-    public void Listener_defaults_to_loopback_plus_private_ranges_only()
+    [Theory]
+    [InlineData(ConfigKeys.ListenerAllowedCidrs)]
+    [InlineData(ConfigKeys.ApiAllowedCidrs)]
+    public void Smtp_and_api_default_to_loopback_plus_private_ranges_only(string key)
     {
-        var cidrs = Default(ConfigKeys.ListenerAllowedCidrs);
+        // Closed model (spec §17.10): the SMTP listener and ingestion API only accept listed source IPs,
+        // and an empty list denies everyone. The deployment-friendly default is loopback + private ranges.
+        var cidrs = Default(key);
 
         // Headless/LAN/Docker submitters work...
         Assert.Contains("127.0.0.1/32", cidrs);

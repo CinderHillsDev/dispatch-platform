@@ -8,12 +8,13 @@ namespace Dispatch.Core.Configuration;
 /// </summary>
 public static class ConfigDefaults
 {
-    // The dashboard (password-protected) and ingestion API (API-key protected) default to an empty
-    // allow-list = allow all, so a headless server or a NAT'd container is reachable out of the box;
-    // operators tighten the source-IP allow-list in the dashboard. The SMTP listener is NOT auth-gated
-    // by default, so to avoid shipping an open relay it defaults to loopback + private ranges (RFC1918 +
-    // IPv6 ULA): same-host apps, private LANs and Docker networks can submit; the public internet can't.
-    private const string AllowAll = "[]";
+    // SMTP listener and ingestion API are CLOSED by default (spec §17.10): only listed source IPs may
+    // connect and an empty list denies everyone. Both default to loopback + private ranges (RFC1918 +
+    // IPv6 ULA) so same-host apps, private LANs and Docker networks work out of the box while the public
+    // internet can't — to open them an operator adds 0.0.0.0/0 + ::/0 deliberately in Access Control.
+    // The dashboard is the exception: it is password-protected and governed by its own middleware where
+    // an empty list = allow all, so a headless/NAT'd server stays reachable for first login.
+    private const string DashboardAllowAll = "[]";
     private const string PrivateRanges =
         "[\"127.0.0.1/32\",\"::1/128\",\"10.0.0.0/8\",\"172.16.0.0/12\",\"192.168.0.0/16\",\"fc00::/7\"]";
 
@@ -36,12 +37,12 @@ public static class ConfigDefaults
 
         [ConfigKeys.ApiEnabled] = "true",
         [ConfigKeys.ApiPort] = "8025",
-        [ConfigKeys.ApiAllowedCidrs] = AllowAll,
+        [ConfigKeys.ApiAllowedCidrs] = PrivateRanges,
         [ConfigKeys.ApiMaxMessageBytes] = "26214400",   // 25 MiB — bounds in-memory buffering of HTTP uploads (0 = no limit)
         [ConfigKeys.ApiRateLimitPerKey] = "100",
 
         [ConfigKeys.WebUiPort] = "8420",
-        [ConfigKeys.WebUiAllowedCidrs] = AllowAll,
+        [ConfigKeys.WebUiAllowedCidrs] = DashboardAllowAll,
         [ConfigKeys.WebUiSessionTimeoutMinutes] = "480",
         [ConfigKeys.WebUiRequireHttps] = "false",
 

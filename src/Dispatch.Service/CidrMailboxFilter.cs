@@ -121,10 +121,22 @@ public sealed class CidrMailboxFilter : IMailboxFilter
             return false;
         }
 
+        // Closed model (spec §17.10): only source IPs in the allow-list may connect. An empty list denies
+        // everyone — add ranges in Access Control to open it up. To allow all sources, add 0.0.0.0/0 + ::/0.
         var allowed = AllowedNetworks(listener.EffectiveAllowedCidrs);
         var ip = RemoteIp(context);
-        if (ip is null || allowed.Length == 0)
-            return true;   // no endpoint info or no allow-list configured → allow
+        if (allowed.Length == 0)
+        {
+            await DenyAsync(context, from.AsAddress(), null, "SMTP allow-list is empty — all sources denied", cancellationToken);
+            _log.LogWarning("Denied SMTP connection: allow-list is empty (closed by default; configure ranges in Access Control)");
+            return false;
+        }
+        if (ip is null)
+        {
+            await DenyAsync(context, from.AsAddress(), null, "Source IP unavailable — cannot verify allow-list", cancellationToken);
+            _log.LogWarning("Denied SMTP connection: source IP unavailable, cannot match allow-list");
+            return false;
+        }
 
         var test = ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
         var permitted = allowed.Any(n => n.Contains(test) || n.Contains(ip));
