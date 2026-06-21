@@ -219,6 +219,15 @@ if [[ -n "$PREBUILT_DIR" ]]; then
   if [[ ! -d "$PREBUILT_DIR" && -d "$SCRIPT_DIR/$PREBUILT_DIR" ]]; then PREBUILT_DIR="$SCRIPT_DIR/$PREBUILT_DIR"; fi
   [[ -d "$PREBUILT_DIR" ]] || { echo "--prebuilt dir not found: $PREBUILT_DIR (cwd: $PWD, script: $SCRIPT_DIR)" >&2; exit 1; }
   [[ -f "$PREBUILT_DIR/Dispatch.Service" ]] || { echo "--prebuilt dir has no Dispatch.Service executable: $PREBUILT_DIR" >&2; exit 1; }
+  # A self-contained .NET build still needs the system ICU library for globalization (it aborts at
+  # startup without it) plus TLS roots — minimal images often lack both.
+  echo "==> Ensuring .NET runtime dependencies (ICU, CA certs)"
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -y >/dev/null 2>&1 || true
+    apt-get install -y libicu ca-certificates || echo "WARN: could not install libicu — install it manually if the service fails to start." >&2
+  elif command -v dnf >/dev/null 2>&1; then dnf install -y libicu ca-certificates || true
+  elif command -v yum >/dev/null 2>&1; then yum install -y libicu ca-certificates || true
+  fi
   echo "==> Installing pre-built binaries from $PREBUILT_DIR to $INSTALL_DIR"
   cp -r "$PREBUILT_DIR/." "$INSTALL_DIR/"
   chmod +x "$INSTALL_DIR/Dispatch.Service"
