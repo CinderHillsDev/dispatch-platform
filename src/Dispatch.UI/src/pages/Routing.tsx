@@ -7,6 +7,7 @@ export function Routing() {
   const [rules, setRules] = useState<RuleItem[]>([]);
   const [relays, setRelays] = useState<RelayListItem[]>([]);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<RuleItem | null>(null);
   const [simFrom, setSimFrom] = useState("");
   const [simTo, setSimTo] = useState("");
   const [sim, setSim] = useState<SimulateResult | null>(null);
@@ -34,6 +35,18 @@ export function Routing() {
     catch (e) { setErr((e as Error).message); }
   };
 
+  const toggle = async (r: RuleItem) => {
+    try {
+      await api.rules.update(r.id, {
+        name: r.name, recipientPattern: r.recipientPattern, senderPattern: r.senderPattern,
+        relayId: r.relayId, enabled: !r.enabled,
+      });
+      await refresh();
+    } catch (e) { setErr((e as Error).message); }
+  };
+
+  const catchAll = relays.find((r) => r.isDefault);
+
   const simulate = async () => {
     setErr(null);
     try { setSim(await api.rules.simulate(simFrom, simTo)); }
@@ -47,7 +60,8 @@ export function Routing() {
         <button onClick={() => setAdding(true)} disabled={relays.length === 0}>+ Add rule</button>
       </div>
       <p className="muted" style={{ fontSize: 13, margin: "8px 0 18px" }}>
-        Evaluated top to bottom — first match wins. Mail that matches no rule goes to the catch-all relay.
+        Rules are checked in order (#1 first); the first match wins. Mail that matches no rule falls through
+        to the catch-all at the bottom.
       </p>
 
       <div className="panel" style={{ padding: 0 }}>
@@ -56,7 +70,7 @@ export function Routing() {
           <tbody>
             {rules.map((r, i) => (
               <tr key={r.id}>
-                <td>{r.priority}</td>
+                <td>{i + 1}</td>
                 <td>{r.name}</td>
                 <td>{r.recipientPattern ?? <span className="muted">(any)</span>}</td>
                 <td>{r.senderPattern ?? <span className="muted">(any)</span>}</td>
@@ -64,6 +78,8 @@ export function Routing() {
                 <td>{r.enabled ? "✓" : "—"}</td>
                 <td style={{ textAlign: "right" }}>
                   <ActionsMenu items={[
+                    { label: "Edit", onClick: () => setEditing(r) },
+                    { label: r.enabled ? "Disable" : "Enable", onClick: () => toggle(r) },
                     { label: "Move up", onClick: () => move(i, -1), disabled: i === 0 },
                     { label: "Move down", onClick: () => move(i, 1), disabled: i === rules.length - 1 },
                     { label: "Delete", danger: true, onClick: () => del(r) },
@@ -71,12 +87,23 @@ export function Routing() {
                 </td>
               </tr>
             ))}
-            {rules.length === 0 && <tr><td colSpan={7} className="center">No rules — all mail goes to the catch-all relay.</td></tr>}
+            {/* The catch-all is always present (the engine's fallback when no rule matches). Shown as a
+                built-in, non-editable row so the routing picture is complete. */}
+            <tr style={{ background: "var(--panel-2)" }}>
+              <td className="muted">100</td>
+              <td>Catch-all <span className="badge ok">default</span></td>
+              <td className="muted">(any)</td>
+              <td className="muted">(any)</td>
+              <td>{catchAll ? catchAll.name : <span className="muted">— no relay configured —</span>}</td>
+              <td>✓</td>
+              <td style={{ textAlign: "right" }}><span className="muted" style={{ fontSize: 11 }}>built-in</span></td>
+            </tr>
           </tbody>
         </table>
       </div>
 
-      {adding && <AddRuleModal relays={relays} onClose={() => setAdding(false)} onAdded={refresh} />}
+      {adding && <RuleModal relays={relays} onClose={() => setAdding(false)} onSaved={refresh} />}
+      {editing && <RuleModal relays={relays} rule={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
 
       <div className="panel" style={{ maxWidth: 620 }}>
         <h2>Simulate</h2>
@@ -100,14 +127,14 @@ export function Routing() {
   );
 }
 
-// "Add routing rule" dialog — a labelled form instead of the old free-text row.
-function AddRuleModal({ relays, onClose, onAdded }: {
-  relays: RelayListItem[]; onClose: () => void; onAdded: () => Promise<void>;
+// Add/edit routing-rule dialog — a labelled form instead of the old free-text row.
+function RuleModal({ relays, rule, onClose, onSaved }: {
+  relays: RelayListItem[]; rule?: RuleItem; onClose: () => void; onSaved: () => Promise<void>;
 }) {
-  const [name, setName] = useState("");
-  const [recipient, setRecipient] = useState("");
-  const [sender, setSender] = useState("");
-  const [relayId, setRelayId] = useState<number | null>(relays[0]?.id ?? null);
+  const [name, setName] = useState(rule?.name ?? "");
+  const [recipient, setRecipient] = useState(rule?.recipientPattern ?? "");
+  const [sender, setSender] = useState(rule?.senderPattern ?? "");
+  const [relayId, setRelayId] = useState<number | null>(rule?.relayId ?? relays[0]?.id ?? null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -116,16 +143,18 @@ function AddRuleModal({ relays, onClose, onAdded }: {
     if (relayId === null) { setErr("Choose a target relay."); return; }
     if (!recipient.trim() && !sender.trim()) { setErr("Enter a recipient and/or sender pattern."); return; }
     setBusy(true); setErr(null);
+    const body = { name: name.trim(), recipientPattern: recipient.trim() || null, senderPattern: sender.trim() || null, relayId };
     try {
-      await api.rules.create({ name: name.trim(), recipientPattern: recipient.trim() || null, senderPattern: sender.trim() || null, relayId });
-      await onAdded();
+      if (rule) await api.rules.update(rule.id, { ...body, enabled: rule.enabled });
+      else await api.rules.create(body);
+      await onSaved();
       onClose();
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
 
   return (
-    <Modal title="Add routing rule" onClose={onClose}>
+    <Modal title={rule ? "Edit routing rule" : "Add routing rule"} onClose={onClose}>
       <div style={{ display: "grid", gap: 12 }}>
         <Lbl label="Rule name"><input value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%" }} /></Lbl>
         <Lbl label="Recipient pattern (optional)"><input placeholder="e.g. acme.com or *.acme.com" value={recipient} onChange={(e) => setRecipient(e.target.value)} style={{ width: "100%" }} /></Lbl>
@@ -139,7 +168,7 @@ function AddRuleModal({ relays, onClose, onAdded }: {
         {err && <p style={{ color: "var(--red)", fontSize: 13, margin: 0 }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
           <button onClick={onClose}>Cancel</button>
-          <button onClick={add} disabled={busy}>{busy ? "Adding…" : "Add rule"}</button>
+          <button onClick={add} disabled={busy}>{busy ? "Saving…" : rule ? "Save changes" : "Add rule"}</button>
         </div>
       </div>
     </Modal>

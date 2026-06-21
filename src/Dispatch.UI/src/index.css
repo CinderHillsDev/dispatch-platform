@@ -63,8 +63,9 @@ select, input, button {
 }
 button { cursor: pointer; }
 button:hover { border-color: var(--blue); }
-/* Actions-menu rows are borderless, so give them a clear hover highlight instead of a border. */
-.menu-item { transition: background .1s ease; }
+/* Actions-menu rows are borderless, so give them a clear hover highlight instead of a border.
+   Background lives here (not inline) so the :hover rule can override it. */
+.menu-item { background: transparent; transition: background .1s ease; }
 .menu-item:hover:not(:disabled) { background: var(--border); border-color: transparent; }
 .muted { color: var(--muted); }
 .center { text-align: center; padding: 30px; color: var(--muted); }

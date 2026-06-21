@@ -37,7 +37,7 @@ export function ActionsMenu({ items }: { items: MenuAction[] }) {
               onClick={(e) => { e.stopPropagation(); setOpen(false); it.onClick(); }}
               style={{
                 display: "block", width: "100%", textAlign: "left", border: "none", borderRadius: 0,
-                background: "transparent", padding: "9px 12px", fontSize: 13,
+                padding: "9px 12px", fontSize: 13,
                 color: it.disabled ? "var(--muted)" : it.danger ? "var(--red)" : "var(--text)",
                 cursor: it.disabled ? "default" : "pointer",
               }}

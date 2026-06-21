@@ -24,6 +24,7 @@ export function Relays() {
   const [list, setList] = useState<RelayListItem[]>([]);
   const [selected, setSelected] = useState<RelayDetail | null>(null);
   const [adding, setAdding] = useState(false);
+  const [testing, setTesting] = useState<RelayListItem | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const refresh = async () => setList(await api.relays.list());
@@ -65,6 +66,7 @@ export function Relays() {
                 <td style={{ textAlign: "right" }}>
                   <ActionsMenu items={[
                     { label: "Edit", onClick: () => select(r.id) },
+                    { label: "Send test", onClick: () => setTesting(r) },
                     { label: r.isDefault ? "Already catch-all" : "Make catch-all", onClick: () => makeDefault(r.id), disabled: r.isDefault },
                     { label: "Delete", danger: true, disabled: r.isDefault, onClick: () => del(r) },
                   ]} />
@@ -77,6 +79,7 @@ export function Relays() {
       </div>
 
       {adding && <AddRelayModal onClose={() => setAdding(false)} onAdded={refresh} />}
+      {testing && <TestRelayModal relay={testing} onClose={() => setTesting(null)} />}
 
       {selected && (
         <Modal
@@ -142,6 +145,40 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
           <button onClick={create} disabled={busy || missing.length > 0}>{busy ? "Adding…" : "Add relay"}</button>
         </div>
         {missing.length > 0 && <p className="muted" style={{ fontSize: 12, textAlign: "right", margin: 0 }}>Required: {missing.join(", ")}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+// Quick "Send test" against a saved relay's stored credentials (the editor's streaming test covers
+// unsaved edits; this is the one-click version from the row menu).
+function TestRelayModal({ relay, onClose }: { relay: RelayListItem; onClose: () => void }) {
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<TestResult | null>(null);
+
+  const send = async () => {
+    setBusy(true); setResult(null);
+    try { setResult(await api.relays.test(relay.id, to.trim())); }
+    catch (e) { setResult({ ok: false, error: (e as Error).message }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Modal title={`Send test · ${relay.name}`} onClose={onClose}>
+      <div style={{ display: "grid", gap: 12 }}>
+        <p className="muted" style={{ fontSize: 13, margin: 0 }}>Sends a real test message through this relay's saved credentials.</p>
+        <Lbl label="Send test to"><input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="you@example.com" style={{ width: "100%" }} /></Lbl>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose}>Close</button>
+          <button onClick={send} disabled={busy || !to.trim()}>{busy ? "Sending…" : "Send test"}</button>
+        </div>
+        {result && (
+          <p style={{ margin: 0 }}>
+            <span className={result.ok ? "badge ok" : "badge error"}>{result.ok ? "Delivered" : "Failed"}</span>
+            <span className="muted" style={{ marginLeft: 8, fontSize: 13 }}>{result.ok ? (result.detail ?? "Sent to the provider.") : (result.error ?? "Failed.")}</span>
+          </p>
+        )}
       </div>
     </Modal>
   );

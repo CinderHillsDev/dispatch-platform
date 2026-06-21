@@ -230,6 +230,8 @@ export const api = {
     list: () => getJson<RuleItem[]>("/api/routing/rules"),
     create: (body: { name: string; recipientPattern: string | null; senderPattern: string | null; relayId: number }) =>
       sendJson<{ id: number }>("/api/routing/rules", "POST", body),
+    update: (id: number, body: { name: string; recipientPattern: string | null; senderPattern: string | null; relayId: number; enabled?: boolean }) =>
+      sendJson<{ ok: boolean }>(`/api/routing/rules/${id}`, "PUT", body),
     remove: (id: number) => sendJson<{ ok: boolean }>(`/api/routing/rules/${id}`, "DELETE", {}),
     reorder: (ids: number[]) => sendJson<{ ok: boolean }>("/api/routing/rules/reorder", "PUT", { ids }),
     simulate: (from: string, to: string) => sendJson<SimulateResult>("/api/routing/simulate", "POST", { from, to }),
