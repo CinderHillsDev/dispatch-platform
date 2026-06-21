@@ -21,7 +21,10 @@ export function SmtpAuth() {
     <>
       <h1 className="page-title">SMTP Authentication</h1>
       <p className="muted" style={{ marginTop: -10, marginBottom: 18 }}>
-        Sender credentials for SMTP AUTH. Requiring AUTH is set via the listener config (<code>Listener.RequireAuth</code>).
+        Username/password logins that your apps and devices use to authenticate when sending mail to the
+        SMTP listener. They're only enforced when <strong>Require SMTP AUTH</strong> is enabled under{" "}
+        <strong>Settings → SMTP listener</strong>; otherwise the listener accepts mail from any allowed
+        source IP without a login. Passwords are stored bcrypt-hashed and can't be retrieved — only reset.
       </p>
 
       <div className="panel" style={{ maxWidth: 640, padding: 0, overflow: "hidden" }}>
