@@ -211,6 +211,10 @@ if [[ -z "$PREBUILT_DIR" ]]; then
   [[ -n "$PREBUILT_DIR" ]] && echo "==> Using prebuilt binaries for $(uname -m): $PREBUILT_DIR"
 fi
 
+# Stop any previously-installed service first, otherwise its running binary is "Text file busy" and the
+# upgrade copy fails. Best-effort: ignored on a fresh install where the unit doesn't exist yet.
+systemctl stop dispatch 2>/dev/null || true
+
 mkdir -p "$INSTALL_DIR"
 if [[ -n "$PREBUILT_DIR" ]]; then
   # Release-tarball mode: copy the self-contained publish output as-is (no SDK / Node build).
