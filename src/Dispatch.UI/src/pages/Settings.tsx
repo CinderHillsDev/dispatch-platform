@@ -245,7 +245,7 @@ function ConnectionsTab({ initial }: { initial: SystemConfig }) {
       </p>
       <SubTabbed items={[
         { id: "smtp", label: "SMTP listener", render: () => <SmtpListenerPanel initial={initial.listener} /> },
-        { id: "starttls", label: "STARTTLS", render: () => <ListenerCertPanel initial={initial.listener.tlsCertSource} /> },
+        { id: "starttls", label: "SMTP TLS", render: () => <ListenerCertPanel initial={initial.listener.tlsCertSource} /> },
         { id: "api", label: "HTTP API", render: () => <ApiPanel initial={initial.api} /> },
         { id: "dashboard", label: "Dashboard", render: () => <WebUiPanel initial={initial.webui} /> },
       ]} />
@@ -354,9 +354,14 @@ function ListenerCertPanel({ initial }: { initial: string }) {
 
   return (
     <div className="panel" style={{ maxWidth: 620, marginTop: 14 }}>
-      <h2>STARTTLS certificate</h2>
+      <h2>SMTP TLS certificate (STARTTLS)</h2>
       <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
-        Encrypts SMTP connections. Generate a self-signed certificate or upload your own. Applies after the next service restart.
+        Encrypts the <strong>SMTP listener</strong> only, via STARTTLS. Generate a self-signed certificate or
+        upload your own. Applies after the next service restart.
+      </p>
+      <p className="muted" style={{ fontSize: 12, marginTop: -2 }}>
+        It does <strong>not</strong> apply to the HTTP API (plain HTTP, secured by API keys) or the dashboard
+        (which has its own HTTPS certificate).
       </p>
       <p style={{ fontSize: 13 }}>
         {source ? <span className="badge ok">{source}</span> : <span className="badge denied">off</span>}
