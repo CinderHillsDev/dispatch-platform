@@ -43,7 +43,7 @@ export function Relays() {
   };
 
   return (
-    <>
+    <div style={{ maxWidth: 960 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <h1 className="page-title" style={{ margin: 0 }}>Relays</h1>
         <button onClick={() => setAdding(true)}>+ Add relay</button>
@@ -96,7 +96,7 @@ export function Relays() {
         </Modal>
       )}
       {msg && <p style={{ marginTop: 16 }}><span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span></p>}
-    </>
+    </div>
   );
 }
 

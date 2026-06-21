@@ -19,16 +19,18 @@ export function SmtpAuth() {
   };
 
   return (
-    <>
+    <div style={{ maxWidth: 680 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <h1 className="page-title" style={{ margin: 0 }}>SMTP Authentication</h1>
         <button onClick={() => setAdding(true)}>+ Add credential</button>
       </div>
-      <p className="muted" style={{ fontSize: 13, margin: "8px 0 18px" }}>
-        Username/password logins your apps and devices use to authenticate when sending mail to the SMTP
-        listener. They're only enforced when <strong>Require SMTP AUTH</strong> is on under{" "}
-        <strong>Settings → SMTP listener</strong>; otherwise the listener accepts mail from any allowed source
-        IP without a login. Passwords are stored bcrypt-hashed — they can't be retrieved, only reset.
+      <p className="muted" style={{ fontSize: 13, margin: "8px 0 10px" }}>
+        Username/password logins your apps and devices use to authenticate when sending mail to the SMTP listener.
+      </p>
+      <p className="muted" style={{ fontSize: 13, margin: "0 0 18px" }}>
+        They're only enforced when <strong>Require SMTP AUTH</strong> is on under <strong>Settings → SMTP listener</strong>;
+        otherwise the listener accepts mail from any allowed source IP without a login. Passwords are stored
+        bcrypt-hashed — they can't be retrieved, only reset.
       </p>
 
       <div className="panel" style={{ maxWidth: 680, padding: 0 }}>
@@ -57,7 +59,7 @@ export function SmtpAuth() {
 
       {adding && <CredModal onClose={() => setAdding(false)} onSaved={refresh} />}
       {resetting && <CredModal cred={resetting} onClose={() => setResetting(null)} onSaved={refresh} />}
-    </>
+    </div>
   );
 }
 

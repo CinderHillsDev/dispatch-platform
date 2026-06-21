@@ -36,7 +36,7 @@ export function ApiKeys() {
   const visible = keys.filter((k) => showRevoked || !k.revoked);
 
   return (
-    <>
+    <div style={{ maxWidth: 760 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <h1 className="page-title" style={{ margin: 0 }}>API Keys</h1>
         <button onClick={() => setCreating(true)}>+ Create key</button>
@@ -77,7 +77,7 @@ export function ApiKeys() {
 
       {creating && <CreateKeyModal onClose={() => setCreating(false)} onCreated={async (r) => { setCreated(r); setCreating(false); await refresh(); }} />}
       {created && <CreatedKeyModal created={created} onClose={() => setCreated(null)} />}
-    </>
+    </div>
   );
 }
 

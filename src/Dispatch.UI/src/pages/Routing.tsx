@@ -54,7 +54,7 @@ export function Routing() {
   };
 
   return (
-    <>
+    <div style={{ maxWidth: 960 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <h1 className="page-title" style={{ margin: 0 }}>Routing Rules</h1>
         <button onClick={() => setAdding(true)} disabled={relays.length === 0}>+ Add rule</button>
@@ -123,7 +123,7 @@ export function Routing() {
       </div>
 
       {err && <p><span className="badge error">{err}</span></p>}
-    </>
+    </div>
   );
 }
 
