@@ -48,65 +48,109 @@ export function Settings() {
         ? <ConnectionsTab initial={sysConfig} />
         : <div className="muted">Connection settings unavailable.</div>)}
 
-      {tab === "delivery" && <DeliveryTab settings={settings} onChange={setSettings} />}
+      {tab === "delivery" && (
+        <SubTabbed items={[
+          { id: "logging", label: "Message logging", render: () => <LoggingPanel initial={settings.logging} /> },
+          { id: "retry", label: "Retry policy", render: () => <RetryPanel initial={settings.retry} /> },
+        ]} />
+      )}
 
       {tab === "storage" && (
-        <>
-          <RetentionPanel settings={settings} onChange={setSettings} />
-          {sysConfig && <SpoolPanel initial={sysConfig} />}
-          <PurgePanel />
-        </>
+        <SubTabbed items={[
+          { id: "retention", label: "Retention", render: () => <RetentionPanel initial={settings.retention} /> },
+          ...(sysConfig ? [{ id: "spool", label: "Spool", render: () => <SpoolPanel initial={sysConfig} /> }] : []),
+          { id: "maintenance", label: "Maintenance", render: () => <PurgePanel /> },
+        ]} />
       )}
     </>
   );
 }
 
-// ---- Delivery & logging tab -------------------------------------------------------------------
+// ---- Subtab layout ----------------------------------------------------------------------------
 
-function DeliveryTab({ settings, onChange }: { settings: AppSettings; onChange: (s: AppSettings) => void }) {
-  const [delaysText, setDelaysText] = useState(settings.retry.retryDelaysSeconds.join(", "));
+// A second-level tab bar (pill style, to read as subordinate to the underline top tabs). Shows one
+// panel at a time so each Settings page is a single screen instead of a stack of scrolling cards.
+function SubTabbed({ items }: { items: { id: string; label: string; render: () => ReactNode }[] }) {
+  const [active, setActive] = useState(items[0]?.id);
+  const current = items.find((i) => i.id === active) ?? items[0];
+  return (
+    <>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 2 }}>
+        {items.map((it) => {
+          const on = it.id === current?.id;
+          return (
+            <button
+              key={it.id}
+              onClick={() => setActive(it.id)}
+              style={{
+                background: on ? "var(--panel-2)" : "transparent",
+                border: `1px solid ${on ? "var(--border)" : "transparent"}`,
+                borderRadius: 8,
+                color: on ? "var(--text)" : "var(--muted)",
+                fontSize: 13,
+                padding: "6px 12px",
+              }}
+            >
+              {it.label}
+            </button>
+          );
+        })}
+      </div>
+      {current?.render()}
+    </>
+  );
+}
+
+// ---- Delivery & logging -----------------------------------------------------------------------
+
+function LoggingPanel({ initial }: { initial: AppSettings["logging"] }) {
+  const [logging, setLogging] = useState(initial);
   const logRows: { key: keyof AppSettings["logging"]; label: string; help: string }[] = [
     { key: "delivered", label: "Log delivered messages", help: "Record a log entry for each delivered message. Counters are always recorded regardless." },
     { key: "retrying", label: "Log retry attempts", help: "Record a log entry each time a message is retried." },
     { key: "denied", label: "Log denied connections", help: "Record a log entry when a connection or request is refused." },
   ];
-
   return (
-    <>
-      <SavePanel title="Message logging"
-        intro="Suppressing log entries reduces database growth on high-volume relays. Dashboard counters and throughput are unaffected."
-        onSave={() => api.settings.saveLogging(settings.logging)}>
-        {logRows.map((r) => (
-          <label key={r.key} style={{ display: "flex", gap: 10, alignItems: "flex-start", margin: "12px 0" }}>
-            <input type="checkbox" checked={settings.logging[r.key]} style={{ width: "auto", marginTop: 3 }}
-              onChange={() => onChange({ ...settings, logging: { ...settings.logging, [r.key]: !settings.logging[r.key] } })} />
-            <span><div>{r.label}</div><div className="muted" style={{ fontSize: 12 }}>{r.help}</div></span>
-          </label>
-        ))}
-      </SavePanel>
-
-      <SavePanel title="Retry policy"
-        intro="Back-off for transient delivery failures. The last delay repeats for any further attempts."
-        onSave={() => api.settings.saveRetry({ ...settings.retry, retryDelaysSeconds: csvNums(delaysText) })}>
-        <label style={{ display: "block", margin: "12px 0" }}>
-          <div>Max retries</div>
-          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Delivery attempts before a message is marked failed.</div>
-          <input type="number" min={0} value={settings.retry.maxRetries} style={{ width: 120 }}
-            onChange={(e) => onChange({ ...settings, retry: { ...settings.retry, maxRetries: Math.max(0, Number(e.target.value)) } })} />
+    <SavePanel title="Message logging"
+      intro="Suppressing log entries reduces database growth on high-volume relays. Dashboard counters and throughput are unaffected."
+      onSave={() => api.settings.saveLogging(logging)}>
+      {logRows.map((r) => (
+        <label key={r.key} style={{ display: "flex", gap: 10, alignItems: "flex-start", margin: "12px 0" }}>
+          <input type="checkbox" checked={logging[r.key]} style={{ width: "auto", marginTop: 3 }}
+            onChange={() => setLogging({ ...logging, [r.key]: !logging[r.key] })} />
+          <span><div>{r.label}</div><div className="muted" style={{ fontSize: 12 }}>{r.help}</div></span>
         </label>
-        <label style={{ display: "block", margin: "12px 0" }}>
-          <div>Retry delays (seconds)</div>
-          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Comma-separated, one per attempt — e.g. 30, 300, 1800.</div>
-          <input type="text" value={delaysText} onChange={(e) => setDelaysText(e.target.value)} style={{ width: 280 }} />
-        </label>
-      </SavePanel>
-    </>
+      ))}
+    </SavePanel>
   );
 }
 
-// ---- Storage & retention tab ------------------------------------------------------------------
+function RetryPanel({ initial }: { initial: AppSettings["retry"] }) {
+  const [retry, setRetry] = useState(initial);
+  const [delaysText, setDelaysText] = useState(initial.retryDelaysSeconds.join(", "));
+  return (
+    <SavePanel title="Retry policy"
+      intro="Back-off for transient delivery failures. The last delay repeats for any further attempts."
+      onSave={() => api.settings.saveRetry({ ...retry, retryDelaysSeconds: csvNums(delaysText) })}>
+      <label style={{ display: "block", margin: "12px 0" }}>
+        <div>Max retries</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Delivery attempts before a message is marked failed.</div>
+        <input type="number" min={0} value={retry.maxRetries} style={{ width: 120 }}
+          onChange={(e) => setRetry({ ...retry, maxRetries: Math.max(0, Number(e.target.value)) })} />
+      </label>
+      <label style={{ display: "block", margin: "12px 0" }}>
+        <div>Retry delays (seconds)</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Comma-separated, one per attempt — e.g. 30, 300, 1800.</div>
+        <input type="text" value={delaysText} onChange={(e) => setDelaysText(e.target.value)} style={{ width: 280 }} />
+      </label>
+    </SavePanel>
+  );
+}
 
-function RetentionPanel({ settings, onChange }: { settings: AppSettings; onChange: (s: AppSettings) => void }) {
+// ---- Storage & retention ----------------------------------------------------------------------
+
+function RetentionPanel({ initial }: { initial: AppSettings["retention"] }) {
+  const [retention, setRetention] = useState(initial);
   const rows: { key: keyof AppSettings["retention"]; label: string; help: string; step?: number }[] = [
     { key: "logDeliveredRetentionDays", label: "Delivered log retention (days)", help: "Delivered-message log entries older than this are removed." },
     { key: "logFailedRetentionDays", label: "Failed log retention (days)", help: "Failed-message log entries older than this are removed." },
@@ -118,13 +162,13 @@ function RetentionPanel({ settings, onChange }: { settings: AppSettings; onChang
   return (
     <SavePanel title="Retention"
       intro="How long log entries and on-disk messages are kept before they're automatically removed."
-      onSave={() => api.settings.saveRetention(settings.retention)}>
+      onSave={() => api.settings.saveRetention(retention)}>
       {rows.map((r) => (
         <label key={r.key} style={{ display: "block", margin: "12px 0" }}>
           <div>{r.label}</div>
           <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{r.help}</div>
-          <input type="number" min={0} step={r.step ?? 1} value={settings.retention[r.key]} style={{ width: 120 }}
-            onChange={(e) => onChange({ ...settings, retention: { ...settings.retention, [r.key]: Math.max(0, Number(e.target.value)) } })} />
+          <input type="number" min={0} step={r.step ?? 1} value={retention[r.key]} style={{ width: 120 }}
+            onChange={(e) => setRetention({ ...retention, [r.key]: Math.max(0, Number(e.target.value)) })} />
         </label>
       ))}
     </SavePanel>
@@ -165,7 +209,7 @@ function PurgePanel() {
     <div className="panel" style={{ maxWidth: 620, marginTop: 18 }}>
       <h2>Storage maintenance</h2>
       <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
-        Run an immediate out-of-schedule cleanup using the retention thresholds above.
+        Run an immediate out-of-schedule cleanup using the thresholds on the Retention tab.
       </p>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
         <button onClick={run} disabled={busy}>Run cleanup now</button>
@@ -191,51 +235,66 @@ function PurgePanel() {
   );
 }
 
-// ---- Connections tab (SMTP listener / HTTP API / Web UI) --------------------------------------
+// ---- Connections (SMTP listener / STARTTLS / HTTP API / dashboard) ----------------------------
 
 function ConnectionsTab({ initial }: { initial: SystemConfig }) {
-  const [listener, setListener] = useState(initial.listener);
-  const [apiCfg, setApiCfg] = useState(initial.api);
-  const [webui, setWebui] = useState(initial.webui);
-  const [portsText, setPortsText] = useState(initial.listener.ports.join(", "));
-
   return (
     <>
       <p className="muted" style={{ fontSize: 13, marginTop: -4, marginBottom: 14 }}>
         IP allow-lists moved to the <strong>Access Control</strong> page.
       </p>
-
-      <SavePanel title="SMTP listener" restart
-        intro="The SMTP server your apps and devices send mail to. Size limit applies live; the rest apply after a restart."
-        onSave={() => api.settings.putListener({
-          ports: csvNums(portsText), serverName: listener.serverName,
-          maxMessageBytes: listener.maxMessageBytes, requireAuth: listener.requireAuth,
-        })}>
-        <Txt label="Ports — comma-separated, e.g. 25, 587, 2525" value={portsText} onChange={setPortsText} />
-        <Txt label="Server name" value={listener.serverName} onChange={(v) => setListener({ ...listener, serverName: v })} />
-        <Num label="Max message bytes (0 = no limit)" value={listener.maxMessageBytes} onChange={(v) => setListener({ ...listener, maxMessageBytes: v })} />
-        <Chk label="Require SMTP AUTH" checked={listener.requireAuth} onChange={(v) => setListener({ ...listener, requireAuth: v })} />
-      </SavePanel>
-
-      <ListenerCertPanel initial={initial.listener.tlsCertSource} />
-
-      <SavePanel title="HTTP ingestion API" restart
-        intro="The HTTP endpoint for posting messages with an API key. Size limit and rate limit apply live; the port applies after a restart."
-        onSave={() => api.settings.putApi({
-          port: apiCfg.port, maxMessageBytes: apiCfg.maxMessageBytes, rateLimitPerKey: apiCfg.rateLimitPerKey,
-        })}>
-        <Num label="Port" value={apiCfg.port} onChange={(v) => setApiCfg({ ...apiCfg, port: v })} />
-        <Num label="Max message bytes (0 = no limit)" value={apiCfg.maxMessageBytes} onChange={(v) => setApiCfg({ ...apiCfg, maxMessageBytes: v })} />
-        <Num label="Rate limit / key per minute" value={apiCfg.rateLimitPerKey} onChange={(v) => setApiCfg({ ...apiCfg, rateLimitPerKey: v })} />
-      </SavePanel>
-
-      <SavePanel title="Dashboard (web UI)" restart
-        intro="The admin dashboard you're using now. Applies after a restart."
-        onSave={() => api.settings.putWebui({ port: webui.port, requireHttps: webui.requireHttps })}>
-        <Num label="Port" value={webui.port} onChange={(v) => setWebui({ ...webui, port: v })} />
-        <Chk label="Require HTTPS" checked={webui.requireHttps} onChange={(v) => setWebui({ ...webui, requireHttps: v })} />
-      </SavePanel>
+      <SubTabbed items={[
+        { id: "smtp", label: "SMTP listener", render: () => <SmtpListenerPanel initial={initial.listener} /> },
+        { id: "starttls", label: "STARTTLS", render: () => <ListenerCertPanel initial={initial.listener.tlsCertSource} /> },
+        { id: "api", label: "HTTP API", render: () => <ApiPanel initial={initial.api} /> },
+        { id: "dashboard", label: "Dashboard", render: () => <WebUiPanel initial={initial.webui} /> },
+      ]} />
     </>
+  );
+}
+
+function SmtpListenerPanel({ initial }: { initial: SystemConfig["listener"] }) {
+  const [listener, setListener] = useState(initial);
+  const [portsText, setPortsText] = useState(initial.ports.join(", "));
+  return (
+    <SavePanel title="SMTP listener" restart
+      intro="The SMTP server your apps and devices send mail to. Size limit applies live; the rest apply after a restart."
+      onSave={() => api.settings.putListener({
+        ports: csvNums(portsText), serverName: listener.serverName,
+        maxMessageBytes: listener.maxMessageBytes, requireAuth: listener.requireAuth,
+      })}>
+      <Txt label="Ports — comma-separated, e.g. 25, 587, 2525" value={portsText} onChange={setPortsText} />
+      <Txt label="Server name" value={listener.serverName} onChange={(v) => setListener({ ...listener, serverName: v })} />
+      <Num label="Max message bytes (0 = no limit)" value={listener.maxMessageBytes} onChange={(v) => setListener({ ...listener, maxMessageBytes: v })} />
+      <Chk label="Require SMTP AUTH" checked={listener.requireAuth} onChange={(v) => setListener({ ...listener, requireAuth: v })} />
+    </SavePanel>
+  );
+}
+
+function ApiPanel({ initial }: { initial: SystemConfig["api"] }) {
+  const [apiCfg, setApiCfg] = useState(initial);
+  return (
+    <SavePanel title="HTTP ingestion API" restart
+      intro="The HTTP endpoint for posting messages with an API key. Size limit and rate limit apply live; the port applies after a restart."
+      onSave={() => api.settings.putApi({
+        port: apiCfg.port, maxMessageBytes: apiCfg.maxMessageBytes, rateLimitPerKey: apiCfg.rateLimitPerKey,
+      })}>
+      <Num label="Port" value={apiCfg.port} onChange={(v) => setApiCfg({ ...apiCfg, port: v })} />
+      <Num label="Max message bytes (0 = no limit)" value={apiCfg.maxMessageBytes} onChange={(v) => setApiCfg({ ...apiCfg, maxMessageBytes: v })} />
+      <Num label="Rate limit / key per minute" value={apiCfg.rateLimitPerKey} onChange={(v) => setApiCfg({ ...apiCfg, rateLimitPerKey: v })} />
+    </SavePanel>
+  );
+}
+
+function WebUiPanel({ initial }: { initial: SystemConfig["webui"] }) {
+  const [webui, setWebui] = useState(initial);
+  return (
+    <SavePanel title="Dashboard (web UI)" restart
+      intro="The admin dashboard you're using now. Applies after a restart."
+      onSave={() => api.settings.putWebui({ port: webui.port, requireHttps: webui.requireHttps })}>
+      <Num label="Port" value={webui.port} onChange={(v) => setWebui({ ...webui, port: v })} />
+      <Chk label="Require HTTPS" checked={webui.requireHttps} onChange={(v) => setWebui({ ...webui, requireHttps: v })} />
+    </SavePanel>
   );
 }
 
@@ -253,7 +312,7 @@ function SavePanel({ title, intro, restart, onSave, children }: {
     finally { setBusy(false); }
   };
   return (
-    <div className="panel" style={{ maxWidth: 620, marginTop: 18 }}>
+    <div className="panel" style={{ maxWidth: 620, marginTop: 14 }}>
       <h2>{title}</h2>
       <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>{intro}</p>
       {children}
@@ -284,7 +343,7 @@ function ListenerCertPanel({ initial }: { initial: string }) {
   };
 
   return (
-    <div className="panel" style={{ maxWidth: 620, marginTop: 18 }}>
+    <div className="panel" style={{ maxWidth: 620, marginTop: 14 }}>
       <h2>STARTTLS certificate</h2>
       <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
         Encrypts SMTP connections. Generate a self-signed certificate or upload your own. Applies after the next service restart.
