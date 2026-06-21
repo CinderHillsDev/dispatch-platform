@@ -5,6 +5,7 @@ import { Modal } from "../Modal";
 export function LocalInbox() {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [selected, setSelected] = useState<InboxMessage | null>(null);
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
 
   const refresh = async () => setItems(await api.inbox.list());
   useEffect(() => {
@@ -12,6 +13,7 @@ export function LocalInbox() {
     const t = setInterval(refresh, 5000);   // poll so new captures appear
     return () => clearInterval(t);
   }, []);
+  useEffect(() => { api.settings.get().then((s) => setRetentionDays(s.retention.capturedRetentionDays)).catch(() => {}); }, []);
 
   const open = async (id: string) => setSelected(await api.inbox.get(id));
 
@@ -31,6 +33,11 @@ export function LocalInbox() {
       </div>
       <p className="muted" style={{ marginTop: -10, marginBottom: 18 }}>
         Messages captured by the Local / developer provider — never sent externally.
+        {retentionDays !== null && (
+          retentionDays > 0
+            ? <> They're automatically deleted after <strong>{retentionDays} day{retentionDays === 1 ? "" : "s"}</strong> (change under Settings → Storage &amp; retention).</>
+            : <> They're kept until you delete them (retention is off in Settings → Storage &amp; retention).</>
+        )}
       </p>
 
       <div className="panel" style={{ padding: 0, overflow: "hidden" }}>

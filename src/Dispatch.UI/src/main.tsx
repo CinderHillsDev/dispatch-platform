@@ -1,6 +1,6 @@
 import React, { useEffect, useState, type ReactNode } from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserRouter, RouterProvider, NavLink, Outlet } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, NavLink, Outlet, useRouteError } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { api } from "./lib/api";
 import { FirstRunWizard } from "./FirstRunWizard";
@@ -53,21 +53,39 @@ function Layout() {
   );
 }
 
+// Shown (in place of the page, inside the layout) when a route component throws — far friendlier than
+// React Router's default error screen.
+function RouteError() {
+  const err = useRouteError();
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : "An unexpected error occurred.";
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <h1 className="page-title">Something went wrong</h1>
+      <p className="muted">This page hit an unexpected error. Try reloading; if it keeps happening, check the service logs.</p>
+      <pre style={{ whiteSpace: "pre-wrap", background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 8, padding: 12, fontSize: 13 }}>{message}</pre>
+      <button onClick={() => location.reload()}>Reload</button>
+    </div>
+  );
+}
+
+const pages: { path: string; element: ReactNode }[] = [
+  { path: "/", element: <Dashboard /> },
+  { path: "/messages", element: <Messages /> },
+  { path: "/failed", element: <Failed /> },
+  { path: "/relays", element: <Relays /> },
+  { path: "/routing", element: <Routing /> },
+  { path: "/smtp-auth", element: <SmtpAuth /> },
+  { path: "/api-keys", element: <ApiKeys /> },
+  { path: "/inbox", element: <LocalInbox /> },
+  { path: "/settings", element: <Settings /> },
+  { path: "/system", element: <System /> },
+];
+
 const router = createBrowserRouter([
   {
     element: <Layout />,
-    children: [
-      { path: "/", element: <Dashboard /> },
-      { path: "/messages", element: <Messages /> },
-      { path: "/failed", element: <Failed /> },
-      { path: "/relays", element: <Relays /> },
-      { path: "/routing", element: <Routing /> },
-      { path: "/smtp-auth", element: <SmtpAuth /> },
-      { path: "/api-keys", element: <ApiKeys /> },
-      { path: "/inbox", element: <LocalInbox /> },
-      { path: "/settings", element: <Settings /> },
-      { path: "/system", element: <System /> },
-    ],
+    errorElement: <RouteError />,   // fallback if the layout itself throws; pages use per-route errors (keeps the nav)
+    children: pages.map((p) => ({ ...p, errorElement: <RouteError /> })),
   },
 ]);
 
