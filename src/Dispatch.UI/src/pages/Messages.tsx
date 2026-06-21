@@ -9,6 +9,13 @@ function badgeClass(status: string) {
   return "badge error";
 }
 
+// Truncating cell style (relies on the global `white-space: nowrap` on td) — keeps wide text columns
+// bounded so the table fits the page without a horizontal scrollbar; full value shown via title=.
+const cap = (w: number): React.CSSProperties => ({ maxWidth: w, overflow: "hidden", textOverflow: "ellipsis" });
+
+// Compact timestamp for the log list (full timestamp is in the detail modal + the cell's title tooltip).
+const fmtTime = (iso: string) => new Date(iso).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
 // Status filter chips map to the relay_log `event` column (spec §9.2). Provider tests are logged as
 // real Delivered/Failed events (distinguished only by ingest source "Test"), so there's no test status.
 const EVENT_OPTIONS = ["Delivered", "Failed", "Retrying", "Denied"];
@@ -64,6 +71,10 @@ export function Messages() {
 
   const set = <K extends keyof Filters>(key: K, value: Filters[K]) =>
     setFilters((f) => ({ ...f, [key]: value }));
+
+  // Reset just the given columns' filters back to their empty values (per-column "Clear").
+  const clearKeys = (...keys: (keyof Filters)[]) =>
+    setFilters((f) => { const n = { ...f }; keys.forEach((k) => { (n[k] as Filters[typeof k]) = EMPTY[k]; }); return n; });
 
   useEffect(() => { api.relays.list().then(setRelays).catch(() => setRelays([])); }, []);
   useEffect(() => { api.rules.list().then(setRules).catch(() => setRules([])); }, []);
@@ -144,28 +155,28 @@ export function Messages() {
           <table>
             <thead>
               <tr>
-                <HeaderFilter label="Time" active={!!(filters.from || filters.to)}>
+                <HeaderFilter label="Time" active={!!(filters.from || filters.to)} onClear={() => clearKeys("from", "to")}>
                   <Labeled label="Received from"><input type="date" value={filters.from} onChange={(e) => set("from", e.target.value)} style={{ width: "100%" }} /></Labeled>
                   <Labeled label="Received to"><input type="date" value={filters.to} onChange={(e) => set("to", e.target.value)} style={{ width: "100%" }} /></Labeled>
                 </HeaderFilter>
-                <HeaderFilter label="Status" active={filters.events.length > 0}>
+                <HeaderFilter label="Status" active={filters.events.length > 0} onClear={() => clearKeys("events")}>
                   <FilterChoices
                     options={[["All", null] as [string, string | null], ...EVENT_OPTIONS.map((e) => [e, e] as [string, string | null])]}
                     selected={filters.events[0] ?? null}
                     onSelect={selectEvent}
                   />
                 </HeaderFilter>
-                <HeaderFilter label="From" active={!!filters.fromDomain}>
+                <HeaderFilter label="From" active={!!filters.fromDomain} onClear={() => clearKeys("fromDomain")}>
                   <Labeled label="Sender domain"><input placeholder="e.g. example.com" value={filters.fromDomain} onChange={(e) => set("fromDomain", e.target.value)} style={{ width: "100%" }} /></Labeled>
                 </HeaderFilter>
-                <HeaderFilter label="To" active={!!filters.toDomain}>
+                <HeaderFilter label="To" active={!!filters.toDomain} onClear={() => clearKeys("toDomain")}>
                   <Labeled label="Recipient domain"><input placeholder="e.g. acme.com" value={filters.toDomain} onChange={(e) => set("toDomain", e.target.value)} style={{ width: "100%" }} /></Labeled>
                 </HeaderFilter>
-                <HeaderFilter label="Subject" active={!!(filters.subject || filters.tag)}>
+                <HeaderFilter label="Subject" active={!!(filters.subject || filters.tag)} onClear={() => clearKeys("subject", "tag")}>
                   <Labeled label="Subject contains"><input placeholder="search subject…" value={filters.subject} onChange={(e) => set("subject", e.target.value)} style={{ width: "100%" }} /></Labeled>
                   <Labeled label="Tag"><input placeholder="exact tag" value={filters.tag} onChange={(e) => set("tag", e.target.value)} style={{ width: "100%" }} /></Labeled>
                 </HeaderFilter>
-                <HeaderFilter label="Relay" active={!!(filters.relay || filters.rule)}>
+                <HeaderFilter label="Relay" active={!!(filters.relay || filters.rule)} onClear={() => clearKeys("relay", "rule")}>
                   <Labeled label="Relay">
                     <select value={filters.relay} onChange={(e) => set("relay", e.target.value)} style={{ width: "100%" }}>
                       <option value="">Any relay</option>
@@ -180,7 +191,7 @@ export function Messages() {
                   </Labeled>
                 </HeaderFilter>
                 <th>Provider</th>
-                <HeaderFilter label="Source" active={!!(filters.source || filters.apiKeyId)}>
+                <HeaderFilter label="Source" active={!!(filters.source || filters.apiKeyId)} onClear={() => clearKeys("source", "apiKeyId")}>
                   <Labeled label="Ingest source">
                     <select value={filters.source} onChange={(e) => set("source", e.target.value)} style={{ width: "100%" }}>
                       <option value="">All sources</option>
@@ -208,12 +219,12 @@ export function Messages() {
                   onClick={() => openDetail(r.id)}
                   style={{ cursor: "pointer", background: selected === r.id ? "var(--border)" : undefined }}
                 >
-                  <td>{new Date(r.loggedAt).toLocaleString()}</td>
+                  <td style={{ whiteSpace: "nowrap" }} title={new Date(r.loggedAt).toLocaleString()}>{fmtTime(r.loggedAt)}</td>
                   <td><span className={badgeClass(r.status)}>{r.event}</span></td>
-                  <td>{r.fromAddress}</td>
-                  <td><Recipients to={r.toAddresses} domain={r.toDomain} /></td>
-                  <td className="subject">{r.subject ?? <span className="muted">(none)</span>}</td>
-                  <td>{r.relayName ?? "—"}</td>
+                  <td style={cap(200)} title={r.fromAddress}>{r.fromAddress}</td>
+                  <td style={cap(190)}><Recipients to={r.toAddresses} domain={r.toDomain} /></td>
+                  <td style={cap(200)} title={r.subject ?? undefined}>{r.subject ?? <span className="muted">(none)</span>}</td>
+                  <td style={cap(140)} title={r.relayName ?? undefined}>{r.relayName ?? "—"}</td>
                   <td>{r.provider ?? "—"}</td>
                   <td>{r.ingestSource}</td>
                   <td>{r.durationMs != null ? `${r.durationMs} ms` : "—"}</td>
@@ -310,10 +321,23 @@ export function Messages() {
   );
 }
 
+// A magnifying-glass icon; rendered next to a column label to signal the column is filterable.
+function SearchIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+      strokeWidth={active ? 2.4 : 1.8} style={{ opacity: active ? 1 : 0.5, flexShrink: 0 }}>
+      <circle cx="7" cy="7" r="4.3" />
+      <line x1="10.3" y1="10.3" x2="14" y2="14" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // A column header that doubles as a filter trigger: clicking it opens a small popover with the relevant
-// control(s). The popover is position:fixed (anchored to the header) so the table's horizontal scroll
-// container can't clip it. A dot replaces the chevron when the column has an active filter.
-function HeaderFilter({ label, active, children }: { label: string; active: boolean; children: React.ReactNode }) {
+// control(s) plus a Clear action. The popover is position:fixed (anchored to the header) so the table's
+// scroll container can't clip it. A magnifying glass marks the column; it turns blue when a filter is set.
+function HeaderFilter({ label, active, onClear, children }: {
+  label: string; active: boolean; onClear: () => void; children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -337,7 +361,7 @@ function HeaderFilter({ label, active, children }: { label: string; active: bool
           textTransform: "uppercase", fontSize: 11, fontWeight: 500, letterSpacing: ".03em",
         }}
       >
-        {label}<span style={{ fontSize: 9 }}>{active ? "●" : "▾"}</span>
+        {label}<SearchIcon active={active} />
       </button>
       {open && (
         <>
@@ -348,6 +372,9 @@ function HeaderFilter({ label, active, children }: { label: string; active: bool
             minWidth: 220, boxShadow: "0 8px 24px rgba(0,0,0,.45)", textTransform: "none",
           }}>
             {children}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+              <button type="button" disabled={!active} onClick={() => { onClear(); setOpen(false); }} style={{ fontSize: 12 }}>Clear</button>
+            </div>
           </div>
         </>
       )}
