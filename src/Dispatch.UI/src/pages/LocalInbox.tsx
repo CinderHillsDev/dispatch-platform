@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type InboxItem, type InboxMessage } from "../lib/api";
+import { Modal } from "../Modal";
 
 export function LocalInbox() {
   const [items, setItems] = useState<InboxItem[]>([]);
@@ -32,38 +33,35 @@ export function LocalInbox() {
         Messages captured by the Local / developer provider — never sent externally.
       </p>
 
-      <div style={{ display: "flex", gap: 22, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div className="panel" style={{ flex: "1 1 420px", padding: 0, overflow: "hidden" }}>
-          <table>
-            <thead><tr><th>From</th><th>To</th><th>Subject</th><th>When</th><th></th></tr></thead>
-            <tbody>
-              {items.map((m) => (
-                <tr key={m.id} style={{ cursor: "pointer", background: selected?.id === m.id ? "var(--panel-2)" : undefined }} onClick={() => open(m.id)}>
-                  <td>{m.from}</td>
-                  <td>{m.to}</td>
-                  <td className="subject">{m.subject || <span className="muted">(no subject)</span>}</td>
-                  <td>{new Date(m.date).toLocaleTimeString()}</td>
-                  <td><button onClick={(e) => { e.stopPropagation(); remove(m.id); }}>✕</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {items.length === 0 && <div className="center">No captured messages yet. Configure a relay as “Local” and send mail.</div>}
-        </div>
-
-        {selected && (
-          <div className="panel" style={{ flex: "1 1 460px" }}>
-            <h2>{selected.subject || "(no subject)"}</h2>
-            <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>From: {selected.from}</div>
-            <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>To: {selected.to}</div>
-            {selected.cc && <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>Cc: {selected.cc}</div>}
-            <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{new Date(selected.date).toLocaleString()}</div>
-            {selected.html
-              ? <iframe title="message" sandbox="" srcDoc={selected.html} style={{ width: "100%", height: 380, border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }} />
-              : <pre style={{ whiteSpace: "pre-wrap", background: "var(--panel-2)", padding: 14, borderRadius: 8 }}>{selected.text ?? "(empty body)"}</pre>}
-          </div>
-        )}
+      <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
+        <table>
+          <thead><tr><th>From</th><th>To</th><th>Subject</th><th>When</th><th></th></tr></thead>
+          <tbody>
+            {items.map((m) => (
+              <tr key={m.id} style={{ cursor: "pointer" }} onClick={() => open(m.id)}>
+                <td>{m.from}</td>
+                <td>{m.to}</td>
+                <td className="subject">{m.subject || <span className="muted">(no subject)</span>}</td>
+                <td>{new Date(m.date).toLocaleTimeString()}</td>
+                <td><button onClick={(e) => { e.stopPropagation(); remove(m.id); }}>✕</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {items.length === 0 && <div className="center">No captured messages yet. Configure a relay as “Local” and send mail.</div>}
       </div>
+
+      {selected && (
+        <Modal title={selected.subject || "(no subject)"} onClose={() => setSelected(null)}>
+          <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>From: {selected.from}</div>
+          <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>To: {selected.to}</div>
+          {selected.cc && <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>Cc: {selected.cc}</div>}
+          <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{new Date(selected.date).toLocaleString()}</div>
+          {selected.html
+            ? <iframe title="message" sandbox="" srcDoc={selected.html} style={{ width: "100%", height: 420, border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }} />
+            : <pre style={{ whiteSpace: "pre-wrap", background: "var(--panel-2)", padding: 14, borderRadius: 8 }}>{selected.text ?? "(empty body)"}</pre>}
+        </Modal>
+      )}
     </>
   );
 }

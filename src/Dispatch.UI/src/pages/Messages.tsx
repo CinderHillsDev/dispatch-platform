@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type MessageRow, type MessageDetail, type RelayListItem, type RuleItem, type ApiKeyItem } from "../lib/api";
+import { Modal } from "../Modal";
 
 function badgeClass(status: string) {
   if (status === "OK") return "badge ok";
@@ -105,8 +106,8 @@ export function Messages() {
   }, [selected]);
 
   return (
-    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
+    <>
+      <div>
         <h1 className="page-title">Message Log</h1>
 
         <div className="filters" style={{ alignItems: "center" }}>
@@ -184,11 +185,7 @@ export function Messages() {
       </div>
 
       {selected !== null && (
-        <aside className="panel" style={{ width: 360, flexShrink: 0, position: "sticky", top: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <h2 style={{ margin: 0 }}>Message detail</h2>
-            <button onClick={() => { setSelected(null); setDetail(null); }}>Close</button>
-          </div>
+        <Modal title="Message detail" onClose={() => { setSelected(null); setDetail(null); }}>
           {detailLoading && <div className="center">Loading…</div>}
           {!detailLoading && !detail && <div className="center">Not found.</div>}
           {detail && (
@@ -250,9 +247,9 @@ export function Messages() {
               {retryMsg && <span className={retryMsg.startsWith("Error") ? "badge error" : "badge ok"}>{retryMsg}</span>}
             </div>
           )}
-        </aside>
+        </Modal>
       )}
-    </div>
+    </>
   );
 }
 
