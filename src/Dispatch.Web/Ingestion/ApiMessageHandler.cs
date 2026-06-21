@@ -37,8 +37,10 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
         {
             return Results.BadRequest(new { error = ex.Message });
         }
-        catch (Exception ex) when (ex is FormatException or ParseException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is FormatException or ParseException or System.Text.Json.JsonException or ArgumentException)
         {
+            // ArgumentException covers e.g. an invalid custom-header name ("h:" field) from MimeKit — surface
+            // it as a 400 rather than letting it become a 500.
             return Results.BadRequest(new { error = $"Invalid request: {ex.Message}" });
         }
 

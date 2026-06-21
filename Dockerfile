@@ -35,7 +35,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app ./
 # Spool (./.dispatch-spool, resolved against the content root /app) and logs live on volumes.
+# Store the at-rest encryption key in the (persistent) spool volume so it survives container recreation —
+# the content root /app is ephemeral. Without this the key would change each recreate and stored provider
+# secrets couldn't be decrypted.
 ENV DISPATCH_LOG_DIR=/var/log/dispatch
+ENV DISPATCH_KEY_DIR=/app/.dispatch-spool
 RUN mkdir -p /var/log/dispatch /app/.dispatch-spool
 # Dashboard (8420), ingestion API (8025), SMTP (2525) — all configurable in the dashboard afterwards.
 EXPOSE 8420 8025 2525

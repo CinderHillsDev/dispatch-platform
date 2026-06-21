@@ -33,3 +33,7 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# At-rest encryption key (never commit)
+.dispatch-key
+**/.dispatch-key

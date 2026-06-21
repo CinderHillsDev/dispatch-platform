@@ -16,6 +16,7 @@ public class WebAuthMiddlewareTests
     {
         var ctx = new DefaultHttpContext();
         ctx.Connection.LocalPort = port;
+        ctx.Request.Method = "GET";   // real requests always have a method; tests override for mutating cases
         if (remoteIp is not null) ctx.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
         ctx.Request.Path = path;
         if (authenticated)
@@ -50,6 +51,36 @@ public class WebAuthMiddlewareTests
     public async Task Allows_authenticated_protected_api()
     {
         var (ctx, nextCalled) = Context("/api/stats", WebPort, authenticated: true);
+        await Invoke(ctx);
+        Assert.True(nextCalled());
+    }
+
+    [Fact]
+    public async Task Blocks_authenticated_mutating_api_without_csrf_header()
+    {
+        var (ctx, nextCalled) = Context("/api/keys", WebPort, authenticated: true);
+        ctx.Request.Method = "POST";   // no X-Dispatch-Request header → CSRF guard rejects
+        await Invoke(ctx);
+        Assert.Equal(StatusCodes.Status403Forbidden, ctx.Response.StatusCode);
+        Assert.False(nextCalled());
+    }
+
+    [Fact]
+    public async Task Allows_authenticated_mutating_api_with_csrf_header()
+    {
+        var (ctx, nextCalled) = Context("/api/keys", WebPort, authenticated: true);
+        ctx.Request.Method = "POST";
+        ctx.Request.Headers[WebAuthMiddleware.CsrfHeader] = "1";
+        await Invoke(ctx);
+        Assert.True(nextCalled());
+    }
+
+    [Fact]
+    public async Task Allows_authenticated_GET_without_csrf_header()
+    {
+        // Reads are not state-changing, so the CSRF header is not required.
+        var (ctx, nextCalled) = Context("/api/stats", WebPort, authenticated: true);
+        ctx.Request.Method = "GET";
         await Invoke(ctx);
         Assert.True(nextCalled());
     }

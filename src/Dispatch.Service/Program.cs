@@ -13,8 +13,10 @@ using Dispatch.Web;
 using Dispatch.Web.Endpoints;
 using Dispatch.Web.Ingestion;
 using Dispatch.Web.Realtime;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Serilog;
+using System.Text;
 
 var logDirectory = Environment.GetEnvironmentVariable("DISPATCH_LOG_DIR") ?? "logs";
 Log.Logger = new LoggerConfiguration()
@@ -32,6 +34,16 @@ try
     // MSI's service start times out → 1603) and systemd Type=notify. Both are no-ops when run interactively.
     builder.Host.UseWindowsService();
     builder.Host.UseSystemd();
+
+    // CLI: `Dispatch.Service reset-admin-password` resets the dashboard admin password and exits — for
+    // operators locked out locally. Runs before any web setup; uses the same config (appsettings/env).
+    if (args.Contains("reset-admin-password", StringComparer.OrdinalIgnoreCase))
+        return await ResetAdminPasswordAsync(builder.Configuration);
+
+    // Durable location for the at-rest encryption key (non-Windows): DISPATCH_KEY_DIR or the content root.
+    // Must be set before any encrypted config is read/written.
+    SecureConfig.UseKeyDirectory(
+        Environment.GetEnvironmentVariable("DISPATCH_KEY_DIR") ?? builder.Environment.ContentRootPath);
 
     // --- Bootstrap (spec §12.1, §12.6, §12.8) -------------------------------------------------
     // appsettings.json holds ONLY the DB connection string and the Web UI TLS cert. Everything else lives
@@ -125,8 +137,13 @@ try
     // SQL persistence (relay_log, relay_counters, relays, config, api_keys, message-log queries).
     builder.Services.AddDispatchData(connectionString);
 
+    // The dashboard listener is always HTTPS (configured or self-signed cert), so enforce Secure cookies +
+    // HSTS in any non-Development run. In Development the dashboard is reached via the Vite proxy over plain
+    // HTTP, so those are relaxed to keep dev login working.
+    var enforceHttps = !builder.Environment.IsDevelopment();
+
     // Web/ingestion services (SignalR, live feed, rate limiter, API-key middleware) — must follow AddDispatchData.
-    builder.Services.AddDispatchWeb(webSnapshot.RequireHttps,
+    builder.Services.AddDispatchWeb(enforceHttps,
         configCache.GetInt(ConfigKeys.WebUiSessionTimeoutMinutes, 480));
 
     // Hosted services: relay worker pool + SMTP listener.
@@ -150,12 +167,16 @@ try
     if (!string.IsNullOrWhiteSpace(adminPassword)
         && string.IsNullOrEmpty(await configRepo.GetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey)))
     {
+        // The seeded password bypasses the interactive UI policy; warn loudly if it's weak so a weak install
+        // seed doesn't silently become the admin credential (it's still seeded so install isn't blocked).
+        if (Dispatch.Web.Auth.AuthEndpoints.ValidatePassword(adminPassword) is { } weak)
+            Log.Warning("Seeded admin password is weak: {Reason} Change it from the dashboard or via 'reset-admin-password'.", weak);
         await configRepo.SetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey,
             BCrypt.Net.BCrypt.HashPassword(adminPassword, 12), encrypted: false);
         Log.Information("Seeded admin password from install configuration");
     }
 
-    app.UseSecurityHeaders(webSnapshot.Port, webSnapshot.RequireHttps);
+    app.UseSecurityHeaders(webSnapshot.Port, enforceHttps);
     app.UseEmbeddedUi(webSnapshot.Port);
     app.UseAuthentication();
     app.UseMiddleware<Dispatch.Web.Auth.WebAuthMiddleware>();
@@ -178,4 +199,54 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
+}
+
+// --- CLI: reset-admin-password ----------------------------------------------------------------
+// Minimal local recovery tool: prompts for a new dashboard password and writes its bcrypt hash to the
+// SQL config table. Run on the server, e.g.:  Dispatch.Service reset-admin-password
+static async Task<int> ResetAdminPasswordAsync(IConfiguration cfg)
+{
+    var cs = cfg.GetConnectionString("DispatchLog");
+    if (string.IsNullOrWhiteSpace(cs))
+    {
+        Console.Error.WriteLine("ConnectionStrings:DispatchLog is not configured (run from the install dir or set the env var).");
+        return 1;
+    }
+
+    Console.Write("New admin password: ");
+    var pw = ReadSecret();
+    Console.Write("Confirm password:   ");
+    var confirm = ReadSecret();
+    if (pw != confirm) { Console.Error.WriteLine("Passwords do not match."); return 1; }
+    if (Dispatch.Web.Auth.AuthEndpoints.ValidatePassword(pw) is { } error) { Console.Error.WriteLine(error); return 1; }
+
+    try
+    {
+        var repo = new SqlConfigRepository(new SqlConnectionFactory(cs));
+        await repo.SetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey,
+            BCrypt.Net.BCrypt.HashPassword(pw, 12), encrypted: false);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Failed to update the password: {ex.Message}");
+        return 1;
+    }
+
+    Console.WriteLine("Admin password reset. Sign in to the dashboard with the new password.");
+    return 0;
+}
+
+// Reads a line without echoing it (falls back to a normal read when input is piped).
+static string ReadSecret()
+{
+    if (Console.IsInputRedirected) return Console.ReadLine() ?? "";
+    var sb = new StringBuilder();
+    while (true)
+    {
+        var k = Console.ReadKey(intercept: true);
+        if (k.Key == ConsoleKey.Enter) { Console.WriteLine(); break; }
+        if (k.Key == ConsoleKey.Backspace) { if (sb.Length > 0) sb.Length--; continue; }
+        if (!char.IsControl(k.KeyChar)) sb.Append(k.KeyChar);
+    }
+    return sb.ToString();
 }

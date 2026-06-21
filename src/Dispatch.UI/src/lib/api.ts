@@ -189,7 +189,9 @@ async function getJson<T>(url: string): Promise<T> {
 async function sendJson<T>(url: string, method: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
-    headers: { "Content-Type": "application/json" },
+    // X-Dispatch-Request is the CSRF guard: the server requires it on state-changing calls, and a custom
+    // header can't be set cross-origin without a CORS preflight the server never grants.
+    headers: { "Content-Type": "application/json", "X-Dispatch-Request": "1" },
     body: JSON.stringify(body),
   });
   const text = await res.text();

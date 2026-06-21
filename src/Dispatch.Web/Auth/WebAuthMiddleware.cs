@@ -48,8 +48,24 @@ public sealed class WebAuthMiddleware(ConfigCache config) : IMiddleware
             return;
         }
 
+        // CSRF defence-in-depth (spec §17): cookie auth is primarily protected by SameSite=Strict, but for
+        // state-changing dashboard calls we also require the SPA's custom header. A cross-site page can't set
+        // a custom header without a CORS preflight, which this app never grants — so a forged cross-origin
+        // POST/PUT/DELETE is rejected even if SameSite is relaxed/unsupported. The SPA always sends it (lib/api.ts).
+        if (isApi && IsMutating(ctx.Request.Method) && !ctx.Request.Headers.ContainsKey(CsrfHeader))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
         await next(ctx);
     }
+
+    /// <summary>Header the SPA sends on every state-changing request; its presence is the CSRF check.</summary>
+    public const string CsrfHeader = "X-Dispatch-Request";
+
+    private static bool IsMutating(string method) =>
+        !(HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method));
 
     private static bool IsAllowed(IPAddress? remote, string[] cidrs)
     {

@@ -106,7 +106,7 @@ public static class AuthEndpoints
     /// uppercase letter, one lowercase letter and one digit, and not in the common-password list.
     /// Returns a human-readable error message when the password is rejected, or <c>null</c> when it passes.
     /// </summary>
-    internal static string? ValidatePassword(string? password)
+    public static string? ValidatePassword(string? password)
     {
         if (string.IsNullOrWhiteSpace(password) || password.Length < 12)
             return "Password must be at least 12 characters.";

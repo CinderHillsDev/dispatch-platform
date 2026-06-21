@@ -37,7 +37,7 @@ public static class ConfigDefaults
         [ConfigKeys.ApiEnabled] = "true",
         [ConfigKeys.ApiPort] = "8025",
         [ConfigKeys.ApiAllowedCidrs] = AllowAll,
-        [ConfigKeys.ApiMaxMessageBytes] = "0",
+        [ConfigKeys.ApiMaxMessageBytes] = "26214400",   // 25 MiB — bounds in-memory buffering of HTTP uploads (0 = no limit)
         [ConfigKeys.ApiRateLimitPerKey] = "100",
 
         [ConfigKeys.WebUiPort] = "8420",
