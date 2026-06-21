@@ -6,9 +6,11 @@ export function Failed() {
   const [items, setItems] = useState<FailedItem[]>([]);
   const [selected, setSelected] = useState<FailedMessage | null>(null);
   const [busy, setBusy] = useState(false);
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
 
   const refresh = async () => setItems(await api.failed.list());
   useEffect(() => { refresh(); }, []);
+  useEffect(() => { api.settings.get().then((s) => setRetentionDays(s.retention.spoolFailedRetentionDays)).catch(() => {}); }, []);
 
   const open = async (id: string) => setSelected(await api.failed.get(id));
 
@@ -28,6 +30,11 @@ export function Failed() {
       <h1 className="page-title">Retry Queue</h1>
       <p className="muted" style={{ marginTop: -10, marginBottom: 18 }}>
         Messages that exhausted all delivery retries and are held here. Fix the relay, then retry — or delete.
+        {retentionDays !== null && (
+          retentionDays > 0
+            ? <> They're automatically deleted after <strong>{retentionDays} day{retentionDays === 1 ? "" : "s"}</strong> (change under Settings → Storage &amp; retention).</>
+            : <> They're kept until you retry or delete them (retention is off in Settings → Storage &amp; retention).</>
+        )}
       </p>
 
       <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
