@@ -54,16 +54,21 @@ export function Failed() {
 
       {selected && (
         <Modal title={selected.subject || "(no subject)"} onClose={() => setSelected(null)}>
-          <div className="muted" style={{ fontSize: 13 }}>From: {selected.from}</div>
-          <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>To: {selected.to}</div>
-          {selected.lastError && <p><span className="badge error">{selected.lastError}</span></p>}
-          <div style={{ display: "flex", gap: 8, margin: "10px 0 14px" }}>
-            <button disabled={busy} onClick={() => retry(selected.id)}>Retry</button>
-            <button disabled={busy} onClick={() => remove(selected.id)}>Delete</button>
+          <div style={{ display: "grid", gap: 16 }}>
+            <div>
+              <div className="muted" style={{ fontSize: 13, wordBreak: "break-word" }}>{selected.from} → {selected.to}</div>
+              {selected.lastError && (
+                <div className="badge error" style={{ whiteSpace: "pre-wrap", display: "block", padding: 10, borderRadius: 6, marginTop: 8, lineHeight: 1.4 }}>{selected.lastError}</div>
+              )}
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button disabled={busy} onClick={() => retry(selected.id)}>Retry delivery</button>
+                <button disabled={busy} onClick={() => remove(selected.id)}>Delete</button>
+              </div>
+            </div>
+            {selected.html
+              ? <iframe title="message" sandbox="" srcDoc={selected.html} style={{ width: "100%", height: 360, border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }} />
+              : <pre style={{ whiteSpace: "pre-wrap", background: "var(--panel-2)", padding: 14, borderRadius: 8, margin: 0 }}>{selected.text ?? "(empty body)"}</pre>}
           </div>
-          {selected.html
-            ? <iframe title="message" sandbox="" srcDoc={selected.html} style={{ width: "100%", height: 360, border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }} />
-            : <pre style={{ whiteSpace: "pre-wrap", background: "var(--panel-2)", padding: 14, borderRadius: 8 }}>{selected.text ?? "(empty body)"}</pre>}
         </Modal>
       )}
     </>

@@ -53,13 +53,16 @@ export function LocalInbox() {
 
       {selected && (
         <Modal title={selected.subject || "(no subject)"} onClose={() => setSelected(null)}>
-          <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>From: {selected.from}</div>
-          <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>To: {selected.to}</div>
-          {selected.cc && <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>Cc: {selected.cc}</div>}
-          <div className="muted" style={{ fontSize: 13, marginBottom: 14 }}>{new Date(selected.date).toLocaleString()}</div>
-          {selected.html
-            ? <iframe title="message" sandbox="" srcDoc={selected.html} style={{ width: "100%", height: 420, border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }} />
-            : <pre style={{ whiteSpace: "pre-wrap", background: "var(--panel-2)", padding: 14, borderRadius: 8 }}>{selected.text ?? "(empty body)"}</pre>}
+          <div style={{ display: "grid", gap: 16 }}>
+            <div className="muted" style={{ fontSize: 13, wordBreak: "break-word" }}>
+              <div>{selected.from} → {selected.to}</div>
+              {selected.cc && <div>Cc: {selected.cc}</div>}
+              <div style={{ marginTop: 4 }}>{new Date(selected.date).toLocaleString()}</div>
+            </div>
+            {selected.html
+              ? <iframe title="message" sandbox="" srcDoc={selected.html} style={{ width: "100%", height: 420, border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }} />
+              : <pre style={{ whiteSpace: "pre-wrap", background: "var(--panel-2)", padding: 14, borderRadius: 8, margin: 0 }}>{selected.text ?? "(empty body)"}</pre>}
+          </div>
         </Modal>
       )}
     </>
