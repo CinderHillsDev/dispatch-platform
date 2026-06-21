@@ -109,7 +109,7 @@ function RetentionPanel({ settings, onChange }: { settings: AppSettings; onChang
   const rows: { key: keyof AppSettings["retention"]; label: string; help: string; step?: number }[] = [
     { key: "logDeliveredRetentionDays", label: "Delivered log retention (days)", help: "Delivered-message log entries older than this are removed." },
     { key: "logFailedRetentionDays", label: "Failed log retention (days)", help: "Failed-message log entries older than this are removed." },
-    { key: "spoolFailedRetentionDays", label: "Failed spool retention (days)", help: "Failed messages still held on disk older than this are deleted." },
+    { key: "spoolFailedRetentionDays", label: "Retry-queue retention (days)", help: "Messages held in the retry queue (failed, awaiting retry/delete) older than this are removed." },
     { key: "capturedRetentionDays", label: "Captured (local inbox) retention (days)", help: "Captured messages (Local mode) on disk older than this are deleted." },
     { key: "sizeTriggerGb", label: "Size-pressure trigger (GB)", help: "When the database reaches this size, the oldest entries are removed.", step: 0.1 },
     { key: "sizeTargetGb", label: "Size-pressure target (GB)", help: "Size-pressure cleanup runs until the database drops below this.", step: 0.1 },

@@ -23,16 +23,28 @@ function Layout() {
       <aside className="sidebar">
         <div className="brand"><span className="dot" /> Dispatch</div>
         <nav className="nav">
-          <NavLink to="/" end>Dashboard</NavLink>
-          <NavLink to="/messages">Message Log</NavLink>
-          <NavLink to="/failed">Failed</NavLink>
-          <NavLink to="/relays">Relays</NavLink>
-          <NavLink to="/routing">Routing</NavLink>
-          <NavLink to="/smtp-auth">SMTP Auth</NavLink>
-          <NavLink to="/api-keys">API Keys</NavLink>
-          <NavLink to="/inbox">Local Inbox</NavLink>
-          <NavLink to="/settings">Settings</NavLink>
-          <NavLink to="/system">System</NavLink>
+          <div className="nav-group">
+            <div className="nav-label">Monitor</div>
+            <NavLink to="/" end>Dashboard</NavLink>
+            <NavLink to="/messages">Message Log</NavLink>
+            <NavLink to="/failed">Retry Queue</NavLink>
+            <NavLink to="/inbox">Local Inbox</NavLink>
+          </div>
+          <div className="nav-group">
+            <div className="nav-label">Delivery</div>
+            <NavLink to="/relays">Relays</NavLink>
+            <NavLink to="/routing">Routing</NavLink>
+          </div>
+          <div className="nav-group">
+            <div className="nav-label">Access</div>
+            <NavLink to="/smtp-auth">SMTP Auth</NavLink>
+            <NavLink to="/api-keys">API Keys</NavLink>
+          </div>
+          <div className="nav-group">
+            <div className="nav-label">System</div>
+            <NavLink to="/settings">Settings</NavLink>
+            <NavLink to="/system">System</NavLink>
+          </div>
         </nav>
         <button onClick={logout} style={{ marginTop: 18, width: "100%" }}>Sign out</button>
       </aside>

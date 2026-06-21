@@ -25,9 +25,9 @@ export function Failed() {
 
   return (
     <>
-      <h1 className="page-title">Failed Messages</h1>
+      <h1 className="page-title">Retry Queue</h1>
       <p className="muted" style={{ marginTop: -10, marginBottom: 18 }}>
-        Messages that exhausted all retries. Fix the relay, then retry — or delete.
+        Messages that exhausted all delivery retries and are held here. Fix the relay, then retry — or delete.
       </p>
 
       <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
