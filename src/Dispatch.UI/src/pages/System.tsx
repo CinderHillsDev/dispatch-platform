@@ -34,7 +34,7 @@ export function System() {
 
   return (
     <>
-      <h1 className="page-title">System / About</h1>
+      <h1 className="page-title">About</h1>
 
       <div className="panel" style={{ maxWidth: 620 }}>
         <h2>Service</h2>

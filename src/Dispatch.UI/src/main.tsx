@@ -43,7 +43,7 @@ function Layout() {
           <div className="nav-group">
             <div className="nav-label">System</div>
             <NavLink to="/settings">Settings</NavLink>
-            <NavLink to="/system">System</NavLink>
+            <NavLink to="/system">About</NavLink>
           </div>
         </nav>
         <button onClick={logout} style={{ marginTop: 18, width: "100%" }}>Sign out</button>
