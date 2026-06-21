@@ -5,7 +5,7 @@ public sealed class ApiOptions
 {
     public const string SectionName = "Api";
 
-    public int Port { get; set; } = 8081;
+    public int Port { get; set; } = 8025;
 
     /// <summary>Source-IP allow-list. Empty = allow all; the ingestion API is gated by API keys, so the
     /// seeded default is allow-all (see <see cref="ConfigDefaults"/>). Operators tighten it in the dashboard.</summary>

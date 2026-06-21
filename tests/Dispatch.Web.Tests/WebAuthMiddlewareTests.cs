@@ -66,7 +66,7 @@ public class WebAuthMiddlewareTests
     public async Task Ignores_other_ports()
     {
         // Ingestion port (different) is governed by API keys, not the cookie — pass through.
-        var (ctx, nextCalled) = Context("/api/v1/messages", 8421, authenticated: false);
+        var (ctx, nextCalled) = Context("/api/v1/messages", 8025, authenticated: false);
         await Invoke(ctx);
         Assert.True(nextCalled());
     }

@@ -66,20 +66,19 @@ try
     builder.Configuration.GetSection(WebUiOptions.SectionName).Bind(webSnapshot);
 
     // Kestrel: dashboard/read API on the web port, ingestion API on the API port (from SQL config).
-    // The dashboard serves HTTPS when a TLS cert is configured in appsettings (spec §17.2 / §12.2); with no
-    // cert it falls back to plain HTTP for local development (logged as a warning).
+    // The dashboard is HTTPS-only (spec §17.2): it uses the configured TLS cert (appsettings, §12.2) when
+    // present, otherwise an auto-generated, persisted self-signed cert — never plain HTTP. The ingestion
+    // API stays plain HTTP so devices/apps that can't do TLS can still post (it's gated by API keys).
     builder.WebHost.ConfigureKestrel(k =>
     {
-        if (!string.IsNullOrWhiteSpace(webSnapshot.TlsCertPath))
+        k.ListenAnyIP(webSnapshot.Port, lo =>
         {
-            k.ListenAnyIP(webSnapshot.Port, lo => lo.UseHttps(webSnapshot.TlsCertPath,
-                string.IsNullOrEmpty(webSnapshot.TlsCertPassword) ? null : webSnapshot.TlsCertPassword));
-        }
-        else
-        {
-            Log.Warning("WebUi:TlsCertPath is not set — the dashboard is serving plain HTTP. Configure a TLS cert for production (spec §17.2).");
-            k.ListenAnyIP(webSnapshot.Port);
-        }
+            if (!string.IsNullOrWhiteSpace(webSnapshot.TlsCertPath))
+                lo.UseHttps(webSnapshot.TlsCertPath,
+                    string.IsNullOrEmpty(webSnapshot.TlsCertPassword) ? null : webSnapshot.TlsCertPassword);
+            else
+                lo.UseHttps(SelfSignedCert.GetOrCreate(builder.Environment.ContentRootPath));
+        });
         k.ListenAnyIP(apiSnapshot.Port);
     });
 

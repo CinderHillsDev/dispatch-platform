@@ -69,7 +69,7 @@
       <fw:FirewallException Id="FwSmtp25" Name="Dispatch SMTP 25" Port="25" Protocol="tcp" Scope="any" />
       <fw:FirewallException Id="FwSmtp587" Name="Dispatch SMTP 587" Port="587" Protocol="tcp" Scope="any" />
       <fw:FirewallException Id="FwHttp" Name="Dispatch Dashboard" Port="8420" Protocol="tcp" Scope="any" />
-      <fw:FirewallException Id="FwApi" Name="Dispatch API" Port="8421" Protocol="tcp" Scope="any" />
+      <fw:FirewallException Id="FwApi" Name="Dispatch API" Port="8025" Protocol="tcp" Scope="any" />
     </Component>
 
     <!-- Write appsettings.json before the service first starts (spec §12.1). Deferred + impersonate=no so

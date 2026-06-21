@@ -24,7 +24,7 @@ Most applications need to send email. Wiring every app directly to a cloud provi
 ```
 Your apps / devices  →  Dispatch SMTP (port 25/587)   ─┐
                                                          ├→  Mailgun / SendGrid / Azure / SMTP
-Your apps / scripts  →  Dispatch API  (port 8421)      ─┘
+Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
          ↑                       ↕
     202 / 250 OK instantly   spool directory
     (before any DB or        (durable in-flight queue)
@@ -49,7 +49,7 @@ Your apps / scripts  →  Dispatch API  (port 8421)      ─┘
 | | |
 |---|---|
 | 📨 **SMTP listener** | Configurable ports (2525 by default; set 25/587 for production); STARTTLS, AUTH; app-layer CIDR allow-list; denied connections logged |
-| 🌐 **HTTP ingestion API** | `POST /api/v1/messages` on port 8421; multipart or JSON; API key auth; Mailgun-compatible |
+| 🌐 **HTTP ingestion API** | `POST /api/v1/messages` on port 8025; multipart or JSON; API key auth; Mailgun-compatible |
 | ⚡ **Instant 250 OK** | Message written to spool directory before acknowledging sender — no DB or network on the hot path |
 | 📁 **Spool queue** | Local `.eml` files are the durable queue; survive crashes, restarts, and SQL outages |
 | 🔀 **Relay routing** | Named relay configs; recipient/sender routing rules; default relay catch-all; simulate tool |
@@ -120,13 +120,13 @@ x86 servers and Apple Silicon.
 **Try it locally** — one command brings up Dispatch + SQL together (Azure SQL Edge, arm64-native):
 ```bash
 docker compose up --build      # from a clone of this repo
-# dashboard → http://localhost:8420   (default login password: see docker-compose.yml)
+# dashboard → https://localhost:8420  (self-signed cert; default login password: see docker-compose.yml)
 ```
 
 **Run from GHCR** against your own SQL Server / Azure SQL:
 ```bash
 docker run -d --name dispatch \
-  -p 8420:8420 -p 8421:8421 -p 2525:2525 \
+  -p 8420:8420 -p 8025:8025 -p 2525:2525 \
   -e ConnectionStrings__DispatchLog="Server=<host>,1433;Database=DispatchLog;User Id=sa;Password=<pw>;TrustServerCertificate=True;Encrypt=True" \
   -e AdminPassword="<DashboardPassword!>" \
   -v dispatch-spool:/app/.dispatch-spool \
@@ -143,7 +143,7 @@ and private/RFC1918 ranges so it isn't an open relay) — tighten them in **Sett
 
 ## Quick Start
 
-1. Open the dashboard at **http://localhost:8420** and log in with the admin password you set at install (Dispatch serves HTTPS instead when you configure a TLS cert — see [Configuration](#configuration))
+1. Open the dashboard at **https://localhost:8420** and log in with the admin password you set at install. The dashboard is HTTPS-only; with no cert configured it uses an auto-generated **self-signed** certificate, so accept the browser warning (or configure your own cert — see [Configuration](#configuration))
 2. Go to **Settings → Relay Provider** and enter your provider credentials
 3. Click **Send Test Email** to verify the credentials work — watch the live relay log
 4. Click **Save Settings**
@@ -153,11 +153,11 @@ That's it. Dispatch handles everything from there.
 
 ### Sending via HTTP API
 
-If you prefer HTTP over SMTP, use the ingestion API on port 8421:
+If you prefer HTTP over SMTP, use the ingestion API on port 8025:
 
 ```bash
 # Create an API key in the web UI first (Settings → API Keys), then:
-curl -X POST http://localhost:8421/api/v1/messages \
+curl -X POST http://localhost:8025/api/v1/messages \
   -H "Authorization: Bearer dsp_live_your_key_here" \
   -F from="App <noreply@myapp.com>" \
   -F to="user@example.com" \
@@ -177,7 +177,7 @@ All settings are managed through the web UI and stored in SQL Server. The only t
 
 ### Getting to the UI
 
-Open **http://localhost:8420** after installation. On first run, all settings have sensible defaults. The only required step is entering your relay provider credentials under **Settings → Relay Provider**.
+Open **https://localhost:8420** after installation (HTTPS-only; accept the self-signed cert warning if you haven't configured your own). On first run, all settings have sensible defaults. The only required step is entering your relay provider credentials under **Settings → Relay Provider**.
 
 ### SMTP Listener
 
@@ -288,7 +288,7 @@ cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
 ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service
 ```
 
-Ports (defaults): **dashboard `http://localhost:8420`**, **HTTP ingestion API `8421`**, **SMTP `2525`** in
+Ports (defaults): **dashboard `https://localhost:8420`** (HTTPS-only, self-signed by default), **HTTP ingestion API `8025`**, **SMTP `2525`** in
 dev (25/587 in production, which require elevated privileges). The dashboard requires an admin password —
 set `AdminPassword` in `appsettings.Development.json`, or use the one-time first-run setup screen.
 
@@ -366,7 +366,7 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 ## Security
 
-The admin web UI serves **HTTPS when a TLS certificate is configured** (`WebUi:TlsCertPath` in `appsettings.json`); otherwise it falls back to plain HTTP with a startup warning. The Linux installer can generate a self-signed certificate for you with the optional `--generate-cert` flag. Run the dashboard behind TLS (and ideally a reverse proxy) for production. All listeners enforce access via configurable IP/CIDR allow-lists at the application layer (dashboard and API allow all by default — gated by the admin password and API keys respectively; the SMTP listener is limited to loopback + private ranges so it isn't an open relay); denied connections are logged with the source IP. At rest: API keys and the admin password are **bcrypt-hashed**; provider secrets and SMTP credentials are **encrypted** (AES-256-GCM on Linux/macOS, Windows DPAPI). If you find a security issue please report it privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new) rather than a public issue.
+The admin web UI is **HTTPS-only** — it uses your configured TLS certificate (`WebUi:TlsCertPath` in `appsettings.json`) or, if none is set, an auto-generated self-signed certificate persisted across restarts. It never serves plain HTTP. For production, configure a trusted cert (and ideally a reverse proxy). The ingestion API stays HTTP (gated by API keys) for devices that can't do TLS. All listeners enforce access via configurable IP/CIDR allow-lists at the application layer (dashboard and API allow all by default — gated by the admin password and API keys respectively; the SMTP listener is limited to loopback + private ranges so it isn't an open relay); denied connections are logged with the source IP. At rest: API keys and the admin password are **bcrypt-hashed**; provider secrets and SMTP credentials are **encrypted** (AES-256-GCM on Linux/macOS, Windows DPAPI). If you find a security issue please report it privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new) rather than a public issue.
 
 ---
 

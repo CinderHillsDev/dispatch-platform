@@ -97,7 +97,7 @@ jobs:
           Write-Host "Bundle exit code: $($p.ExitCode)"
           $ok = $false
           foreach ($i in 1..24) {
-            try { if ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 http://localhost:8420/health).StatusCode -eq 200) { $ok = $true; break } } catch {}
+            try { if ((Invoke-WebRequest -UseBasicParsing -SkipCertificateCheck -TimeoutSec 5 https://localhost:8420/health).StatusCode -eq 200) { $ok = $true; break } } catch {}
             Start-Sleep -Seconds 5
           }
           if (-not $ok) {
@@ -189,7 +189,7 @@ jobs:
             --admin-password "Ci-Smoke-Passw0rd!" --source "$PWD"
           ok=0
           for _ in $(seq 1 24); do
-            if curl -fsS -m 5 http://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
             sleep 5
           done
           if [ "$ok" != "1" ]; then
@@ -197,4 +197,4 @@ jobs:
             echo "=== journal ==="; sudo journalctl -u dispatch --no-pager -n 50 || true
             echo "health check failed after 120s"; exit 1
           fi
-          curl -fsS http://localhost:8420/health; echo "  <- /health OK"
+          curl -fsSk https://localhost:8420/health; echo "  <- /health OK"

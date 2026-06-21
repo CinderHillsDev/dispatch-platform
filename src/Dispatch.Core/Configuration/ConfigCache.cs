@@ -73,7 +73,7 @@ public sealed class ConfigCache
 
     public ApiOptions Api() => new()
     {
-        Port = GetInt(ConfigKeys.ApiPort, 8421),
+        Port = GetInt(ConfigKeys.ApiPort, 8025),
         AllowedCidrs = GetStringArray(ConfigKeys.ApiAllowedCidrs, []),
         MaxMessageBytes = GetLong(ConfigKeys.ApiMaxMessageBytes, 0),
         RateLimitPerKey = GetInt(ConfigKeys.ApiRateLimitPerKey, 100),

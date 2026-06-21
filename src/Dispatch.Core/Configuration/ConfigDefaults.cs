@@ -35,7 +35,7 @@ public static class ConfigDefaults
         [ConfigKeys.SpoolRetryDelaysSeconds] = "[30,300,1800]",
 
         [ConfigKeys.ApiEnabled] = "true",
-        [ConfigKeys.ApiPort] = "8421",
+        [ConfigKeys.ApiPort] = "8025",
         [ConfigKeys.ApiAllowedCidrs] = AllowAll,
         [ConfigKeys.ApiMaxMessageBytes] = "0",
         [ConfigKeys.ApiRateLimitPerKey] = "100",

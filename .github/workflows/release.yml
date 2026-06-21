@@ -247,7 +247,7 @@ jobs:
           Or use an existing SQL Server / Azure SQL:
             sudo ./install.sh --sql-connection 'Server=...;Database=DispatchLog;User Id=...;Password=...;TrustServerCertificate=True;Encrypt=True' --admin-password '<DashboardPassword!>'
 
-          Then open http://localhost:8420 and log in with the admin password you set.
+          Then open https://localhost:8420 (self-signed cert) and log in with the admin password you set.
           EOF
           tar -czf "${stage}.tar.gz" -C staging "${stage}"
           ls -lh "${stage}.tar.gz"

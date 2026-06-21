@@ -1,7 +1,7 @@
 # Dispatch SMTP Relay — full local stack (Dispatch + SQL), arm64-native on Apple Silicon.
 #
 #   docker compose up --build        # build + run everything
-#   open http://localhost:8420       # dashboard (log in with ADMIN password below)
+#   open https://localhost:8420      # dashboard (self-signed cert; log in with ADMIN password below)
 #
 # Azure SQL Edge is arm64-native so it runs without emulation on Apple Silicon. It speaks the SQL
 # Server wire protocol, so Dispatch talks to it unchanged. Edge is fine for local testing; production
@@ -39,7 +39,7 @@ services:
       AdminPassword: "Dev_Admin_Passw0rd!"
     ports:
       - "8420:8420"   # dashboard
-      - "8421:8421"   # ingestion API
+      - "8025:8025"   # ingestion API
       - "2525:2525"   # SMTP
     volumes:
       - dispatch-spool:/app/.dispatch-spool
