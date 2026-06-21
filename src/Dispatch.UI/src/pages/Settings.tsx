@@ -56,16 +56,16 @@ export function Settings() {
   if (!settings) return <div className="center">Loading…</div>;
 
   const logRows: { key: keyof AppSettings["logging"]; label: string; help: string }[] = [
-    { key: "delivered", label: "Log delivered messages", help: "Write a relay_log row for each delivery. Counters are always recorded regardless." },
-    { key: "retrying", label: "Log retry attempts", help: "Write a relay_log row each time a message is retried." },
-    { key: "denied", label: "Log denied connections", help: "Write a relay_log row when a connection/request is refused." },
+    { key: "delivered", label: "Log delivered messages", help: "Record a log entry for each delivered message. Counters are always recorded regardless." },
+    { key: "retrying", label: "Log retry attempts", help: "Record a log entry each time a message is retried." },
+    { key: "denied", label: "Log denied connections", help: "Record a log entry when a connection or request is refused." },
   ];
 
   const retentionRows: { key: keyof AppSettings["retention"]; label: string; help: string; step?: number }[] = [
-    { key: "logDeliveredRetentionDays", label: "Delivered log retention (days)", help: "relay_log rows for delivered messages older than this are purged." },
-    { key: "logFailedRetentionDays", label: "Failed log retention (days)", help: "relay_log rows for failed messages older than this are purged." },
-    { key: "spoolFailedRetentionDays", label: "Failed spool retention (days)", help: "Files in spool/failed/ older than this are deleted." },
-    { key: "capturedRetentionDays", label: "Captured (local inbox) retention (days)", help: "Files in spool/captured/ older than this are deleted." },
+    { key: "logDeliveredRetentionDays", label: "Delivered log retention (days)", help: "Delivered-message log entries older than this are removed." },
+    { key: "logFailedRetentionDays", label: "Failed log retention (days)", help: "Failed-message log entries older than this are removed." },
+    { key: "spoolFailedRetentionDays", label: "Failed spool retention (days)", help: "Failed messages still held on disk older than this are deleted." },
+    { key: "capturedRetentionDays", label: "Captured (local inbox) retention (days)", help: "Captured messages (Local mode) on disk older than this are deleted." },
     { key: "sizeTriggerGb", label: "Size-pressure trigger (GB)", help: "When the database reaches this size, the oldest rows are purged.", step: 0.1 },
     { key: "sizeTargetGb", label: "Size-pressure target (GB)", help: "Size-pressure purge runs until the database drops below this.", step: 0.1 },
   ];
@@ -98,7 +98,7 @@ export function Settings() {
         </p>
         <label style={{ display: "block", margin: "12px 0" }}>
           <div>Max retries</div>
-          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Attempts before a message is moved to spool/failed/.</div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Delivery attempts before a message is marked failed.</div>
           <input
             type="number"
             min={0}
@@ -117,7 +117,7 @@ export function Settings() {
       <div className="panel" style={{ maxWidth: 620 }}>
         <h2>Retention</h2>
         <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
-          How long log rows and spool files are kept before the purge worker removes them.
+          How long log entries and on-disk messages are kept before they're automatically removed.
         </p>
         {retentionRows.map((r) => (
           <label key={r.key} style={{ display: "block", margin: "12px 0" }}>
@@ -159,7 +159,7 @@ function PurgePanel() {
     setBusy(true); setMsg(null);
     try {
       const r = await api.purge.run();
-      setMsg(`Purged ${r.spoolFilesDeleted} spool files and ${r.logRowsDeleted} log rows.`);
+      setMsg(`Removed ${r.spoolFilesDeleted} on-disk messages and ${r.logRowsDeleted} log entries.`);
       await load();
     } catch (e) {
       setMsg(`Error: ${(e as Error).message}`);
