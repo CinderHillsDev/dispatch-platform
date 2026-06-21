@@ -32,6 +32,7 @@ export function ActionsMenu({ items }: { items: MenuAction[] }) {
           {items.map((it, i) => (
             <button
               key={i}
+              className="menu-item"
               disabled={it.disabled}
               onClick={(e) => { e.stopPropagation(); setOpen(false); it.onClick(); }}
               style={{
