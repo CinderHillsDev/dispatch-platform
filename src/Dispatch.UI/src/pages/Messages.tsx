@@ -189,35 +189,62 @@ export function Messages() {
           {detailLoading && <div className="center">Loading…</div>}
           {!detailLoading && !detail && <div className="center">Not found.</div>}
           {detail && (
-            <dl className="kv" style={{ margin: 0, display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
-              <Field label="Status"><span className={badgeClass(detail.status)}>{detail.event}</span></Field>
-              <Field label="Logged at">{new Date(detail.loggedAt).toLocaleString()}</Field>
-              <Field label="Spool ID"><code>{detail.spoolId}</code></Field>
-              <Field label="From">{detail.fromAddress}</Field>
-              <Field label="To">{detail.toAddresses.length > 0 ? detail.toAddresses.join(", ") : <span className="muted">—</span>}</Field>
-              <Field label="Subject">{detail.subject ?? <span className="muted">(none)</span>}</Field>
-              <Field label="Routing">
-                {detail.routingMatched
-                  ? (detail.routingRuleName ?? "(rule)")
-                  : <span className="muted">Default (no rule)</span>}
-              </Field>
-              <Field label="Relay">{detail.relayName ?? <span className="muted">—</span>}</Field>
-              <Field label="Provider">{detail.provider ?? <span className="muted">—</span>}</Field>
-              <Field label="Provider message ID">{detail.providerMessageId ?? <span className="muted">—</span>}</Field>
-              <Field label="Provider response">{detail.providerResponse ?? <span className="muted">—</span>}</Field>
-              <Field label="Duration">{detail.durationMs != null ? `${detail.durationMs} ms` : <span className="muted">—</span>}</Field>
-              <Field label="Size">{detail.sizeBytes} bytes</Field>
-              <Field label="Retry attempt">{detail.retryAttempt}</Field>
-              <Field label="Source">{detail.ingestSource}{detail.sourceIp ? ` (${detail.sourceIp})` : ""}</Field>
-              <Field label="API key">{detail.apiKeyName ?? <span className="muted">—</span>}</Field>
-              <Field label="Tags">
-                {detail.tags.length > 0
-                  ? detail.tags.map((t) => <span key={t} className="badge" style={{ marginRight: 6 }}>{t}</span>)
-                  : <span className="muted">—</span>}
-              </Field>
-              {detail.error && <Field label="Error"><span className="badge error" style={{ whiteSpace: "pre-wrap" }}>{detail.error}</span></Field>}
+            <div style={{ display: "grid", gap: 18 }}>
+              {/* Summary: the at-a-glance header (status, subject, from → to) + actions. */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span className={badgeClass(detail.status)}>{detail.event}</span>
+                  <span className="muted" style={{ fontSize: 13 }}>{new Date(detail.loggedAt).toLocaleString()}</span>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 600, margin: "10px 0 4px", color: "var(--text)" }}>
+                  {detail.subject ?? <span className="muted">(no subject)</span>}
+                </div>
+                <div className="muted" style={{ fontSize: 13, wordBreak: "break-word" }}>
+                  {detail.fromAddress} → {detail.toAddresses.length > 0 ? detail.toAddresses.join(", ") : `@${detail.toDomain}`}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <button onClick={() => navigator.clipboard?.writeText(detail.spoolId)}>Copy spool ID</button>
+                  {(detail.event === "Failed" || detail.status === "Error") && (
+                    <button
+                      disabled={retrying}
+                      onClick={async () => {
+                        setRetrying(true); setRetryMsg(null);
+                        try { await api.failed.retry(detail.spoolId); setRetryMsg("Re-queued for delivery."); }
+                        catch (e) { setRetryMsg(`Error: ${(e as Error).message}`); }
+                        finally { setRetrying(false); }
+                      }}
+                    >Retry delivery</button>
+                  )}
+                  {retryMsg && <span className={retryMsg.startsWith("Error") ? "badge error" : "badge ok"}>{retryMsg}</span>}
+                </div>
+              </div>
+
+              {detail.error && (
+                <Section title="Error">
+                  <div className="badge error" style={{ whiteSpace: "pre-wrap", display: "block", padding: 10, borderRadius: 6, lineHeight: 1.4 }}>{detail.error}</div>
+                </Section>
+              )}
+
+              <Section title="Delivery">
+                <Row label="Relay">{detail.relayName ?? <Dash />}</Row>
+                <Row label="Routing rule">{detail.routingMatched ? (detail.routingRuleName ?? "(rule)") : <span className="muted">Default (no rule)</span>}</Row>
+                <Row label="Provider">{detail.provider ?? <Dash />}</Row>
+                <Row label="Provider msg ID">{detail.providerMessageId ? <code>{detail.providerMessageId}</code> : <Dash />}</Row>
+                <Row label="Provider response">{detail.providerResponse ?? <Dash />}</Row>
+                <Row label="Duration">{detail.durationMs != null ? `${detail.durationMs} ms` : <Dash />}</Row>
+                <Row label="Attempt">{detail.retryAttempt}</Row>
+              </Section>
+
+              <Section title="Origin">
+                <Row label="Source">{detail.ingestSource}{detail.sourceIp ? ` (${detail.sourceIp})` : ""}</Row>
+                <Row label="API key">{detail.apiKeyName ?? <Dash />}</Row>
+                <Row label="Size">{detail.sizeBytes.toLocaleString()} bytes</Row>
+                <Row label="Tags">{detail.tags.length > 0 ? detail.tags.map((t) => <span key={t} className="badge" style={{ marginRight: 6 }}>{t}</span>) : <Dash />}</Row>
+                <Row label="Spool ID"><code>{detail.spoolId}</code></Row>
+              </Section>
+
               {detail.history.length > 1 && (
-                <Field label={`Retry history (${detail.history.length} attempts)`}>
+                <Section title={`Retry history (${detail.history.length} attempts)`}>
                   <ol style={{ margin: 0, paddingLeft: 16, display: "grid", gap: 6 }}>
                     {detail.history.map((h, i) => (
                       <li key={i} style={{ fontSize: 13 }}>
@@ -228,23 +255,8 @@ export function Messages() {
                       </li>
                     ))}
                   </ol>
-                </Field>
+                </Section>
               )}
-            </dl>
-          )}
-          {detail && (detail.event === "Failed" || detail.status === "Error") && (
-            <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
-              <button
-                disabled={retrying}
-                onClick={async () => {
-                  setRetrying(true); setRetryMsg(null);
-                  try { await api.failed.retry(detail.spoolId); setRetryMsg("Re-queued for delivery."); }
-                  catch (e) { setRetryMsg(`Error: ${(e as Error).message}`); }
-                  finally { setRetrying(false); }
-                }}
-              >Retry delivery</button>
-              <button onClick={() => navigator.clipboard?.writeText(detail.spoolId)}>Copy spool ID</button>
-              {retryMsg && <span className={retryMsg.startsWith("Error") ? "badge error" : "badge ok"}>{retryMsg}</span>}
             </div>
           )}
         </Modal>
@@ -266,10 +278,21 @@ function Recipients({ to, domain }: { to: string[]; domain: string }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+const Dash = () => <span className="muted">—</span>;
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="muted" style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 2 }}>{label}</div>
+      <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em", paddingBottom: 4, marginBottom: 8, borderBottom: "1px solid var(--border)" }}>{title}</div>
+      <div style={{ display: "grid", gap: 8 }}>{children}</div>
+    </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", gap: 12, alignItems: "baseline", fontSize: 13 }}>
+      <div className="muted">{label}</div>
       <div style={{ wordBreak: "break-word" }}>{children}</div>
     </div>
   );
