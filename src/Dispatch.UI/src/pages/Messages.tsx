@@ -8,8 +8,9 @@ function badgeClass(status: string) {
   return "badge error";
 }
 
-// Status filter chips map to the relay_log `event` column (spec §9.2).
-const EVENT_OPTIONS = ["Delivered", "Failed", "Retrying", "Denied", "TestSent"];
+// Status filter chips map to the relay_log `event` column (spec §9.2). Provider tests are logged as
+// real Delivered/Failed events (distinguished only by ingest source "Test"), so there's no test status.
+const EVENT_OPTIONS = ["Delivered", "Failed", "Retrying", "Denied"];
 
 interface Filters {
   events: string[];
@@ -172,6 +173,7 @@ export function Messages() {
                 <option value="">All sources</option>
                 <option value="SMTP">SMTP</option>
                 <option value="API">API</option>
+                <option value="Test">Test (provider test)</option>
               </select>
             </Labeled>
             {filters.source === "API" && (

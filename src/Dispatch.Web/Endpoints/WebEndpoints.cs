@@ -289,7 +289,9 @@ public static class WebEndpoints
         string status, int relayId, string relayName, string provider, RelayMessage msg,
         string? subject, int durationMs, string? providerMessageId, string? detail, string? error) => new()
     {
-        Event = "TestSent",
+        // A provider test is logged like a real message — Delivered/Failed by outcome — so it "feels" real;
+        // it's identified as a test only by its origin (IngestSource = "Test"), not a separate status.
+        Event = status == "OK" ? "Delivered" : "Failed",
         Status = status,
         SpoolId = "test-" + Guid.NewGuid().ToString("N")[..8],
         FromAddress = msg.FromAddress,
