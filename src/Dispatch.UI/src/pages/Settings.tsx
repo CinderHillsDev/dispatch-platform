@@ -198,20 +198,21 @@ function ConnectionsTab({ initial }: { initial: SystemConfig }) {
   const [apiCfg, setApiCfg] = useState(initial.api);
   const [webui, setWebui] = useState(initial.webui);
   const [portsText, setPortsText] = useState(initial.listener.ports.join(", "));
-  const [lCidrText, setLCidrText] = useState(initial.listener.allowedCidrs.join(", "));
-  const [aCidrText, setACidrText] = useState(initial.api.allowedCidrs.join(", "));
 
   return (
     <>
+      <p className="muted" style={{ fontSize: 13, marginTop: -4, marginBottom: 14 }}>
+        IP allow-lists moved to the <strong>Access Control</strong> page.
+      </p>
+
       <SavePanel title="SMTP listener" restart
-        intro="The SMTP server your apps and devices send mail to. Allow-list and size limit apply live; the rest apply after a restart."
+        intro="The SMTP server your apps and devices send mail to. Size limit applies live; the rest apply after a restart."
         onSave={() => api.settings.putListener({
-          ports: csvNums(portsText), serverName: listener.serverName, allowedCidrs: csvStrs(lCidrText),
+          ports: csvNums(portsText), serverName: listener.serverName,
           maxMessageBytes: listener.maxMessageBytes, requireAuth: listener.requireAuth,
         })}>
         <Txt label="Ports — comma-separated, e.g. 25, 587, 2525" value={portsText} onChange={setPortsText} />
         <Txt label="Server name" value={listener.serverName} onChange={(v) => setListener({ ...listener, serverName: v })} />
-        <Txt label="Allow-list — comma-separated CIDRs" value={lCidrText} onChange={setLCidrText} />
         <Num label="Max message bytes (0 = no limit)" value={listener.maxMessageBytes} onChange={(v) => setListener({ ...listener, maxMessageBytes: v })} />
         <Chk label="Require SMTP AUTH" checked={listener.requireAuth} onChange={(v) => setListener({ ...listener, requireAuth: v })} />
       </SavePanel>
@@ -219,12 +220,11 @@ function ConnectionsTab({ initial }: { initial: SystemConfig }) {
       <ListenerCertPanel initial={initial.listener.tlsCertSource} />
 
       <SavePanel title="HTTP ingestion API" restart
-        intro="The HTTP endpoint for posting messages with an API key. Allow-list, size limit and rate limit apply live; the port applies after a restart."
+        intro="The HTTP endpoint for posting messages with an API key. Size limit and rate limit apply live; the port applies after a restart."
         onSave={() => api.settings.putApi({
-          port: apiCfg.port, allowedCidrs: csvStrs(aCidrText), maxMessageBytes: apiCfg.maxMessageBytes, rateLimitPerKey: apiCfg.rateLimitPerKey,
+          port: apiCfg.port, maxMessageBytes: apiCfg.maxMessageBytes, rateLimitPerKey: apiCfg.rateLimitPerKey,
         })}>
         <Num label="Port" value={apiCfg.port} onChange={(v) => setApiCfg({ ...apiCfg, port: v })} />
-        <Txt label="Allow-list — comma-separated CIDRs" value={aCidrText} onChange={setACidrText} />
         <Num label="Max message bytes (0 = no limit)" value={apiCfg.maxMessageBytes} onChange={(v) => setApiCfg({ ...apiCfg, maxMessageBytes: v })} />
         <Num label="Rate limit / key per minute" value={apiCfg.rateLimitPerKey} onChange={(v) => setApiCfg({ ...apiCfg, rateLimitPerKey: v })} />
       </SavePanel>
@@ -333,7 +333,6 @@ function UploadCertModal({ onClose, onDone }: { onClose: () => void; onDone: () 
 }
 
 const csvNums = (s: string) => s.split(",").map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n >= 0);
-const csvStrs = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
 function Labeled({ label, children }: { label: string; children: ReactNode }) {
   return (

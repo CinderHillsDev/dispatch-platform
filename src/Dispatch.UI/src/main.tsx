@@ -14,6 +14,7 @@ import { SmtpAuth } from "./pages/SmtpAuth";
 import { ApiKeys } from "./pages/ApiKeys";
 import { Settings } from "./pages/Settings";
 import { System } from "./pages/System";
+import { AccessControl } from "./pages/AccessControl";
 import { AuthGate, logout } from "./auth";
 import "./index.css";
 
@@ -37,6 +38,7 @@ function Layout() {
           </div>
           <div className="nav-group">
             <div className="nav-label">Access</div>
+            <NavLink to="/access">Access Control</NavLink>
             <NavLink to="/smtp-auth">SMTP Auth</NavLink>
             <NavLink to="/api-keys">API Keys</NavLink>
           </div>
@@ -74,6 +76,7 @@ const pages: { path: string; element: ReactNode }[] = [
   { path: "/failed", element: <Failed /> },
   { path: "/relays", element: <Relays /> },
   { path: "/routing", element: <Routing /> },
+  { path: "/access", element: <AccessControl /> },
   { path: "/smtp-auth", element: <SmtpAuth /> },
   { path: "/api-keys", element: <ApiKeys /> },
   { path: "/inbox", element: <LocalInbox /> },
