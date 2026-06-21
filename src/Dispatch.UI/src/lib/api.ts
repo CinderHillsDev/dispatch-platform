@@ -207,6 +207,7 @@ export const api = {
   relayStats: () => getJson<RelayStat[]>("/api/stats/relays"),
   messages: (params: URLSearchParams) => getJson<MessagePage>(`/api/messages?${params}`),
   message: (id: number) => getJson<MessageDetail>(`/api/messages/${id}`),
+  messageIdBySpool: (spoolId: string) => getJson<{ id: number }>(`/api/messages/by-spool/${encodeURIComponent(spoolId)}`),
 
   relays: {
     list: () => getJson<RelayListItem[]>("/api/relays"),

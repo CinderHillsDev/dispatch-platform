@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, type InboxItem, type InboxMessage } from "../lib/api";
 import { Modal } from "../Modal";
 
 export function LocalInbox() {
+  const navigate = useNavigate();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [selected, setSelected] = useState<InboxMessage | null>(null);
   const [retentionDays, setRetentionDays] = useState<number | null>(null);
@@ -65,6 +67,11 @@ export function LocalInbox() {
               <div>{selected.from} → {selected.to}</div>
               {selected.cc && <div>Cc: {selected.cc}</div>}
               <div style={{ marginTop: 4 }}>{new Date(selected.date).toLocaleString()}</div>
+              <div style={{ marginTop: 8 }}>
+                <button onClick={() => navigate(`/messages?spool=${encodeURIComponent(selected.id.replace(/\.eml$/i, ""))}`)}>
+                  View in Message Log →
+                </button>
+              </div>
             </div>
             {selected.html
               ? <iframe title="message" sandbox="" srcDoc={selected.html} style={{ width: "100%", height: 420, border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }} />

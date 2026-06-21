@@ -222,6 +222,13 @@ public static class WebEndpoints
             return detail is null ? Results.NotFound() : Results.Ok(detail);
         });
 
+        // Resolve a spool id to its message-log row id, so the Local Inbox can deep-link to a message's log entry.
+        group.MapGet("/messages/by-spool/{spoolId}", async (string spoolId, IMessageLogQuery logs, CancellationToken ct) =>
+        {
+            var row = await logs.GetBySpoolIdAsync(spoolId, null, ct);
+            return row is null ? Results.NotFound() : Results.Ok(new { id = row.Id });
+        });
+
         group.MapAuth();            // /api/auth/* (see AuthEndpoints)
         group.MapSettings();        // /api/settings (see SettingsEndpoints)
         group.MapServiceOps();      // /api/service/* (see ServiceEndpoints)

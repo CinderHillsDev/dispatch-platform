@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, type MessageRow, type MessageDetail, type RelayListItem, type RuleItem, type ApiKeyItem } from "../lib/api";
 import { Modal } from "../Modal";
 
@@ -112,6 +113,18 @@ export function Messages() {
     setSelected(id); setDetail(null); setDetailLoading(true);
     api.message(id).then(setDetail).catch(() => setDetail(null)).finally(() => setDetailLoading(false));
   }, [selected]);
+
+  // Deep-link: /messages?spool=<id> (e.g. from the Local Inbox) opens that message's detail directly.
+  const [searchParams] = useSearchParams();
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    const spool = searchParams.get("spool");
+    if (!spool || deepLinked.current) return;
+    deepLinked.current = true;
+    api.messageIdBySpool(spool)
+      .then((r) => { setSelected(r.id); setDetailLoading(true); return api.message(r.id); })
+      .then(setDetail).catch(() => setDetail(null)).finally(() => setDetailLoading(false));
+  }, [searchParams]);
 
   return (
     <>
