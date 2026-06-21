@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
-import { api, type InboxItem, type InboxMessage } from "../lib/api";
+import { api, type InboxItem, type InboxMessage, type MessageDetail } from "../lib/api";
 import { Modal } from "../Modal";
+
+const badgeClass = (status: string) =>
+  status === "OK" ? "badge ok" : status === "Denied" ? "badge denied" : "badge error";
 
 export function LocalInbox() {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [selected, setSelected] = useState<InboxMessage | null>(null);
   const [retentionDays, setRetentionDays] = useState<number | null>(null);
+  // Delivery-log detail for the open message, fetched on demand from the database (by spool id).
+  const [log, setLog] = useState<MessageDetail | null>(null);
+  const [logLoading, setLogLoading] = useState(false);
+  const [logErr, setLogErr] = useState<string | null>(null);
 
   const refresh = async () => setItems(await api.inbox.list());
   useEffect(() => {
@@ -15,7 +22,23 @@ export function LocalInbox() {
   }, []);
   useEffect(() => { api.settings.get().then((s) => setRetentionDays(s.retention.capturedRetentionDays)).catch(() => {}); }, []);
 
-  const open = async (id: string) => setSelected(await api.inbox.get(id));
+  const open = async (id: string) => { setLog(null); setLogErr(null); setSelected(await api.inbox.get(id)); };
+  const closeDetail = () => { setSelected(null); setLog(null); setLogErr(null); };
+
+  // The captured file is named "{spoolId}.eml", so the spool id (matching relay_log) is the id minus .eml.
+  const loadLog = async () => {
+    if (!selected) return;
+    setLogLoading(true); setLogErr(null);
+    try {
+      const spoolId = selected.id.replace(/\.eml$/i, "");
+      const { id } = await api.messageIdBySpool(spoolId);
+      setLog(await api.message(id));
+    } catch {
+      setLogErr("No delivery-log entry found for this message.");
+    } finally {
+      setLogLoading(false);
+    }
+  };
 
   const remove = async (id: string) => {
     await api.inbox.remove(id);
@@ -59,13 +82,46 @@ export function LocalInbox() {
       </div>
 
       {selected && (
-        <Modal title={selected.subject || "(no subject)"} onClose={() => setSelected(null)}>
+        <Modal title={selected.subject || "(no subject)"} onClose={closeDetail}>
           <div style={{ display: "grid", gap: 16 }}>
             <div className="muted" style={{ fontSize: 13, wordBreak: "break-word" }}>
               <div>{selected.from} → {selected.to}</div>
               {selected.cc && <div>Cc: {selected.cc}</div>}
               <div style={{ marginTop: 4 }}>{new Date(selected.date).toLocaleString()}</div>
+              <div style={{ marginTop: 8 }}>
+                {!log && <button onClick={loadLog} disabled={logLoading}>{logLoading ? "Loading…" : "Show delivery log"}</button>}
+                {logErr && <span className="badge denied" style={{ marginLeft: 8 }}>{logErr}</span>}
+              </div>
             </div>
+
+            {log && (
+              <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <strong style={{ fontSize: 13 }}>Delivery log</strong>
+                  <span className={badgeClass(log.status)}>{log.event}</span>
+                </div>
+                <div className="muted" style={{ fontSize: 13, display: "grid", gap: 4 }}>
+                  <div>Relay: {log.relayName ?? "—"} · Provider: {log.provider ?? "—"}</div>
+                  <div>Source: {log.ingestSource}{log.durationMs != null ? ` · ${log.durationMs} ms` : ""}</div>
+                  <div>Logged: {new Date(log.loggedAt).toLocaleString()}</div>
+                </div>
+                {log.error && (
+                  <div className="badge error" style={{ whiteSpace: "pre-wrap", display: "block", padding: 8, borderRadius: 6, marginTop: 8, lineHeight: 1.4 }}>{log.error}</div>
+                )}
+                {log.history.length > 1 && (
+                  <ol style={{ margin: "10px 0 0", paddingLeft: 18 }}>
+                    {log.history.map((h, i) => (
+                      <li key={i} style={{ fontSize: 13 }}>
+                        <span className={badgeClass(h.status)} style={{ marginRight: 6 }}>{h.event}</span>
+                        <span className="muted">{new Date(h.loggedAt).toLocaleString()}</span>
+                        {h.durationMs != null ? <span className="muted"> · {h.durationMs} ms</span> : null}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            )}
+
             {selected.html
               ? <iframe title="message" sandbox="" srcDoc={selected.html} style={{ width: "100%", height: 420, border: "1px solid var(--border)", borderRadius: 8, background: "#fff" }} />
               : <pre style={{ whiteSpace: "pre-wrap", background: "var(--panel-2)", padding: 14, borderRadius: 8, margin: 0 }}>{selected.text ?? "(empty body)"}</pre>}
