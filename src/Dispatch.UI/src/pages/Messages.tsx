@@ -245,9 +245,8 @@ export function Messages() {
                 <div className="muted" style={{ fontSize: 13, wordBreak: "break-word" }}>
                   {detail.fromAddress} → {detail.toAddresses.length > 0 ? detail.toAddresses.join(", ") : `@${detail.toDomain}`}
                 </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
-                  <button onClick={() => navigator.clipboard?.writeText(detail.spoolId)}>Copy spool ID</button>
-                  {(detail.event === "Failed" || detail.status === "Error") && (
+                {(detail.event === "Failed" || detail.status === "Error") && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
                     <button
                       disabled={retrying}
                       onClick={async () => {
@@ -257,9 +256,9 @@ export function Messages() {
                         finally { setRetrying(false); }
                       }}
                     >Retry delivery</button>
-                  )}
-                  {retryMsg && <span className={retryMsg.startsWith("Error") ? "badge error" : "badge ok"}>{retryMsg}</span>}
-                </div>
+                    {retryMsg && <span className={retryMsg.startsWith("Error") ? "badge error" : "badge ok"}>{retryMsg}</span>}
+                  </div>
+                )}
               </div>
 
               {detail.error && (
