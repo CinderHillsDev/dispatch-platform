@@ -14,6 +14,7 @@ public static class ConfigKeys
     public const string ListenerRequireAuth = "listener.require_auth";
     public const string ListenerTlsCertPath = "listener.tls_cert_path";
     public const string ListenerTlsCertPassword = "listener.tls_cert_password"; // encrypted
+    public const string ListenerTlsCertSource = "listener.tls_cert_source";     // "generated" | "uploaded" | ""
     public const string ListenerConnectionTimeoutSeconds = "listener.connection_timeout_seconds";
     public const string ListenerMaxConnections = "listener.max_connections";
 

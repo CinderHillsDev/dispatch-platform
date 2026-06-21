@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type AppSettings, type SystemConfig, type PurgeRun } from "../lib/api";
+import { Modal } from "../Modal";
 
 type Tab = "connections" | "delivery" | "storage";
 
@@ -206,15 +207,16 @@ function ConnectionsTab({ initial }: { initial: SystemConfig }) {
         intro="The SMTP server your apps and devices send mail to. Allow-list and size limit apply live; the rest apply after a restart."
         onSave={() => api.settings.putListener({
           ports: csvNums(portsText), serverName: listener.serverName, allowedCidrs: csvStrs(lCidrText),
-          maxMessageBytes: listener.maxMessageBytes, requireAuth: listener.requireAuth, tlsCertPath: listener.tlsCertPath,
+          maxMessageBytes: listener.maxMessageBytes, requireAuth: listener.requireAuth,
         })}>
         <Txt label="Ports — comma-separated, e.g. 25, 587, 2525" value={portsText} onChange={setPortsText} />
         <Txt label="Server name" value={listener.serverName} onChange={(v) => setListener({ ...listener, serverName: v })} />
         <Txt label="Allow-list — comma-separated CIDRs" value={lCidrText} onChange={setLCidrText} />
         <Num label="Max message bytes (0 = no limit)" value={listener.maxMessageBytes} onChange={(v) => setListener({ ...listener, maxMessageBytes: v })} />
         <Chk label="Require SMTP AUTH" checked={listener.requireAuth} onChange={(v) => setListener({ ...listener, requireAuth: v })} />
-        <Txt label="STARTTLS cert path" value={listener.tlsCertPath} onChange={(v) => setListener({ ...listener, tlsCertPath: v })} />
       </SavePanel>
+
+      <ListenerCertPanel initial={initial.listener.tlsCertSource} />
 
       <SavePanel title="HTTP ingestion API" restart
         intro="The HTTP endpoint for posting messages with an API key. Allow-list, size limit and rate limit apply live; the port applies after a restart."
@@ -263,8 +265,84 @@ function SavePanel({ title, intro, restart, onSave, children }: {
   );
 }
 
+// STARTTLS cert: generate a self-signed one or upload a cert + key — no file paths. Applies on restart.
+function ListenerCertPanel({ initial }: { initial: string }) {
+  const [source, setSource] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const status = source === "generated" ? "Using a generated self-signed certificate."
+    : source === "uploaded" ? "Using an uploaded certificate."
+    : "Off — SMTP connections aren't encrypted (AUTH passwords would cross the wire in clear text).";
+
+  const run = async (fn: () => Promise<unknown>, newSource: string, done: string) => {
+    setBusy(true); setMsg(null);
+    try { await fn(); setSource(newSource); setMsg(done); }
+    catch (e) { setMsg(`Error: ${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="panel" style={{ maxWidth: 620, marginTop: 18 }}>
+      <h2>STARTTLS certificate</h2>
+      <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
+        Encrypts SMTP connections. Generate a self-signed certificate or upload your own. Applies after the next service restart.
+      </p>
+      <p style={{ fontSize: 13 }}>
+        {source ? <span className="badge ok">{source}</span> : <span className="badge denied">off</span>}
+        <span className="muted" style={{ marginLeft: 8 }}>{status}</span>
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+        <button disabled={busy} onClick={() => run(api.settings.generateListenerCert, "generated", "Generated — restart to apply.")}>Generate certificate</button>
+        <button disabled={busy} onClick={() => setUploading(true)}>Upload cert + key</button>
+        {source && <button disabled={busy} onClick={() => run(api.settings.removeListenerCert, "", "Removed — restart to apply.")}>Remove</button>}
+        {msg && <span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span>}
+      </div>
+      {uploading && <UploadCertModal onClose={() => setUploading(false)} onDone={() => { setSource("uploaded"); setMsg("Uploaded — restart to apply."); setUploading(false); }} />}
+    </div>
+  );
+}
+
+function UploadCertModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [cert, setCert] = useState<File | null>(null);
+  const [key, setKey] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const upload = async () => {
+    if (!cert || !key) { setErr("Both a certificate and a key file are required."); return; }
+    setBusy(true); setErr(null);
+    try { await api.settings.uploadListenerCert(cert, key); onDone(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Modal title="Upload certificate + key" onClose={onClose}>
+      <div style={{ display: "grid", gap: 12 }}>
+        <p className="muted" style={{ fontSize: 13, margin: 0 }}>PEM-encoded certificate and its unencrypted private key.</p>
+        <Labeled label="Certificate (.pem / .crt)"><input type="file" accept=".pem,.crt,.cer" onChange={(e) => setCert(e.target.files?.[0] ?? null)} /></Labeled>
+        <Labeled label="Private key (.pem / .key)"><input type="file" accept=".pem,.key" onChange={(e) => setKey(e.target.files?.[0] ?? null)} /></Labeled>
+        {err && <p style={{ color: "var(--red)", fontSize: 13, margin: 0 }}>{err}</p>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose}>Cancel</button>
+          <button onClick={upload} disabled={busy}>{busy ? "Uploading…" : "Upload"}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 const csvNums = (s: string) => s.split(",").map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n >= 0);
 const csvStrs = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+
+function Labeled({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label style={{ display: "block", margin: "8px 0" }}>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>
+      {children}
+    </label>
+  );
+}
 
 function Txt({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (

@@ -157,7 +157,7 @@ export interface SystemConfig {
   listener: {
     ports: number[]; serverName: string; allowedCidrs: string[];
     maxMessageBytes: number; requireAuth: boolean;
-    tlsEnabled: boolean; tlsCertPath: string; appliesOnRestart: string[];
+    tlsEnabled: boolean; tlsCertSource: string; appliesOnRestart: string[];
   };
   api: { port: number; allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number; appliesOnRestart: string[] };
   webui: { port: number; requireHttps: boolean; appliesOnRestart: string[] };
@@ -278,6 +278,18 @@ export const api = {
     saveLogging: (logging: AppSettings["logging"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { logging }),
     saveRetry: (retry: AppSettings["retry"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retry }),
     saveRetention: (retention: AppSettings["retention"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retention }),
+    generateListenerCert: () => sendJson<{ ok: boolean; source: string }>("/api/config/listener-cert/generate", "POST", {}),
+    removeListenerCert: () => sendJson<{ ok: boolean }>("/api/config/listener-cert", "DELETE", {}),
+    uploadListenerCert: async (cert: File, key: File) => {
+      const fd = new FormData();
+      fd.append("cert", cert);
+      fd.append("key", key);
+      const res = await fetch("/api/config/listener-cert/upload", { method: "POST", headers: { "X-Dispatch-Request": "1" }, body: fd });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!res.ok) throw new Error(data?.error ?? `${res.status} ${res.statusText}`);
+      return data as { ok: boolean; source: string };
+    },
   },
 
   purge: {

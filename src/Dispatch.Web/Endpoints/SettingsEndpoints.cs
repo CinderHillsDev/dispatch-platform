@@ -3,8 +3,10 @@ using System.Text.Json;
 using Dispatch.Core.Configuration;
 using Dispatch.Data.Repositories;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Dispatch.Web.Endpoints;
@@ -38,8 +40,8 @@ public static class SettingsEndpoints
                     maxMessageBytes = l.MaxMessageBytes,
                     requireAuth = l.RequireAuth,
                     tlsEnabled = !string.IsNullOrWhiteSpace(l.TlsCertPath),
-                    tlsCertPath = l.TlsCertPath,
-                    appliesOnRestart = new[] { "ports", "serverName", "requireAuth", "tlsCertPath" },
+                    tlsCertSource = cache.GetString(ConfigKeys.ListenerTlsCertSource, ""),
+                    appliesOnRestart = new[] { "ports", "serverName", "requireAuth", "tls" },
                 },
                 api = new
                 {
@@ -66,6 +68,43 @@ public static class SettingsEndpoints
             if (d.RequireAuth is { } ra) await config.SetAsync(ConfigKeys.ListenerRequireAuth, ra ? "true" : "false", false, ct);
             if (d.TlsCertPath is { } tp) await config.SetAsync(ConfigKeys.ListenerTlsCertPath, tp, false, ct);
             if (d.TlsCertPassword is { } tpw) await config.SetAsync(ConfigKeys.ListenerTlsCertPassword, tpw, encrypted: true, ct);
+            await cache.LoadAsync(config, ct);
+            return Results.Ok(new { ok = true });
+        });
+
+        // STARTTLS cert management — operators generate a self-signed cert or upload a cert + key (no file
+        // paths). The listener loads it at startup, so changes take effect after a service restart.
+        group.MapPost("/config/listener-cert/generate", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
+        {
+            var cn = cache.Listener().ServerName is { Length: > 0 } s ? s : "Dispatch";
+            var (path, pw) = ListenerCert.Generate(env.ContentRootPath, cn);
+            await SetCertAsync(config, path, pw, "generated", ct);
+            await cache.LoadAsync(config, ct);
+            return Results.Ok(new { ok = true, source = "generated" });
+        });
+
+        group.MapPost("/config/listener-cert/upload", async (HttpRequest req, ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
+        {
+            if (!req.HasFormContentType) return Results.BadRequest(new { error = "Expected a multipart upload with 'cert' and 'key' files." });
+            var form = await req.ReadFormAsync(ct);
+            var certFile = form.Files["cert"];
+            var keyFile = form.Files["key"];
+            if (certFile is null || keyFile is null) return Results.BadRequest(new { error = "Both a 'cert' and a 'key' PEM file are required." });
+            string certPem, keyPem;
+            using (var r = new StreamReader(certFile.OpenReadStream())) certPem = await r.ReadToEndAsync(ct);
+            using (var r = new StreamReader(keyFile.OpenReadStream())) keyPem = await r.ReadToEndAsync(ct);
+            string path, pw;
+            try { (path, pw) = ListenerCert.FromPem(env.ContentRootPath, certPem, keyPem); }
+            catch (Exception ex) { return Results.BadRequest(new { error = $"Invalid certificate or key: {ex.Message}" }); }
+            await SetCertAsync(config, path, pw, "uploaded", ct);
+            await cache.LoadAsync(config, ct);
+            return Results.Ok(new { ok = true, source = "uploaded" });
+        });
+
+        group.MapDelete("/config/listener-cert", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
+        {
+            ListenerCert.Delete(env.ContentRootPath);
+            await SetCertAsync(config, "", "", "", ct);
             await cache.LoadAsync(config, ct);
             return Results.Ok(new { ok = true });
         });
@@ -202,6 +241,13 @@ public static class SettingsEndpoints
 
     private static Task SetDouble(IConfigRepository config, string key, double value, CancellationToken ct) =>
         config.SetAsync(key, value.ToString(CultureInfo.InvariantCulture), encrypted: false, ct);
+
+    private static async Task SetCertAsync(IConfigRepository config, string path, string password, string source, CancellationToken ct)
+    {
+        await config.SetAsync(ConfigKeys.ListenerTlsCertPath, path, encrypted: false, ct);
+        await config.SetAsync(ConfigKeys.ListenerTlsCertPassword, password, encrypted: true, ct);
+        await config.SetAsync(ConfigKeys.ListenerTlsCertSource, source, encrypted: false, ct);
+    }
 
     private sealed record UpdateSettingsRequest(LoggingToggles? Logging, RetrySettingsDto? Retry, RetentionSettingsDto? Retention);
     private sealed record LoggingToggles(bool? Delivered, bool? Retrying, bool? Denied);
