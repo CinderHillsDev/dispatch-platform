@@ -111,7 +111,7 @@ function LoggingPanel({ initial }: { initial: AppSettings["logging"] }) {
     { key: "denied", label: "Log denied connections", help: "Record a log entry when a connection or request is refused." },
   ];
   return (
-    <SavePanel title="Message logging"
+    <SavePanel title="Message logging" value={logging}
       intro="Suppressing log entries reduces database growth on high-volume relays. Dashboard counters and throughput are unaffected."
       onSave={() => api.settings.saveLogging(logging)}>
       {logRows.map((r) => (
@@ -129,7 +129,7 @@ function RetryPanel({ initial }: { initial: AppSettings["retry"] }) {
   const [retry, setRetry] = useState(initial);
   const [delaysText, setDelaysText] = useState(initial.retryDelaysSeconds.join(", "));
   return (
-    <SavePanel title="Retry policy"
+    <SavePanel title="Retry policy" value={{ retry, delaysText }}
       intro="Back-off for transient delivery failures. The last delay repeats for any further attempts."
       onSave={() => api.settings.saveRetry({ ...retry, retryDelaysSeconds: csvNums(delaysText) })}>
       <label style={{ display: "block", margin: "12px 0" }}>
@@ -160,7 +160,7 @@ function RetentionPanel({ initial }: { initial: AppSettings["retention"] }) {
     { key: "sizeTargetGb", label: "Size-pressure target (GB)", help: "Size-pressure cleanup runs until the database drops below this.", step: 0.1 },
   ];
   return (
-    <SavePanel title="Retention"
+    <SavePanel title="Retention" value={retention}
       intro="How long log entries and on-disk messages are kept before they're automatically removed."
       onSave={() => api.settings.saveRetention(retention)}>
       {rows.map((r) => (
@@ -178,7 +178,7 @@ function RetentionPanel({ initial }: { initial: AppSettings["retention"] }) {
 function SpoolPanel({ initial }: { initial: SystemConfig }) {
   const [spool, setSpool] = useState(initial.spool);
   return (
-    <SavePanel title="Spool" restart
+    <SavePanel title="Spool" restart value={spool}
       intro="Where in-flight messages are stored, and how many delivery workers run."
       onSave={() => api.settings.putSpool({ directory: spool.directory, workerCount: spool.workerCount })}>
       <Txt label="Directory" value={spool.directory} onChange={(v) => setSpool({ ...spool, directory: v })} />
@@ -257,7 +257,7 @@ function SmtpListenerPanel({ initial }: { initial: SystemConfig["listener"] }) {
   const [listener, setListener] = useState(initial);
   const [portsText, setPortsText] = useState(initial.ports.join(", "));
   return (
-    <SavePanel title="SMTP listener" restart
+    <SavePanel title="SMTP listener" restart value={{ listener, portsText }}
       intro="The SMTP server your apps and devices send mail to. Size limit applies live; the rest apply after a restart."
       onSave={() => api.settings.putListener({
         ports: csvNums(portsText), serverName: listener.serverName,
@@ -265,7 +265,7 @@ function SmtpListenerPanel({ initial }: { initial: SystemConfig["listener"] }) {
       })}>
       <Txt label="Ports — comma-separated, e.g. 25, 587, 2525" value={portsText} onChange={setPortsText} />
       <Txt label="Server name" value={listener.serverName} onChange={(v) => setListener({ ...listener, serverName: v })} />
-      <Num label="Max message bytes (0 = no limit)" value={listener.maxMessageBytes} onChange={(v) => setListener({ ...listener, maxMessageBytes: v })} />
+      <NumMb label="Max message size (MB, 0 = no limit)" bytes={listener.maxMessageBytes} onChange={(b) => setListener({ ...listener, maxMessageBytes: b })} />
       <Chk label="Require SMTP AUTH" checked={listener.requireAuth} onChange={(v) => setListener({ ...listener, requireAuth: v })} />
     </SavePanel>
   );
@@ -274,13 +274,13 @@ function SmtpListenerPanel({ initial }: { initial: SystemConfig["listener"] }) {
 function ApiPanel({ initial }: { initial: SystemConfig["api"] }) {
   const [apiCfg, setApiCfg] = useState(initial);
   return (
-    <SavePanel title="HTTP ingestion API" restart
+    <SavePanel title="HTTP ingestion API" restart value={apiCfg}
       intro="The HTTP endpoint for posting messages with an API key. Size limit and rate limit apply live; the port applies after a restart."
       onSave={() => api.settings.putApi({
         port: apiCfg.port, maxMessageBytes: apiCfg.maxMessageBytes, rateLimitPerKey: apiCfg.rateLimitPerKey,
       })}>
       <Num label="Port" value={apiCfg.port} onChange={(v) => setApiCfg({ ...apiCfg, port: v })} />
-      <Num label="Max message bytes (0 = no limit)" value={apiCfg.maxMessageBytes} onChange={(v) => setApiCfg({ ...apiCfg, maxMessageBytes: v })} />
+      <NumMb label="Max message size (MB, 0 = no limit)" bytes={apiCfg.maxMessageBytes} onChange={(b) => setApiCfg({ ...apiCfg, maxMessageBytes: b })} />
       <Num label="Rate limit / key per minute" value={apiCfg.rateLimitPerKey} onChange={(v) => setApiCfg({ ...apiCfg, rateLimitPerKey: v })} />
     </SavePanel>
   );
@@ -289,7 +289,7 @@ function ApiPanel({ initial }: { initial: SystemConfig["api"] }) {
 function WebUiPanel({ initial }: { initial: SystemConfig["webui"] }) {
   const [webui, setWebui] = useState(initial);
   return (
-    <SavePanel title="Dashboard (web UI)" restart
+    <SavePanel title="Dashboard (web UI)" restart value={webui}
       intro="The admin dashboard you're using now. Applies after a restart."
       onSave={() => api.settings.putWebui({ port: webui.port, requireHttps: webui.requireHttps })}>
       <Num label="Port" value={webui.port} onChange={(v) => setWebui({ ...webui, port: v })} />
@@ -300,14 +300,23 @@ function WebUiPanel({ initial }: { initial: SystemConfig["webui"] }) {
 
 // ---- Shared building blocks -------------------------------------------------------------------
 
-function SavePanel({ title, intro, restart, onSave, children }: {
-  title: string; intro: string; restart?: boolean; onSave: () => Promise<unknown>; children: ReactNode;
+// `value` is a snapshot of the panel's form state — the Save button only appears once it differs from
+// the last-saved baseline, so an unchanged panel shows no button (replacing the always-on big Save).
+function SavePanel({ title, intro, restart, value, onSave, children }: {
+  title: string; intro: string; restart?: boolean; value: unknown; onSave: () => Promise<unknown>; children: ReactNode;
 }) {
+  const serialized = JSON.stringify(value);
+  const [baseline, setBaseline] = useState(serialized);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const dirty = serialized !== baseline;
+
+  // Clear a stale "Saved." once the user starts editing again.
+  useEffect(() => { setMsg(null); }, [serialized]);
+
   const save = async () => {
     setBusy(true); setMsg(null);
-    try { await onSave(); setMsg(restart ? "Saved — applies after the next service restart." : "Saved."); }
+    try { await onSave(); setBaseline(serialized); setMsg(restart ? "Saved — applies after the next service restart." : "Saved."); }
     catch (e) { setMsg(`Error: ${(e as Error).message}`); }
     finally { setBusy(false); }
   };
@@ -316,9 +325,10 @@ function SavePanel({ title, intro, restart, onSave, children }: {
       <h2>{title}</h2>
       <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>{intro}</p>
       {children}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 14 }}>
-        <button onClick={save} disabled={busy}>Save</button>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 14, minHeight: 30 }}>
+        {dirty && <button onClick={save} disabled={busy}>Save changes</button>}
         {msg && <span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span>}
+        {dirty && !msg && <span className="muted" style={{ fontSize: 12 }}>Unsaved changes</span>}
       </div>
     </div>
   );
@@ -416,6 +426,19 @@ function Num({ label, value, onChange }: { label: string; value: number; onChang
     <label style={{ display: "block", margin: "8px 0" }}>
       <div style={{ fontSize: 13 }}>{label}</div>
       <input type="number" value={value} min={0} onChange={(e) => onChange(Math.max(0, Number(e.target.value)))} style={{ width: 160 }} />
+    </label>
+  );
+}
+
+// Message size shown/edited in MB (MiB) but stored as bytes — nobody configures limits in raw bytes.
+function NumMb({ label, bytes, onChange }: { label: string; bytes: number; onChange: (bytes: number) => void }) {
+  const MB = 1048576;
+  const mb = bytes ? +(bytes / MB).toFixed(2) : 0;
+  return (
+    <label style={{ display: "block", margin: "8px 0" }}>
+      <div style={{ fontSize: 13 }}>{label}</div>
+      <input type="number" value={mb} min={0} step={1}
+        onChange={(e) => onChange(Math.max(0, Math.round(Number(e.target.value) * MB)))} style={{ width: 160 }} />
     </label>
   );
 }

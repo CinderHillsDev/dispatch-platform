@@ -66,6 +66,10 @@ select, input, button {
 }
 button { cursor: pointer; }
 button:hover { border-color: var(--blue); }
+/* Hide the up/down spinners on number inputs — they read as clutter and most values are typed. */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 /* Actions-menu rows are borderless, so give them a clear hover highlight instead of a border.
    Background lives here (not inline) so the :hover rule can override it. */
 .menu-item { background: transparent; transition: background .1s ease; }
