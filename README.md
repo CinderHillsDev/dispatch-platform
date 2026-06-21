@@ -177,7 +177,20 @@ All settings are managed through the web UI and stored in SQL Server. The only t
 
 ### Getting to the UI
 
-Open **https://localhost:8420** after installation (HTTPS-only; accept the self-signed cert warning if you haven't configured your own). On first run, all settings have sensible defaults. The only required step is entering your relay provider credentials under **Settings → Relay Provider**.
+Open **https://localhost:8420** after installation (HTTPS-only; accept the self-signed cert warning if you haven't configured your own). On first run a short **setup wizard** walks you through connecting a provider, sending a test, and any routing rules.
+
+### Forgot the admin password?
+
+Run the built-in reset command **on the server** (it writes a new bcrypt hash to the database):
+
+```bash
+# Linux (run as the service account so it reads the same config):
+sudo -u dispatch /opt/dispatch/Dispatch.Service reset-admin-password
+# Windows (from the install dir):    Dispatch.Service.exe reset-admin-password
+# Docker:                            docker exec -it dispatch ./Dispatch.Service reset-admin-password
+```
+
+It prompts for a new password (enforcing the same policy) and exits — no service downtime.
 
 ### SMTP Listener
 
