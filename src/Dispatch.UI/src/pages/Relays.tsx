@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type RelayDetail, type RelayListItem, type TestResult, type TestRunLine } from "../lib/api";
 import { createTestProviderConnection } from "../lib/signalr";
-import { PROVIDER_FIELDS } from "../lib/providers";
+import { PROVIDER_FIELDS, PROVIDER_LABELS } from "../lib/providers";
 import { Modal } from "../Modal";
+import { ActionsMenu } from "../ActionsMenu";
 
 // One-click SMTP presets — pick a provider and host/port/TLS are filled in; just add credentials. Almost
 // every provider offers SMTP, so this covers the long tail without a native integration for each.
@@ -22,8 +23,7 @@ const SMTP_PRESETS: Record<string, { Host: string; Port: string; TlsMode: string
 export function Relays() {
   const [list, setList] = useState<RelayListItem[]>([]);
   const [selected, setSelected] = useState<RelayDetail | null>(null);
-  const [newName, setNewName] = useState("");
-  const [newProvider, setNewProvider] = useState("Local");
+  const [adding, setAdding] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   const refresh = async () => setList(await api.relays.list());
@@ -31,48 +31,52 @@ export function Relays() {
 
   const select = async (id: number) => { setMsg(null); setSelected(await api.relays.get(id)); };
 
-  const addRelay = async () => {
-    if (!newName.trim()) return;
-    const { id } = await api.relays.create(newName.trim(), newProvider);
-    setNewName("");
-    await refresh();
-    await select(id);
+  const makeDefault = async (id: number) => {
+    try { await api.relays.setDefault(id); await refresh(); setMsg("Catch-all updated."); }
+    catch (e) { setMsg(`Error: ${(e as Error).message}`); }
+  };
+  const del = async (r: RelayListItem) => {
+    if (!confirm(`Delete relay “${r.name}”? This can't be undone.`)) return;
+    try { await api.relays.remove(r.id); await refresh(); setMsg("Relay deleted."); }
+    catch (e) { setMsg(`Error: ${(e as Error).message}`); }
   };
 
   return (
     <>
-      <h1 className="page-title">Relays</h1>
-
-      <div>
-        <div className="panel">
-          <h2>Configured relays</h2>
-          <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
-            A relay is an upstream provider Dispatch delivers through. The <strong>catch-all</strong> relay
-            handles any mail that no routing rule matches — if you only have one provider, that's the one it uses.
-          </p>
-          <table>
-            <thead><tr><th>Name</th><th>Provider</th><th>Role</th><th>Status</th></tr></thead>
-            <tbody>
-              {list.map((r) => (
-                <tr key={r.id} style={{ cursor: "pointer", background: selected?.id === r.id ? "var(--panel-2)" : undefined }} onClick={() => select(r.id)}>
-                  <td>{r.isDefault ? "★ " : ""}{r.name}</td>
-                  <td>{r.provider}</td>
-                  <td>{r.isDefault ? <span className="badge ok">catch-all</span> : ""}</td>
-                  <td>{r.enabled ? "Enabled" : <span className="muted">Disabled</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
-            <input placeholder="New relay name" value={newName} onChange={(e) => setNewName(e.target.value)} style={{ flex: 1 }} />
-            <select value={newProvider} onChange={(e) => setNewProvider(e.target.value)}>
-              {Object.keys(PROVIDER_FIELDS).map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-            <button onClick={addRelay}>Add</button>
-          </div>
-        </div>
-
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <h1 className="page-title" style={{ margin: 0 }}>Relays</h1>
+        <button onClick={() => setAdding(true)}>+ Add relay</button>
       </div>
+      <p className="muted" style={{ fontSize: 13, margin: "8px 0 18px" }}>
+        A relay is an upstream provider Dispatch delivers through. The <strong>catch-all</strong> relay handles
+        any mail that no routing rule matches — with one provider, that's the one it uses.
+      </p>
+
+      <div className="panel" style={{ padding: 0 }}>
+        <table>
+          <thead><tr><th>Name</th><th>Provider</th><th>Role</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {list.map((r) => (
+              <tr key={r.id}>
+                <td>{r.isDefault ? "★ " : ""}{r.name}</td>
+                <td>{PROVIDER_LABELS[r.provider] ?? r.provider}</td>
+                <td>{r.isDefault ? <span className="badge ok">catch-all</span> : ""}</td>
+                <td>{r.enabled ? "Enabled" : <span className="muted">Disabled</span>}</td>
+                <td style={{ textAlign: "right" }}>
+                  <ActionsMenu items={[
+                    { label: "Edit", onClick: () => select(r.id) },
+                    { label: r.isDefault ? "Already catch-all" : "Make catch-all", onClick: () => makeDefault(r.id), disabled: r.isDefault },
+                    { label: "Delete", danger: true, disabled: r.isDefault, onClick: () => del(r) },
+                  ]} />
+                </td>
+              </tr>
+            ))}
+            {list.length === 0 && <tr><td colSpan={5} className="center">No relays yet — click “Add relay”.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {adding && <AddRelayModal onClose={() => setAdding(false)} onAdded={refresh} />}
 
       {selected && (
         <Modal
@@ -90,6 +94,65 @@ export function Relays() {
       )}
       {msg && <p style={{ marginTop: 16 }}><span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span></p>}
     </>
+  );
+}
+
+// "Add relay" dialog: pick a provider and fill its credentials in one step (like the first-run wizard),
+// instead of the old free-text-name + dropdown row. Creates the relay and saves its settings.
+function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [provider, setProvider] = useState("Mailgun");
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fields = PROVIDER_FIELDS[provider] ?? [];
+  const missing = fields.filter((f) => f.required && !values[f.name]?.trim()).map((f) => f.name);
+
+  const create = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const finalName = name.trim() || (PROVIDER_LABELS[provider] ?? provider);
+      const { id } = await api.relays.create(finalName, provider);
+      await api.relays.update(id, { name: finalName, provider, enabled: true, maxConcurrency: 4, settings: values });
+      await onAdded();
+      onClose();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Modal title="Add relay" onClose={onClose}>
+      <div style={{ display: "grid", gap: 12 }}>
+        <Lbl label="Name (optional)">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={PROVIDER_LABELS[provider] ?? provider} style={{ width: "100%" }} />
+        </Lbl>
+        <Lbl label="Provider">
+          <select value={provider} onChange={(e) => { setProvider(e.target.value); setValues({}); }} style={{ width: "100%" }}>
+            {Object.keys(PROVIDER_FIELDS).map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p] ?? p}</option>)}
+          </select>
+        </Lbl>
+        {fields.map((f) => (
+          <Lbl key={f.name} label={f.name + (f.required ? " *" : "")}>
+            <input type={f.secret ? "password" : "text"} value={values[f.name] ?? ""} onChange={(e) => setValues({ ...values, [f.name]: e.target.value })} style={{ width: "100%" }} />
+          </Lbl>
+        ))}
+        {err && <p style={{ color: "var(--red)", fontSize: 13, margin: 0 }}>{err}</p>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <button onClick={onClose}>Cancel</button>
+          <button onClick={create} disabled={busy || missing.length > 0}>{busy ? "Adding…" : "Add relay"}</button>
+        </div>
+        {missing.length > 0 && <p className="muted" style={{ fontSize: 12, textAlign: "right", margin: 0 }}>Required: {missing.join(", ")}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+function Lbl({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: "block" }}>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>
+      {children}
+    </label>
   );
 }
 
