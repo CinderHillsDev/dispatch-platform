@@ -1,43 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type RelayDetail, type RelayListItem, type TestResult, type TestRunLine } from "../lib/api";
 import { createTestProviderConnection } from "../lib/signalr";
-
-// Mirrors RelayProviderSchema on the server so the form can render fields immediately on provider change.
-const PROVIDER_FIELDS: Record<string, { name: string; secret: boolean; required: boolean }[]> = {
-  Local: [],
-  Smtp: [
-    { name: "Host", secret: false, required: true },
-    { name: "Port", secret: false, required: false },
-    { name: "Username", secret: false, required: false },
-    { name: "Password", secret: true, required: false },
-    { name: "TlsMode", secret: false, required: false },
-  ],
-  Mailgun: [
-    { name: "ApiKey", secret: true, required: true },
-    { name: "Domain", secret: false, required: true },
-    { name: "Region", secret: false, required: false },
-  ],
-  SendGrid: [{ name: "ApiKey", secret: true, required: true }],
-  AzureCommunication: [
-    { name: "ConnectionString", secret: true, required: true },
-    { name: "SenderAddress", secret: false, required: true },
-  ],
-  AmazonSes: [
-    { name: "AccessKeyId", secret: false, required: true },
-    { name: "SecretAccessKey", secret: true, required: true },
-    { name: "Region", secret: false, required: true },
-  ],
-  Postmark: [
-    { name: "ApiKey", secret: true, required: true },
-    { name: "MessageStream", secret: false, required: false },
-  ],
-  Resend: [{ name: "ApiKey", secret: true, required: true }],
-  SparkPost: [
-    { name: "ApiKey", secret: true, required: true },
-    { name: "Region", secret: false, required: false },
-  ],
-  Smtp2Go: [{ name: "ApiKey", secret: true, required: true }],
-};
+import { PROVIDER_FIELDS } from "../lib/providers";
 
 // One-click SMTP presets — pick a provider and host/port/TLS are filled in; just add credentials. Almost
 // every provider offers SMTP, so this covers the long tail without a native integration for each.
@@ -81,14 +45,18 @@ export function Relays() {
       <div style={{ display: "flex", gap: 22, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div className="panel" style={{ flex: "1 1 360px" }}>
           <h2>Configured relays</h2>
+          <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
+            A relay is an upstream provider Dispatch delivers through. The <strong>catch-all</strong> relay
+            handles any mail that no routing rule matches — if you only have one provider, that's the one it uses.
+          </p>
           <table>
-            <thead><tr><th>Name</th><th>Provider</th><th>Default</th><th>Status</th></tr></thead>
+            <thead><tr><th>Name</th><th>Provider</th><th>Role</th><th>Status</th></tr></thead>
             <tbody>
               {list.map((r) => (
                 <tr key={r.id} style={{ cursor: "pointer", background: selected?.id === r.id ? "var(--panel-2)" : undefined }} onClick={() => select(r.id)}>
                   <td>{r.isDefault ? "★ " : ""}{r.name}</td>
                   <td>{r.provider}</td>
-                  <td>{r.isDefault ? <span className="badge ok">default</span> : ""}</td>
+                  <td>{r.isDefault ? <span className="badge ok">catch-all</span> : ""}</td>
                   <td>{r.enabled ? "Enabled" : <span className="muted">Disabled</span>}</td>
                 </tr>
               ))}
@@ -208,7 +176,7 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
 
   return (
     <div className="panel" style={{ flex: "1 1 380px" }}>
-      <h2>Edit · {relay.name}{relay.isDefault ? " (default)" : ""}</h2>
+      <h2>Edit · {relay.name}{relay.isDefault ? " (catch-all)" : ""}</h2>
 
       <label className="muted" style={{ fontSize: 12 }}>Name</label>
       <input style={{ width: "100%", marginBottom: 12 }} value={name} onChange={(e) => setName(e.target.value)} />
@@ -264,7 +232,7 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button onClick={save} disabled={busy}>Save</button>
-        {!relay.isDefault && <button onClick={() => act(() => api.relays.setDefault(relay.id), "Set as default.")} disabled={busy}>Set as default</button>}
+        {!relay.isDefault && <button onClick={() => act(() => api.relays.setDefault(relay.id), "Set as catch-all.")} disabled={busy}>Make catch-all</button>}
         {!relay.isDefault && <button onClick={() => act(() => api.relays.remove(relay.id), "Deleted.").then(onDeleted)} disabled={busy}>Delete</button>}
       </div>
 

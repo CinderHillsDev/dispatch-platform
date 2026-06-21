@@ -71,7 +71,7 @@ export function Routing() {
                 </td>
               </tr>
             ))}
-            {rules.length === 0 && <tr><td colSpan={7} className="center">No rules — all mail goes to the default relay.</td></tr>}
+            {rules.length === 0 && <tr><td colSpan={7} className="center">No rules — all mail goes to the catch-all relay.</td></tr>}
           </tbody>
         </table>
 
@@ -97,7 +97,7 @@ export function Routing() {
           <div style={{ marginTop: 12 }}>
             {sim.matched
               ? <span className="badge ok">Matched rule “{sim.matchedRuleName}” → {sim.relayName} ({sim.provider})</span>
-              : <span className="badge denied">No rule matched → default relay {sim.relayName} ({sim.provider})</span>}
+              : <span className="badge denied">No rule matched → catch-all relay {sim.relayName} ({sim.provider})</span>}
           </div>
         )}
       </div>

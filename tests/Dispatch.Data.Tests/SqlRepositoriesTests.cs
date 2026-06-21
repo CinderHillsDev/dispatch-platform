@@ -11,20 +11,30 @@ namespace Dispatch.Data.Tests;
 /// </summary>
 public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServerFixture>
 {
+    // No relay is seeded any more (migration 0003 removed the placeholder), and relay_log/relay_counters
+    // FK to relays(id), so tests that attribute rows to a relay create one first and use its id.
+    private async Task<int> NewRelayAsync(string name = "test")
+    {
+        var relays = new SqlRelayRepository(sql.Factory);
+        var r = await relays.CreateAsync($"{name}-{Guid.NewGuid():N}", Dispatch.Core.Providers.RelayProviderType.Local, 4, 0);
+        return r.Id;
+    }
+
     [Fact]
-    public async Task Initializer_creates_schema_and_seeds_default_relay()
+    public async Task Initializer_creates_schema_without_unconfigured_placeholder()
     {
         if (!sql.Available) return;
         await using var cn = await sql.Factory.OpenAsync();
 
-        // All embedded migrations applied (0001_init, 0002_relay_log_indexes, …).
+        // All embedded migrations applied (0001_init, 0002_relay_log_indexes, 0003_drop_unconfigured_default).
         var version = await cn.ExecuteScalarAsync<int>("SELECT MAX(version) FROM schema_version");
-        Assert.True(version >= 2, $"expected at least migration 2 applied, got {version}");
+        Assert.True(version >= 3, $"expected at least migration 3 applied, got {version}");
 
-        var (name, provider, isDefault) = await cn.QuerySingleAsync<(string, string, bool)>(
-            "SELECT name, provider, is_default FROM relays WHERE is_default = 1");
-        Assert.Equal("default", name);
-        Assert.True(isDefault);
+        // Migration 0003 removed the seeded "Unconfigured" placeholder relay — the first-run wizard creates
+        // the first real relay (which becomes the catch-all). No placeholder should remain.
+        var placeholders = await cn.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM relays WHERE provider = 'Unconfigured' AND is_default = 1");
+        Assert.Equal(0, placeholders);
     }
 
     [Fact]
@@ -50,13 +60,14 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         var log = new SqlLogRepository(sql.Factory);
         var query = new SqlMessageLogQuery(sql.Factory);
         var spoolId = Guid.NewGuid().ToString("N");
+        var relayId = await NewRelayAsync();
 
         await log.InsertAsync(new RelayLogEntry
         {
             Event = "Delivered", Status = "OK", SpoolId = spoolId,
             FromAddress = "a@x.com", FromDomain = "x.com",
             ToAddresses = ["b@y.com"], ToDomain = "y.com", Subject = "Hi",
-            RelayId = 1, RelayName = "default", Provider = "None", IngestSource = "API",
+            RelayId = relayId, RelayName = "default", Provider = "None", IngestSource = "API",
         });
 
         var page = await query.QueryAsync(new MessageLogFilter { Statuses = ["OK"], Limit = 50 });
@@ -95,10 +106,11 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     {
         if (!sql.Available) return;
         var counters = new SqlCounterRepository(sql.Factory);
+        var relayId = await NewRelayAsync();
 
         var before = (await counters.GetTodayAsync()).Delivered;
-        await counters.IncrementAsync(1, CounterField.Delivered);
-        await counters.IncrementAsync(1, CounterField.Delivered);
+        await counters.IncrementAsync(relayId, CounterField.Delivered);
+        await counters.IncrementAsync(relayId, CounterField.Delivered);
         var after = (await counters.GetTodayAsync()).Delivered;
 
         Assert.Equal(before + 2, after);
@@ -359,13 +371,14 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         var log = new SqlLogRepository(sql.Factory);
         var query = new SqlMessageLogQuery(sql.Factory);
         var spoolId = Guid.NewGuid().ToString("N");
+        var relayId = await NewRelayAsync();
 
         await log.InsertAsync(new RelayLogEntry
         {
             Event = "Delivered", Status = "OK", SpoolId = spoolId,
             FromAddress = "a@x.com", FromDomain = "x.com",
             ToAddresses = ["b@y.com", "c@y.com"], ToDomain = "y.com", Subject = "Hi",
-            RelayId = 1, RelayName = "default", RoutingRuleName = "rule-1", RoutingMatched = true,
+            RelayId = relayId, RelayName = "default", RoutingRuleName = "rule-1", RoutingMatched = true,
             Provider = "None", ProviderMessageId = "pm-123", ProviderResponse = "250 OK",
             IngestSource = "API", SourceIp = "10.0.0.5", Tags = ["urgent", "vip"],
         });

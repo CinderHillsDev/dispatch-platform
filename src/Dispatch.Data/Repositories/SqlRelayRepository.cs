@@ -56,10 +56,13 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
     public async Task<RelayRecord> CreateAsync(
         string name, RelayProviderType provider, int maxConcurrency, long maxMessageBytes, CancellationToken ct = default)
     {
+        // The first relay created becomes the catch-all automatically (no pre-seeded placeholder), so a
+        // single-provider setup "just works" with no extra step. Subsequent relays are non-default.
         const string sql = $"""
-            INSERT INTO relays (name, provider, max_concurrency, max_message_bytes)
+            INSERT INTO relays (name, provider, max_concurrency, max_message_bytes, is_default)
             OUTPUT {InsertedColumns}
-            VALUES (@name, @provider, @maxConcurrency, @maxMessageBytes);
+            VALUES (@name, @provider, @maxConcurrency, @maxMessageBytes,
+                    CASE WHEN EXISTS (SELECT 1 FROM relays WHERE is_default = 1) THEN 0 ELSE 1 END);
             """;
         await using var cn = await factory.OpenAsync(ct);
         var row = await cn.QuerySingleAsync<Row>(new CommandDefinition(

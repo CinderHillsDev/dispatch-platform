@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useEffect, useState, type ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider, NavLink, Outlet } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { api } from "./lib/api";
+import { FirstRunWizard } from "./FirstRunWizard";
 import { Dashboard } from "./pages/Dashboard";
 import { Messages } from "./pages/Messages";
 import { Relays } from "./pages/Relays";
@@ -59,11 +61,27 @@ const router = createBrowserRouter([
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
 
+// First-run: if no provider has been configured yet, show the setup wizard instead of the dashboard.
+// A relay counts as "configured" once its provider is anything other than Unconfigured.
+function FirstRun({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<"loading" | "wizard" | "ready">("loading");
+  useEffect(() => {
+    api.relays.list()
+      .then((relays) => setState(relays.some((r) => r.provider !== "Unconfigured") ? "ready" : "wizard"))
+      .catch(() => setState("ready"));   // never lock the user out if the check fails
+  }, []);
+  if (state === "loading") return <div className="center">Loading…</div>;
+  if (state === "wizard") return <FirstRunWizard onDone={() => setState("ready")} />;
+  return <>{children}</>;
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthGate>
-        <RouterProvider router={router} />
+        <FirstRun>
+          <RouterProvider router={router} />
+        </FirstRun>
       </AuthGate>
     </QueryClientProvider>
   </React.StrictMode>,
