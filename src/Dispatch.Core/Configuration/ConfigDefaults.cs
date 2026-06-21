@@ -26,9 +26,11 @@ public static class ConfigDefaults
         [ConfigKeys.ListenerAllowedCidrs] = PrivateRanges,
         [ConfigKeys.ListenerMaxMessageBytes] = "0",
         [ConfigKeys.ListenerRequireAuth] = "false",
-        [ConfigKeys.ListenerTlsCertPath] = "",
         [ConfigKeys.ListenerConnectionTimeoutSeconds] = "60",
         [ConfigKeys.ListenerMaxConnections] = "100",
+
+        // Shared TLS certificate (SMTP STARTTLS + HTTPS API); unset until an operator generates/uploads one.
+        [ConfigKeys.TlsCertSource] = "",
 
         [ConfigKeys.SpoolDirectory] = "./.dispatch-spool",
         [ConfigKeys.SpoolWorkerCount] = "4",
@@ -37,6 +39,9 @@ public static class ConfigDefaults
 
         [ConfigKeys.ApiEnabled] = "true",
         [ConfigKeys.ApiPort] = "8025",
+        [ConfigKeys.ApiHttpEnabled] = "true",
+        [ConfigKeys.ApiTlsEnabled] = "false",
+        [ConfigKeys.ApiTlsPort] = "8026",
         [ConfigKeys.ApiAllowedCidrs] = PrivateRanges,
         [ConfigKeys.ApiMaxMessageBytes] = "26214400",   // 25 MiB — bounds in-memory buffering of HTTP uploads (0 = no limit)
         [ConfigKeys.ApiRateLimitPerKey] = "100",

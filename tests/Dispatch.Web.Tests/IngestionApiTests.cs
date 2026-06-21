@@ -94,6 +94,19 @@ public class IngestionApiTests(WebTestHost host)
     }
 
     [Fact]
+    public async Task Ingest_over_https_returns_202_and_writes_spool()
+    {
+        // The same authenticated request succeeds on the HTTPS listener (separate port, shared TLS cert).
+        var before = Directory.GetFiles(host.Spool.IncomingDir, "*.eml").Length;
+        var res = await host.ApiTls.SendAsync(Post(WebTestHost.ValidKey,
+            new { from = "App <a@x.com>", to = new[] { "b@y.com" }, subject = "Secure", text = "hi" }));
+
+        Assert.Equal(HttpStatusCode.Accepted, res.StatusCode);
+        var after = Directory.GetFiles(host.Spool.IncomingDir, "*.eml").Length;
+        Assert.Equal(before + 1, after);
+    }
+
+    [Fact]
     public async Task Ingest_multipart_writes_spool_with_meta_and_tags()
     {
         var content = new MultipartFormDataContent

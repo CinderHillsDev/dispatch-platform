@@ -28,6 +28,7 @@ public sealed class WebTestHost : IAsyncLifetime
 {
     public const int WebPort = 18080;
     public const int ApiPort = 18091;
+    public const int ApiTlsPort = 18444;
     public const string ValidKey = "dsp_live_validkey00000000000000000000000";
     public const string LimitedKey = "dsp_live_limited000000000000000000000000";
     public const string OtherKey = "dsp_live_other00000000000000000000000000";
@@ -36,6 +37,7 @@ public sealed class WebTestHost : IAsyncLifetime
     public string SpoolDir { get; } = Path.Combine(Path.GetTempPath(), "dispatch-web-tests", Guid.NewGuid().ToString("N"));
     public HttpClient Web { get; private set; } = null!;
     public HttpClient Api { get; private set; } = null!;
+    public HttpClient ApiTls { get; private set; } = null!;
     public SpoolDirectory Spool { get; private set; } = null!;
     public Dispatch.Core.Maintenance.IntakeState Intake { get; private set; } = null!;
 
@@ -43,12 +45,17 @@ public sealed class WebTestHost : IAsyncLifetime
     {
         Spool = new SpoolDirectory(SpoolDir);
 
+        // A self-signed cert for the HTTPS ingestion-API listener (mirrors the shared TLS cert in prod).
+        var (certPath, certPw) = Dispatch.Web.Endpoints.TlsCert.Generate(SpoolDir, "localhost");
+        var apiTlsCert = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12FromFile(certPath, certPw);
+
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(k =>
         {
             k.ListenLocalhost(WebPort);
             k.ListenLocalhost(ApiPort);
+            k.ListenLocalhost(ApiTlsPort, lo => lo.UseHttps(apiTlsCert));
         });
 
         builder.Services.Configure<ApiOptions>(o =>
@@ -72,6 +79,8 @@ public sealed class WebTestHost : IAsyncLifetime
         var seed = new Dictionary<string, string>(ConfigDefaults.Defaults, StringComparer.OrdinalIgnoreCase)
         {
             [ConfigKeys.ApiPort] = ApiPort.ToString(),
+            [ConfigKeys.ApiTlsEnabled] = "true",
+            [ConfigKeys.ApiTlsPort] = ApiTlsPort.ToString(),
             [ConfigKeys.ApiRateLimitPerKey] = "100",
             [ConfigKeys.WebUiPort] = WebPort.ToString(),
         };
@@ -101,7 +110,7 @@ public sealed class WebTestHost : IAsyncLifetime
 
         _app = builder.Build();
         _app.UseMiddleware<ApiKeyMiddleware>();
-        _app.MapIngestionApi(ApiPort);
+        _app.MapIngestionApi(new ApiOptions { Port = ApiPort, HttpEnabled = true, TlsEnabled = true, TlsPort = ApiTlsPort });
         _app.MapDashboardApi(WebPort);
         _app.MapHub<LogHub>("/hub/logs");
         _app.MapHub<TestProviderHub>("/hub/test-provider");
@@ -110,12 +119,16 @@ public sealed class WebTestHost : IAsyncLifetime
 
         Web = new HttpClient { BaseAddress = new Uri($"http://localhost:{WebPort}") };
         Api = new HttpClient { BaseAddress = new Uri($"http://localhost:{ApiPort}") };
+        // Ignore the self-signed cert so the test can exercise the HTTPS ingestion path.
+        var tlsHandler = new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true };
+        ApiTls = new HttpClient(tlsHandler) { BaseAddress = new Uri($"https://localhost:{ApiTlsPort}") };
     }
 
     public async Task DisposeAsync()
     {
         Web.Dispose();
         Api.Dispose();
+        ApiTls.Dispose();
         await _app.StopAsync();
         await _app.DisposeAsync();
         try { Directory.Delete(SpoolDir, recursive: true); } catch { /* best effort */ }

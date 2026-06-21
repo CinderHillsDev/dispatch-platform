@@ -48,4 +48,13 @@ public class ConfigDefaultsTests
         // so the private-range allow-list is what prevents an open relay out of the box.
         Assert.Equal("false", Default(ConfigKeys.ListenerRequireAuth));
     }
+
+    [Fact]
+    public void Api_defaults_to_plain_http_with_https_off_on_8026()
+    {
+        // Plain HTTP is on out of the box; HTTPS is opt-in (needs a TLS cert) on its own port.
+        Assert.Equal("true", Default(ConfigKeys.ApiHttpEnabled));
+        Assert.Equal("false", Default(ConfigKeys.ApiTlsEnabled));
+        Assert.Equal("8026", Default(ConfigKeys.ApiTlsPort));
+    }
 }

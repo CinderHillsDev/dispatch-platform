@@ -235,7 +235,7 @@ function PurgePanel() {
   );
 }
 
-// ---- Connections (SMTP listener / STARTTLS / HTTP API / dashboard) ----------------------------
+// ---- Connections (SMTP listener / TLS cert / HTTP API / dashboard) ----------------------------
 
 function ConnectionsTab({ initial }: { initial: SystemConfig }) {
   return (
@@ -245,8 +245,8 @@ function ConnectionsTab({ initial }: { initial: SystemConfig }) {
       </p>
       <SubTabbed items={[
         { id: "smtp", label: "SMTP listener", render: () => <SmtpListenerPanel initial={initial.listener} /> },
-        { id: "starttls", label: "SMTP TLS", render: () => <ListenerCertPanel initial={initial.listener.tlsCertSource} /> },
-        { id: "api", label: "HTTP API", render: () => <ApiPanel initial={initial.api} /> },
+        { id: "tls", label: "TLS certificate", render: () => <TlsCertPanel initial={initial.tls?.source ?? ""} /> },
+        { id: "api", label: "HTTP API", render: () => <ApiPanel initial={initial.api} tlsCertSource={initial.tls?.source ?? ""} /> },
         { id: "dashboard", label: "Dashboard", render: () => <WebUiPanel initial={initial.webui} /> },
       ]} />
     </>
@@ -271,15 +271,30 @@ function SmtpListenerPanel({ initial }: { initial: SystemConfig["listener"] }) {
   );
 }
 
-function ApiPanel({ initial }: { initial: SystemConfig["api"] }) {
+function ApiPanel({ initial, tlsCertSource }: { initial: SystemConfig["api"]; tlsCertSource: string }) {
   const [apiCfg, setApiCfg] = useState(initial);
+  const httpsNoCert = apiCfg.tlsEnabled && !tlsCertSource;
   return (
     <SavePanel title="HTTP ingestion API" restart value={apiCfg}
-      intro="The HTTP endpoint for posting messages with an API key. Size limit and rate limit apply live; the port applies after a restart."
+      intro="The endpoint for posting messages with an API key. Size limit and rate limit apply live; ports and HTTP/HTTPS toggles apply after a restart."
       onSave={() => api.settings.putApi({
-        port: apiCfg.port, maxMessageBytes: apiCfg.maxMessageBytes, rateLimitPerKey: apiCfg.rateLimitPerKey,
+        port: apiCfg.port, httpEnabled: apiCfg.httpEnabled, tlsEnabled: apiCfg.tlsEnabled, tlsPort: apiCfg.tlsPort,
+        maxMessageBytes: apiCfg.maxMessageBytes, rateLimitPerKey: apiCfg.rateLimitPerKey,
       })}>
-      <Num label="Port" value={apiCfg.port} onChange={(v) => setApiCfg({ ...apiCfg, port: v })} />
+      <Chk label="Enable plain HTTP" checked={apiCfg.httpEnabled} onChange={(v) => setApiCfg({ ...apiCfg, httpEnabled: v })} />
+      <Num label="HTTP port" value={apiCfg.port} onChange={(v) => setApiCfg({ ...apiCfg, port: v })} />
+      <Chk label="Enable HTTPS" checked={apiCfg.tlsEnabled} onChange={(v) => setApiCfg({ ...apiCfg, tlsEnabled: v })} />
+      <Num label="HTTPS port" value={apiCfg.tlsPort} onChange={(v) => setApiCfg({ ...apiCfg, tlsPort: v })} />
+      {httpsNoCert && (
+        <p style={{ color: "var(--amber)", fontSize: 12, margin: "2px 0 8px" }}>
+          ⚠ HTTPS is on but no TLS certificate is set — configure one under the <strong>TLS certificate</strong> tab.
+          Until then a temporary self-signed certificate is used.
+        </p>
+      )}
+      {!apiCfg.httpEnabled && !apiCfg.tlsEnabled && (
+        <p style={{ color: "var(--amber)", fontSize: 12, margin: "2px 0 8px" }}>⚠ Both HTTP and HTTPS are off — the ingestion API won't accept any requests.</p>
+      )}
+      <p className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>HTTPS uses the shared TLS certificate (same as SMTP STARTTLS).</p>
       <NumMb label="Max message size (MB, 0 = no limit)" bytes={apiCfg.maxMessageBytes} onChange={(b) => setApiCfg({ ...apiCfg, maxMessageBytes: b })} />
       <Num label="Rate limit / key per minute" value={apiCfg.rateLimitPerKey} onChange={(v) => setApiCfg({ ...apiCfg, rateLimitPerKey: v })} />
     </SavePanel>
@@ -334,8 +349,8 @@ function SavePanel({ title, intro, restart, value, onSave, children }: {
   );
 }
 
-// STARTTLS cert: generate a self-signed one or upload a cert + key — no file paths. Applies on restart.
-function ListenerCertPanel({ initial }: { initial: string }) {
+// Shared TLS cert: generate a self-signed one or upload a cert + key — no file paths. Applies on restart.
+function TlsCertPanel({ initial }: { initial: string }) {
   const [source, setSource] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -343,7 +358,7 @@ function ListenerCertPanel({ initial }: { initial: string }) {
 
   const status = source === "generated" ? "Using a generated self-signed certificate."
     : source === "uploaded" ? "Using an uploaded certificate."
-    : "Off — SMTP connections aren't encrypted (AUTH passwords would cross the wire in clear text).";
+    : "Off — SMTP STARTTLS is unavailable and HTTPS API falls back to a temporary self-signed cert.";
 
   const run = async (fn: () => Promise<unknown>, newSource: string, done: string) => {
     setBusy(true); setMsg(null);
@@ -354,23 +369,22 @@ function ListenerCertPanel({ initial }: { initial: string }) {
 
   return (
     <div className="panel" style={{ maxWidth: 620, marginTop: 14 }}>
-      <h2>SMTP TLS certificate (STARTTLS)</h2>
+      <h2>TLS certificate</h2>
       <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
-        Encrypts the <strong>SMTP listener</strong> only, via STARTTLS. Generate a self-signed certificate or
-        upload your own. Applies after the next service restart.
+        One certificate secures <strong>both</strong> the SMTP listener (STARTTLS) and the HTTPS ingestion API.
+        Generate a self-signed certificate or upload your own. Applies after the next service restart.
       </p>
       <p className="muted" style={{ fontSize: 12, marginTop: -2 }}>
-        It does <strong>not</strong> apply to the HTTP API (plain HTTP, secured by API keys) or the dashboard
-        (which has its own HTTPS certificate).
+        The dashboard you're using has its own separate HTTPS certificate.
       </p>
       <p style={{ fontSize: 13 }}>
         {source ? <span className="badge ok">{source}</span> : <span className="badge denied">off</span>}
         <span className="muted" style={{ marginLeft: 8 }}>{status}</span>
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
-        <button disabled={busy} onClick={() => run(api.settings.generateListenerCert, "generated", "Generated — restart to apply.")}>Generate certificate</button>
+        <button disabled={busy} onClick={() => run(api.settings.generateTlsCert, "generated", "Generated — restart to apply.")}>Generate certificate</button>
         <button disabled={busy} onClick={() => setUploading(true)}>Upload cert + key</button>
-        {source && <button disabled={busy} onClick={() => run(api.settings.removeListenerCert, "", "Removed — restart to apply.")}>Remove</button>}
+        {source && <button disabled={busy} onClick={() => run(api.settings.removeTlsCert, "", "Removed — restart to apply.")}>Remove</button>}
         {msg && <span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span>}
       </div>
       {uploading && <UploadCertModal onClose={() => setUploading(false)} onDone={() => { setSource("uploaded"); setMsg("Uploaded — restart to apply."); setUploading(false); }} />}
@@ -386,7 +400,7 @@ function UploadCertModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   const upload = async () => {
     if (!cert || !key) { setErr("Both a certificate and a key file are required."); return; }
     setBusy(true); setErr(null);
-    try { await api.settings.uploadListenerCert(cert, key); onDone(); }
+    try { await api.settings.uploadTlsCert(cert, key); onDone(); }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };

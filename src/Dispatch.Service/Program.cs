@@ -81,6 +81,21 @@ try
     // The dashboard is HTTPS-only (spec §17.2): it uses the configured TLS cert (appsettings, §12.2) when
     // present, otherwise an auto-generated, persisted self-signed cert — never plain HTTP. The ingestion
     // API stays plain HTTP so devices/apps that can't do TLS can still post (it's gated by API keys).
+    // Optional HTTPS ingestion API (its own port) uses the shared TLS cert; if none is configured yet it
+    // falls back to the dashboard's self-signed cert, so enabling HTTPS never blocks startup.
+    System.Security.Cryptography.X509Certificates.X509Certificate2? apiTlsCert = null;
+    if (apiSnapshot.TlsEnabled)
+    {
+        if (!string.IsNullOrWhiteSpace(apiSnapshot.TlsCertPath) && File.Exists(apiSnapshot.TlsCertPath))
+            apiTlsCert = System.Security.Cryptography.X509Certificates.X509CertificateLoader
+                .LoadPkcs12FromFile(apiSnapshot.TlsCertPath, apiSnapshot.TlsCertPassword);
+        else
+        {
+            Log.Warning("HTTPS API is enabled but no shared TLS certificate is configured; using a self-signed cert. Set one under Settings → Connections → TLS certificate.");
+            apiTlsCert = SelfSignedCert.GetOrCreate(builder.Environment.ContentRootPath);
+        }
+    }
+
     builder.WebHost.ConfigureKestrel(k =>
     {
         k.ListenAnyIP(webSnapshot.Port, lo =>
@@ -91,7 +106,10 @@ try
             else
                 lo.UseHttps(SelfSignedCert.GetOrCreate(builder.Environment.ContentRootPath));
         });
-        k.ListenAnyIP(apiSnapshot.Port);
+        if (apiSnapshot.HttpEnabled)
+            k.ListenAnyIP(apiSnapshot.Port);
+        if (apiTlsCert is not null)
+            k.ListenAnyIP(apiSnapshot.TlsPort, lo => lo.UseHttps(apiTlsCert));
     });
 
     // ConfigCache is the runtime source of truth (spec §12.5). Section snapshots are exposed as IOptions for
@@ -181,7 +199,7 @@ try
     app.UseAuthentication();
     app.UseMiddleware<Dispatch.Web.Auth.WebAuthMiddleware>();
     app.UseMiddleware<ApiKeyMiddleware>();
-    app.MapIngestionApi(apiSnapshot.Port);
+    app.MapIngestionApi(apiSnapshot);
     app.MapDashboardApi(webSnapshot.Port);
     app.MapPurgeOps(webSnapshot.Port);
     app.MapHub<LogHub>("/hub/logs");

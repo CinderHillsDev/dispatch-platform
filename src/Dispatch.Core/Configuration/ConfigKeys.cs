@@ -12,11 +12,17 @@ public static class ConfigKeys
     public const string ListenerAllowedCidrs = "listener.allowed_cidrs";        // JSON string[]
     public const string ListenerMaxMessageBytes = "listener.max_message_bytes";
     public const string ListenerRequireAuth = "listener.require_auth";
-    public const string ListenerTlsCertPath = "listener.tls_cert_path";
-    public const string ListenerTlsCertPassword = "listener.tls_cert_password"; // encrypted
-    public const string ListenerTlsCertSource = "listener.tls_cert_source";     // "generated" | "uploaded" | ""
+    public const string ListenerTlsCertPath = "listener.tls_cert_path";         // deprecated — see Tls* (shared cert)
+    public const string ListenerTlsCertPassword = "listener.tls_cert_password"; // deprecated
+    public const string ListenerTlsCertSource = "listener.tls_cert_source";     // deprecated
     public const string ListenerConnectionTimeoutSeconds = "listener.connection_timeout_seconds";
     public const string ListenerMaxConnections = "listener.max_connections";
+
+    // Shared TLS certificate — secures both the SMTP listener (STARTTLS) and the HTTPS ingestion API.
+    // (The dashboard keeps its own cert in appsettings / an auto self-signed cert.)
+    public const string TlsCertPath = "tls.cert_path";
+    public const string TlsCertPassword = "tls.cert_password";                  // encrypted
+    public const string TlsCertSource = "tls.cert_source";                      // "generated" | "uploaded" | ""
 
     // Spool / worker
     public const string SpoolDirectory = "spool.directory";
@@ -27,6 +33,9 @@ public static class ConfigKeys
     // HTTP ingestion API
     public const string ApiEnabled = "api.enabled";
     public const string ApiPort = "api.port";
+    public const string ApiHttpEnabled = "api.http_enabled";                    // listen on the plain-HTTP port
+    public const string ApiTlsEnabled = "api.tls_enabled";                      // also listen on an HTTPS port
+    public const string ApiTlsPort = "api.tls_port";
     public const string ApiAllowedCidrs = "api.allowed_cidrs";                  // JSON string[]
     public const string ApiMaxMessageBytes = "api.max_message_bytes";
     public const string ApiRateLimitPerKey = "api.rate_limit_per_key";

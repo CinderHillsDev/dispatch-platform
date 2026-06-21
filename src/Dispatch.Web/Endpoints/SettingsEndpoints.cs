@@ -40,16 +40,20 @@ public static class SettingsEndpoints
                     maxMessageBytes = l.MaxMessageBytes,
                     requireAuth = l.RequireAuth,
                     tlsEnabled = !string.IsNullOrWhiteSpace(l.TlsCertPath),
-                    tlsCertSource = cache.GetString(ConfigKeys.ListenerTlsCertSource, ""),
                     appliesOnRestart = new[] { "ports", "serverName", "requireAuth", "tls" },
                 },
+                // Shared TLS certificate (SMTP STARTTLS + HTTPS API).
+                tls = new { source = cache.GetString(ConfigKeys.TlsCertSource, "") },
                 api = new
                 {
                     port = a.Port,
+                    httpEnabled = a.HttpEnabled,
+                    tlsEnabled = a.TlsEnabled,
+                    tlsPort = a.TlsPort,
                     allowedCidrs = a.EffectiveAllowedCidrs,
                     maxMessageBytes = a.MaxMessageBytes,
                     rateLimitPerKey = a.RateLimitPerKey,
-                    appliesOnRestart = new[] { "port" },
+                    appliesOnRestart = new[] { "port", "httpEnabled", "tlsEnabled", "tlsPort" },
                 },
                 webui = new { port = w.Port, requireHttps = w.RequireHttps, appliesOnRestart = new[] { "port", "requireHttps" } },
                 spool = new { directory = sp.Directory, workerCount = sp.WorkerCount, appliesOnRestart = new[] { "directory", "workerCount" } },
@@ -72,18 +76,19 @@ public static class SettingsEndpoints
             return Results.Ok(new { ok = true });
         });
 
-        // STARTTLS cert management — operators generate a self-signed cert or upload a cert + key (no file
-        // paths). The listener loads it at startup, so changes take effect after a service restart.
-        group.MapPost("/config/listener-cert/generate", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
+        // Shared TLS cert management — operators generate a self-signed cert or upload a cert + key (no file
+        // paths). It secures both the SMTP listener (STARTTLS) and the HTTPS ingestion API; both load it at
+        // startup, so changes take effect after a service restart.
+        group.MapPost("/config/tls-cert/generate", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
         {
             var cn = cache.Listener().ServerName is { Length: > 0 } s ? s : "Dispatch";
-            var (path, pw) = ListenerCert.Generate(env.ContentRootPath, cn);
+            var (path, pw) = TlsCert.Generate(env.ContentRootPath, cn);
             await SetCertAsync(config, path, pw, "generated", ct);
             await cache.LoadAsync(config, ct);
             return Results.Ok(new { ok = true, source = "generated" });
         });
 
-        group.MapPost("/config/listener-cert/upload", async (HttpRequest req, ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
+        group.MapPost("/config/tls-cert/upload", async (HttpRequest req, ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
         {
             if (!req.HasFormContentType) return Results.BadRequest(new { error = "Expected a multipart upload with 'cert' and 'key' files." });
             var form = await req.ReadFormAsync(ct);
@@ -94,16 +99,16 @@ public static class SettingsEndpoints
             using (var r = new StreamReader(certFile.OpenReadStream())) certPem = await r.ReadToEndAsync(ct);
             using (var r = new StreamReader(keyFile.OpenReadStream())) keyPem = await r.ReadToEndAsync(ct);
             string path, pw;
-            try { (path, pw) = ListenerCert.FromPem(env.ContentRootPath, certPem, keyPem); }
+            try { (path, pw) = TlsCert.FromPem(env.ContentRootPath, certPem, keyPem); }
             catch (Exception ex) { return Results.BadRequest(new { error = $"Invalid certificate or key: {ex.Message}" }); }
             await SetCertAsync(config, path, pw, "uploaded", ct);
             await cache.LoadAsync(config, ct);
             return Results.Ok(new { ok = true, source = "uploaded" });
         });
 
-        group.MapDelete("/config/listener-cert", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
+        group.MapDelete("/config/tls-cert", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
         {
-            ListenerCert.Delete(env.ContentRootPath);
+            TlsCert.Delete(env.ContentRootPath);
             await SetCertAsync(config, "", "", "", ct);
             await cache.LoadAsync(config, ct);
             return Results.Ok(new { ok = true });
@@ -112,6 +117,9 @@ public static class SettingsEndpoints
         group.MapPut("/config/api", async (ApiConfigDto d, IConfigRepository config, ConfigCache cache, CancellationToken ct) =>
         {
             if (d.Port is { } p) await config.SetAsync(ConfigKeys.ApiPort, p.ToString(CultureInfo.InvariantCulture), false, ct);
+            if (d.HttpEnabled is { } he) await config.SetAsync(ConfigKeys.ApiHttpEnabled, he ? "true" : "false", false, ct);
+            if (d.TlsEnabled is { } te) await config.SetAsync(ConfigKeys.ApiTlsEnabled, te ? "true" : "false", false, ct);
+            if (d.TlsPort is { } tp) await config.SetAsync(ConfigKeys.ApiTlsPort, tp.ToString(CultureInfo.InvariantCulture), false, ct);
             if (d.AllowedCidrs is { } c) await config.SetAsync(ConfigKeys.ApiAllowedCidrs, JsonSerializer.Serialize(c), false, ct);
             if (d.MaxMessageBytes is { } m) await config.SetAsync(ConfigKeys.ApiMaxMessageBytes, m.ToString(CultureInfo.InvariantCulture), false, ct);
             if (d.RateLimitPerKey is { } r) await config.SetAsync(ConfigKeys.ApiRateLimitPerKey, r.ToString(CultureInfo.InvariantCulture), false, ct);
@@ -244,9 +252,9 @@ public static class SettingsEndpoints
 
     private static async Task SetCertAsync(IConfigRepository config, string path, string password, string source, CancellationToken ct)
     {
-        await config.SetAsync(ConfigKeys.ListenerTlsCertPath, path, encrypted: false, ct);
-        await config.SetAsync(ConfigKeys.ListenerTlsCertPassword, password, encrypted: true, ct);
-        await config.SetAsync(ConfigKeys.ListenerTlsCertSource, source, encrypted: false, ct);
+        await config.SetAsync(ConfigKeys.TlsCertPath, path, encrypted: false, ct);
+        await config.SetAsync(ConfigKeys.TlsCertPassword, password, encrypted: true, ct);
+        await config.SetAsync(ConfigKeys.TlsCertSource, source, encrypted: false, ct);
     }
 
     private sealed record UpdateSettingsRequest(LoggingToggles? Logging, RetrySettingsDto? Retry, RetentionSettingsDto? Retention);
@@ -263,7 +271,9 @@ public static class SettingsEndpoints
     private sealed record ListenerConfigDto(
         int[]? Ports, string? ServerName, string[]? AllowedCidrs, long? MaxMessageBytes,
         bool? RequireAuth, string? TlsCertPath, string? TlsCertPassword);
-    private sealed record ApiConfigDto(int? Port, string[]? AllowedCidrs, long? MaxMessageBytes, int? RateLimitPerKey);
+    private sealed record ApiConfigDto(
+        int? Port, bool? HttpEnabled, bool? TlsEnabled, int? TlsPort,
+        string[]? AllowedCidrs, long? MaxMessageBytes, int? RateLimitPerKey);
     private sealed record WebUiConfigDto(int? Port, string[]? AllowedCidrs, bool? RequireHttps, int? SessionTimeoutMinutes);
     private sealed record SpoolConfigDto(string? Directory, int? WorkerCount);
 }

@@ -72,6 +72,43 @@ public class SettingsApiTests(WebTestHost host)
     }
 
     [Fact]
+    public async Task Config_exposes_shared_tls_and_api_https_fields()
+    {
+        var res = await host.Web.GetAsync("/api/config");
+        res.EnsureSuccessStatusCode();
+        var json = await res.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.True(json.GetProperty("tls").TryGetProperty("source", out _));
+        var api = json.GetProperty("api");
+        Assert.True(api.GetProperty("httpEnabled").GetBoolean());
+        Assert.True(api.TryGetProperty("tlsEnabled", out _));
+        Assert.True(api.GetProperty("tlsPort").GetInt32() > 0);
+    }
+
+    [Fact]
+    public async Task Put_config_api_persists_http_https_toggles_and_get_returns_them()
+    {
+        // ApiKeyMiddleware reads api config live, so always restore plain-HTTP routing for the shared host.
+        try
+        {
+            var put = await host.Web.PutAsJsonAsync("/api/config/api", new { httpEnabled = false, tlsEnabled = true, tlsPort = 9443 });
+            put.EnsureSuccessStatusCode();
+
+            var res = await host.Web.GetAsync("/api/config");
+            res.EnsureSuccessStatusCode();
+            var api = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("api");
+
+            Assert.False(api.GetProperty("httpEnabled").GetBoolean());
+            Assert.True(api.GetProperty("tlsEnabled").GetBoolean());
+            Assert.Equal(9443, api.GetProperty("tlsPort").GetInt32());
+        }
+        finally
+        {
+            (await host.Web.PutAsJsonAsync("/api/config/api", new { httpEnabled = true, tlsEnabled = true, tlsPort = WebTestHost.ApiTlsPort })).EnsureSuccessStatusCode();
+        }
+    }
+
+    [Fact]
     public async Task Put_config_listener_persists_to_sql_and_refreshes_cache()
     {
         var put = await host.Web.PutAsJsonAsync("/api/config/listener", new

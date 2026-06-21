@@ -65,8 +65,9 @@ public sealed class ConfigCache
         AllowedCidrs = GetStringArray(ConfigKeys.ListenerAllowedCidrs, []),
         MaxMessageBytes = GetLong(ConfigKeys.ListenerMaxMessageBytes, 0),
         RequireAuth = GetBool(ConfigKeys.ListenerRequireAuth, false),
-        TlsCertPath = GetString(ConfigKeys.ListenerTlsCertPath, ""),
-        TlsCertPassword = GetString(ConfigKeys.ListenerTlsCertPassword, ""),
+        // STARTTLS uses the shared TLS certificate (same cert as the HTTPS ingestion API).
+        TlsCertPath = GetString(ConfigKeys.TlsCertPath, ""),
+        TlsCertPassword = GetString(ConfigKeys.TlsCertPassword, ""),
         ConnectionTimeoutSeconds = GetInt(ConfigKeys.ListenerConnectionTimeoutSeconds, 60),
         MaxConnections = GetInt(ConfigKeys.ListenerMaxConnections, 100),
     };
@@ -74,6 +75,11 @@ public sealed class ConfigCache
     public ApiOptions Api() => new()
     {
         Port = GetInt(ConfigKeys.ApiPort, 8025),
+        HttpEnabled = GetBool(ConfigKeys.ApiHttpEnabled, true),
+        TlsEnabled = GetBool(ConfigKeys.ApiTlsEnabled, false),
+        TlsPort = GetInt(ConfigKeys.ApiTlsPort, 8026),
+        TlsCertPath = GetString(ConfigKeys.TlsCertPath, ""),
+        TlsCertPassword = GetString(ConfigKeys.TlsCertPassword, ""),
         AllowedCidrs = GetStringArray(ConfigKeys.ApiAllowedCidrs, []),
         MaxMessageBytes = GetLong(ConfigKeys.ApiMaxMessageBytes, 0),
         RateLimitPerKey = GetInt(ConfigKeys.ApiRateLimitPerKey, 100),

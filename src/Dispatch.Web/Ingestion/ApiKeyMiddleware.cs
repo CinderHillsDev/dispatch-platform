@@ -30,9 +30,9 @@ public sealed class ApiKeyMiddleware(
     {
         // Live API settings from the config cache (spec §12.5): allow-list/rate-limit edits apply at once.
         var o = config.Api();
-        if (ctx.Connection.LocalPort != o.Port)
+        if (!o.IsApiPort(ctx.Connection.LocalPort))
         {
-            await next(ctx);   // not the ingestion port — leave it to the dashboard pipeline
+            await next(ctx);   // not an ingestion port (plain HTTP or HTTPS) — leave it to the dashboard pipeline
             return;
         }
 

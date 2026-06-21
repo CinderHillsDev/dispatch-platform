@@ -4,13 +4,14 @@ using System.Security.Cryptography.X509Certificates;
 namespace Dispatch.Web.Endpoints;
 
 /// <summary>
-/// Builds the SMTP listener's STARTTLS certificate as a password-protected PFX written to the data dir, so
-/// operators never deal with a file path: they either generate a self-signed cert or upload a cert + key.
-/// The listener loads it from <c>listener.tls_cert_path</c> at startup (so changes apply on restart).
+/// Builds the shared TLS certificate (SMTP STARTTLS + the HTTPS ingestion API) as a password-protected PFX
+/// written to the data dir, so operators never deal with a file path: they either generate a self-signed
+/// cert or upload a cert + key. Both listeners load it from <c>tls.cert_path</c> at startup (changes apply
+/// on restart).
 /// </summary>
-public static class ListenerCert
+public static class TlsCert
 {
-    public const string FileName = "dispatch-smtp.pfx";
+    public const string FileName = "dispatch-tls.pfx";
 
     /// <summary>Generate a self-signed cert and write it as a PFX. Returns (absolute path, random password).</summary>
     public static (string Path, string Password) Generate(string dir, string commonName)

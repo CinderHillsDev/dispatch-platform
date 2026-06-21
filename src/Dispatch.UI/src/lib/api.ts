@@ -157,9 +157,14 @@ export interface SystemConfig {
   listener: {
     ports: number[]; serverName: string; allowedCidrs: string[];
     maxMessageBytes: number; requireAuth: boolean;
-    tlsEnabled: boolean; tlsCertSource: string; appliesOnRestart: string[];
+    tlsEnabled: boolean; appliesOnRestart: string[];
   };
-  api: { port: number; allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number; appliesOnRestart: string[] };
+  // Shared TLS certificate (SMTP STARTTLS + HTTPS API). source: "generated" | "uploaded" | "".
+  tls: { source: string };
+  api: {
+    port: number; httpEnabled: boolean; tlsEnabled: boolean; tlsPort: number;
+    allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number; appliesOnRestart: string[];
+  };
   webui: { port: number; requireHttps: boolean; appliesOnRestart: string[] };
   spool: { directory: string; workerCount: number; appliesOnRestart: string[] };
 }
@@ -270,7 +275,7 @@ export const api = {
     config: () => getJson<SystemConfig>("/api/config"),
     putListener: (d: Partial<{ ports: number[]; serverName: string; allowedCidrs: string[]; maxMessageBytes: number; requireAuth: boolean; tlsCertPath: string; tlsCertPassword: string }>) =>
       sendJson<{ ok: boolean }>("/api/config/listener", "PUT", d),
-    putApi: (d: Partial<{ port: number; allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number }>) =>
+    putApi: (d: Partial<{ port: number; httpEnabled: boolean; tlsEnabled: boolean; tlsPort: number; allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number }>) =>
       sendJson<{ ok: boolean }>("/api/config/api", "PUT", d),
     putWebui: (d: Partial<{ port: number; allowedCidrs: string[]; requireHttps: boolean; sessionTimeoutMinutes: number }>) =>
       sendJson<{ ok: boolean }>("/api/config/webui", "PUT", d),
@@ -279,13 +284,13 @@ export const api = {
     saveLogging: (logging: AppSettings["logging"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { logging }),
     saveRetry: (retry: AppSettings["retry"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retry }),
     saveRetention: (retention: AppSettings["retention"]) => sendJson<{ ok: boolean }>("/api/settings", "PUT", { retention }),
-    generateListenerCert: () => sendJson<{ ok: boolean; source: string }>("/api/config/listener-cert/generate", "POST", {}),
-    removeListenerCert: () => sendJson<{ ok: boolean }>("/api/config/listener-cert", "DELETE", {}),
-    uploadListenerCert: async (cert: File, key: File) => {
+    generateTlsCert: () => sendJson<{ ok: boolean; source: string }>("/api/config/tls-cert/generate", "POST", {}),
+    removeTlsCert: () => sendJson<{ ok: boolean }>("/api/config/tls-cert", "DELETE", {}),
+    uploadTlsCert: async (cert: File, key: File) => {
       const fd = new FormData();
       fd.append("cert", cert);
       fd.append("key", key);
-      const res = await fetch("/api/config/listener-cert/upload", { method: "POST", headers: { "X-Dispatch-Request": "1" }, body: fd });
+      const res = await fetch("/api/config/tls-cert/upload", { method: "POST", headers: { "X-Dispatch-Request": "1" }, body: fd });
       const text = await res.text();
       const data = text ? JSON.parse(text) : {};
       if (!res.ok) throw new Error(data?.error ?? `${res.status} ${res.statusText}`);

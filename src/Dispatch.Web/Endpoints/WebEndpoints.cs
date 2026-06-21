@@ -25,10 +25,11 @@ public static class WebEndpoints
     private static readonly string Version =
         typeof(WebEndpoints).Assembly.GetName().Version?.ToString() ?? "dev";
 
-    /// <summary>Ingestion API (spec §7), reachable only on the API port; auth is enforced by middleware.</summary>
-    public static void MapIngestionApi(this IEndpointRouteBuilder app, int apiPort)
+    /// <summary>Ingestion API (spec §7), reachable only on the API port(s) — plain HTTP and/or HTTPS; auth is
+    /// enforced by middleware.</summary>
+    public static void MapIngestionApi(this IEndpointRouteBuilder app, ApiOptions api)
     {
-        var group = app.MapGroup("/api/v1").RequireLocalPort(apiPort);
+        var group = app.MapGroup("/api/v1").RequireApiPort(api);
 
         group.MapPost("/messages", (HttpContext ctx, ApiMessageHandler handler, CancellationToken ct) =>
             handler.HandleAsync(ctx, ct));
@@ -277,6 +278,14 @@ public static class WebEndpoints
     {
         group.AddEndpointFilter(async (ctx, next) =>
             ctx.HttpContext.Connection.LocalPort == port ? await next(ctx) : Results.NotFound());
+        return group;
+    }
+
+    // The ingestion API may be bound on a plain-HTTP port and/or an HTTPS port; accept either.
+    private static RouteGroupBuilder RequireApiPort(this RouteGroupBuilder group, ApiOptions api)
+    {
+        group.AddEndpointFilter(async (ctx, next) =>
+            api.IsApiPort(ctx.HttpContext.Connection.LocalPort) ? await next(ctx) : Results.NotFound());
         return group;
     }
 
