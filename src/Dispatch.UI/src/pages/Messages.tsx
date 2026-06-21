@@ -47,6 +47,7 @@ function toParams(f: Filters): URLSearchParams {
 
 export function Messages() {
   const [filters, setFilters] = useState<Filters>(EMPTY);
+  const [showMore, setShowMore] = useState(false);
   const [relays, setRelays] = useState<RelayListItem[]>([]);
   const [rules, setRules] = useState<RuleItem[]>([]);
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
@@ -67,8 +68,14 @@ export function Messages() {
   useEffect(() => { api.rules.list().then(setRules).catch(() => setRules([])); }, []);
   useEffect(() => { api.keys.list().then(setKeys).catch(() => setKeys([])); }, []);
 
-  const toggleEvent = (ev: string) =>
-    setFilters((f) => ({ ...f, events: f.events.includes(ev) ? f.events.filter((e) => e !== ev) : [...f.events, ev] }));
+  // Status is single-select (a message is exactly one of Delivered/Failed/…): clicking a chip selects only
+  // it; clicking the active chip (or "All") clears the status filter.
+  const selectEvent = (ev: string | null) =>
+    setFilters((f) => ({ ...f, events: ev && f.events[0] !== ev ? [ev] : [] }));
+
+  const advancedActive = !!(filters.from || filters.to || filters.relay || filters.rule || filters.source ||
+    filters.apiKeyId || filters.fromDomain || filters.toDomain || filters.tag);
+  const anyActive = advancedActive || filters.events.length > 0 || !!filters.subject;
 
   const loadMore = useCallback(async () => {
     if (!cursor) return;
@@ -110,42 +117,76 @@ export function Messages() {
       <div>
         <h1 className="page-title">Message Log</h1>
 
-        <div className="filters" style={{ alignItems: "center" }}>
-          <input type="date" value={filters.from} onChange={(e) => set("from", e.target.value)} title="From date" />
-          <input type="date" value={filters.to} onChange={(e) => set("to", e.target.value)} title="To date" />
-          {EVENT_OPTIONS.map((ev) => (
-            <button
-              key={ev}
-              type="button"
-              onClick={() => toggleEvent(ev)}
-              className={filters.events.includes(ev) ? "badge ok" : "badge"}
-              style={{ cursor: "pointer", border: "1px solid var(--border)", opacity: filters.events.includes(ev) ? 1 : 0.6 }}
-            >{ev}</button>
-          ))}
-          <select value={filters.relay} onChange={(e) => set("relay", e.target.value)}>
-            <option value="">Any relay</option>
-            {relays.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
-          </select>
-          <select value={filters.rule} onChange={(e) => set("rule", e.target.value)} title="Routing rule">
-            <option value="">Any rule</option>
-            {rules.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
-          </select>
-          <select value={filters.source} onChange={(e) => set("source", e.target.value)}>
-            <option value="">All sources</option>
-            <option value="SMTP">SMTP</option>
-            <option value="API">API</option>
-          </select>
-          {filters.source === "API" && (
-            <select value={filters.apiKeyId} onChange={(e) => set("apiKeyId", e.target.value)} title="API key">
-              <option value="">Any key</option>
-              {keys.map((k) => <option key={k.id} value={String(k.id)}>{k.name}</option>)}
-            </select>
-          )}
-          <input placeholder="Subject contains" value={filters.subject} onChange={(e) => set("subject", e.target.value)} />
-          <input placeholder="Sender domain" value={filters.fromDomain} onChange={(e) => set("fromDomain", e.target.value)} />
-          <input placeholder="Recipient domain" value={filters.toDomain} onChange={(e) => set("toDomain", e.target.value)} />
-          <input placeholder="Tag ⚠" value={filters.tag} onChange={(e) => set("tag", e.target.value)} />
+        {/* Primary bar: status (single-select) + subject search + a toggle for the rest. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+          <div style={{ display: "inline-flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+            {([["All", null], ...EVENT_OPTIONS.map((e) => [e, e] as const)] as [string, string | null][]).map(([label, ev]) => {
+              const active = ev === null ? filters.events.length === 0 : filters.events[0] === ev;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => selectEvent(ev)}
+                  style={{
+                    border: "none", borderRadius: 0, padding: "6px 12px", fontSize: 13,
+                    background: active ? "var(--blue)" : "transparent",
+                    color: active ? "#fff" : "var(--muted)", fontWeight: active ? 600 : 400,
+                  }}
+                >{label}</button>
+              );
+            })}
+          </div>
+
+          <input
+            placeholder="Search subject…"
+            value={filters.subject}
+            onChange={(e) => set("subject", e.target.value)}
+            style={{ flex: "1 1 200px", minWidth: 160 }}
+          />
+
+          <button type="button" onClick={() => setShowMore((s) => !s)}>
+            {showMore ? "Hide filters ▴" : "More filters ▾"}{advancedActive ? " •" : ""}
+          </button>
+          {anyActive && <button type="button" onClick={() => { setFilters(EMPTY); }}>Clear</button>}
         </div>
+
+        {/* Advanced filters: tucked away by default so the bar isn't cluttered. */}
+        {showMore && (
+          <div className="panel" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 14 }}>
+            <Labeled label="Received from"><input type="date" value={filters.from} onChange={(e) => set("from", e.target.value)} style={{ width: "100%" }} /></Labeled>
+            <Labeled label="Received to"><input type="date" value={filters.to} onChange={(e) => set("to", e.target.value)} style={{ width: "100%" }} /></Labeled>
+            <Labeled label="Relay">
+              <select value={filters.relay} onChange={(e) => set("relay", e.target.value)} style={{ width: "100%" }}>
+                <option value="">Any relay</option>
+                {relays.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
+              </select>
+            </Labeled>
+            <Labeled label="Routing rule">
+              <select value={filters.rule} onChange={(e) => set("rule", e.target.value)} style={{ width: "100%" }}>
+                <option value="">Any rule</option>
+                {rules.map((r) => <option key={r.id} value={r.name}>{r.name}</option>)}
+              </select>
+            </Labeled>
+            <Labeled label="Ingest source">
+              <select value={filters.source} onChange={(e) => set("source", e.target.value)} style={{ width: "100%" }}>
+                <option value="">All sources</option>
+                <option value="SMTP">SMTP</option>
+                <option value="API">API</option>
+              </select>
+            </Labeled>
+            {filters.source === "API" && (
+              <Labeled label="API key">
+                <select value={filters.apiKeyId} onChange={(e) => set("apiKeyId", e.target.value)} style={{ width: "100%" }}>
+                  <option value="">Any key</option>
+                  {keys.map((k) => <option key={k.id} value={String(k.id)}>{k.name}</option>)}
+                </select>
+              </Labeled>
+            )}
+            <Labeled label="Sender domain"><input placeholder="e.g. example.com" value={filters.fromDomain} onChange={(e) => set("fromDomain", e.target.value)} style={{ width: "100%" }} /></Labeled>
+            <Labeled label="Recipient domain"><input placeholder="e.g. acme.com" value={filters.toDomain} onChange={(e) => set("toDomain", e.target.value)} style={{ width: "100%" }} /></Labeled>
+            <Labeled label="Tag"><input placeholder="exact tag" value={filters.tag} onChange={(e) => set("tag", e.target.value)} style={{ width: "100%" }} /></Labeled>
+          </div>
+        )}
 
         <div className="panel" style={{ padding: 0, overflow: "hidden" }}>
           <table>
@@ -279,6 +320,15 @@ function Recipients({ to, domain }: { to: string[]; domain: string }) {
 }
 
 const Dash = () => <span className="muted">—</span>;
+
+function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: "block" }}>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>
+      {children}
+    </label>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
