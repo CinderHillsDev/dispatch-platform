@@ -224,7 +224,11 @@ if [[ -n "$PREBUILT_DIR" ]]; then
   echo "==> Ensuring .NET runtime dependencies (ICU, CA certs)"
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -y >/dev/null 2>&1 || true
-    apt-get install -y libicu ca-certificates || echo "WARN: could not install libicu — install it manually if the service fails to start." >&2
+    apt-get install -y ca-certificates || true
+    # On Debian/Ubuntu the ICU runtime is version-numbered (libicu74, libicu76, …) — there is no plain
+    # "libicu" package. Resolve the highest-versioned one; fall back to libicu-dev which always pulls it.
+    icu_pkg="$(apt-cache --names-only search '^libicu[0-9]+$' 2>/dev/null | awk '{print $1}' | sort -V | tail -1)"
+    apt-get install -y "${icu_pkg:-libicu-dev}" || echo "WARN: could not install the ICU runtime — install libicu manually if the service fails to start." >&2
   elif command -v dnf >/dev/null 2>&1; then dnf install -y libicu ca-certificates || true
   elif command -v yum >/dev/null 2>&1; then yum install -y libicu ca-certificates || true
   fi
