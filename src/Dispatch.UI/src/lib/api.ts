@@ -16,6 +16,7 @@ export interface MessageRow {
   spoolId: string;
   fromAddress: string;
   toDomain: string;
+  toAddresses: string[];
   subject: string | null;
   relayName: string | null;
   provider: string | null;

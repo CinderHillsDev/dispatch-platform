@@ -53,7 +53,8 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         var sql = $"""
             SELECT TOP (@Limit)
                 id AS Id, logged_at AS LoggedAt, event AS Event, status AS Status, spool_id AS SpoolId,
-                from_address AS FromAddress, to_domain AS ToDomain, subject AS Subject, relay_name AS RelayName,
+                from_address AS FromAddress, to_domain AS ToDomain, to_addresses AS ToAddressesJson,
+                subject AS Subject, relay_name AS RelayName,
                 provider AS Provider, duration_ms AS DurationMs, size_bytes AS SizeBytes,
                 ingest_source AS IngestSource, retry_attempt AS RetryAttempt, error AS Error
             FROM relay_log

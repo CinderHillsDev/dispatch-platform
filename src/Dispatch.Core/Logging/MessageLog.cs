@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace Dispatch.Core.Logging;
 
 /// <summary>Opaque keyset cursor — the (logged_at, id) of the last row returned (spec §9.2).</summary>
@@ -32,6 +35,11 @@ public sealed class MessageLogRow
     public string SpoolId { get; init; } = "";
     public string FromAddress { get; init; } = "";
     public string ToDomain { get; init; } = "";
+    /// <summary>Raw to_addresses JSON column (mapped by Dapper); not serialised — use <see cref="ToAddresses"/>.</summary>
+    [JsonIgnore] public string? ToAddressesJson { get; init; }
+    /// <summary>Full recipient list, parsed from <see cref="ToAddressesJson"/>, so the log can show real
+    /// addresses (and a +N count for multiple recipients) rather than only the domain.</summary>
+    public IReadOnlyList<string> ToAddresses => MessageLogJson.ParseArray(ToAddressesJson);
     public string? Subject { get; init; }
     public string? RelayName { get; init; }
     public string? Provider { get; init; }
@@ -40,6 +48,17 @@ public sealed class MessageLogRow
     public string IngestSource { get; init; } = "";
     public int RetryAttempt { get; init; }
     public string? Error { get; init; }
+}
+
+/// <summary>Shared JSON-array parsing for log rows (recipients/tags stored as JSON text columns).</summary>
+internal static class MessageLogJson
+{
+    public static IReadOnlyList<string> ParseArray(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<string[]>(json) ?? []; }
+        catch (JsonException) { return []; }
+    }
 }
 
 public sealed record MessageLogPage(IReadOnlyList<MessageLogRow> Rows, MessageLogCursor? NextCursor);

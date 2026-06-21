@@ -165,7 +165,7 @@ export function Messages() {
                   <td>{new Date(r.loggedAt).toLocaleString()}</td>
                   <td><span className={badgeClass(r.status)}>{r.event}</span></td>
                   <td>{r.fromAddress}</td>
-                  <td>@{r.toDomain}</td>
+                  <td><Recipients to={r.toAddresses} domain={r.toDomain} /></td>
                   <td className="subject">{r.subject ?? <span className="muted">(none)</span>}</td>
                   <td>{r.relayName ?? "—"}</td>
                   <td>{r.provider ?? "—"}</td>
@@ -250,6 +250,19 @@ export function Messages() {
         </Modal>
       )}
     </>
+  );
+}
+
+// Shows the first full recipient (truncated, with the complete list on hover) plus a "+N" chip when there
+// are more, so the To column stays bounded no matter how many recipients a message has.
+function Recipients({ to, domain }: { to: string[]; domain: string }) {
+  if (!to || to.length === 0) return <span className="muted">@{domain}</span>;
+  const [first, ...rest] = to;
+  return (
+    <span title={to.join(", ")} style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 240 }}>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{first}</span>
+      {rest.length > 0 && <span className="badge" style={{ flexShrink: 0 }}>+{rest.length}</span>}
+    </span>
   );
 }
 

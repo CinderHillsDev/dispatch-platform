@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type RelayDetail, type RelayListItem, type TestResult, type TestRunLine } from "../lib/api";
 import { createTestProviderConnection } from "../lib/signalr";
 import { PROVIDER_FIELDS } from "../lib/providers";
+import { Modal } from "../Modal";
 
 // One-click SMTP presets — pick a provider and host/port/TLS are filled in; just add credentials. Almost
 // every provider offers SMTP, so this covers the long tail without a native integration for each.
@@ -42,8 +43,8 @@ export function Relays() {
     <>
       <h1 className="page-title">Relays</h1>
 
-      <div style={{ display: "flex", gap: 22, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div className="panel" style={{ flex: "1 1 360px" }}>
+      <div>
+        <div className="panel">
           <h2>Configured relays</h2>
           <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
             A relay is an upstream provider Dispatch delivers through. The <strong>catch-all</strong> relay
@@ -71,7 +72,13 @@ export function Relays() {
           </div>
         </div>
 
-        {selected && (
+      </div>
+
+      {selected && (
+        <Modal
+          title={`Edit · ${selected.name}${selected.isDefault ? " (catch-all)" : ""}`}
+          onClose={() => setSelected(null)}
+        >
           <RelayEditor
             key={selected.id}
             relay={selected}
@@ -79,8 +86,8 @@ export function Relays() {
             onDeleted={async () => { setSelected(null); await refresh(); }}
             setMsg={setMsg}
           />
-        )}
-      </div>
+        </Modal>
+      )}
       {msg && <p style={{ marginTop: 16 }}><span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span></p>}
     </>
   );
@@ -175,8 +182,7 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
   };
 
   return (
-    <div className="panel" style={{ flex: "1 1 380px" }}>
-      <h2>Edit · {relay.name}{relay.isDefault ? " (catch-all)" : ""}</h2>
+    <>
 
       <label className="muted" style={{ fontSize: 12 }}>Name</label>
       <input style={{ width: "100%", marginBottom: 12 }} value={name} onChange={(e) => setName(e.target.value)} />
@@ -280,6 +286,6 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
