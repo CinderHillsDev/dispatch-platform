@@ -306,7 +306,7 @@ public static class WebEndpoints
         ProviderResponse = detail,
         Error = error,
         DurationMs = durationMs,
-        IngestSource = "Test",
+        IngestSource = "Dashboard test",   // distinguishes a dashboard "Send test" from real SMTP/API traffic (NVARCHAR(16))
     };
 
     public sealed record CreateKeyRequest(string Name, int? RateLimitPerMinute);

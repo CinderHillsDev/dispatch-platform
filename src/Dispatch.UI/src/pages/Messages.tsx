@@ -173,7 +173,7 @@ export function Messages() {
                 <option value="">All sources</option>
                 <option value="SMTP">SMTP</option>
                 <option value="API">API</option>
-                <option value="Test">Test (provider test)</option>
+                <option value="Dashboard test">Dashboard test</option>
               </select>
             </Labeled>
             {filters.source === "API" && (
