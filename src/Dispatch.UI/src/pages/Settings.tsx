@@ -158,8 +158,7 @@ function RetentionPanel({ initial }: { initial: AppSettings["retention"] }) {
     { key: "capturedRetentionDays", label: "Captured (local inbox) retention (days)", help: "Captured messages (Local mode) on disk older than this are deleted." },
     { key: "auditRetentionDays", label: "Audit log retention (days)", help: "System Logs entries older than this are removed (0 = keep forever)." },
     { key: "auditSecurityRetentionDays", label: "Security event retention (days)", help: "Noisier security events (access denials, SMTP auth failures) are removed sooner (0 = keep forever)." },
-    { key: "sizeTriggerGb", label: "Size-pressure trigger (GB)", help: "When the database reaches this size, the oldest entries are removed.", step: 0.1 },
-    { key: "sizeTargetGb", label: "Size-pressure target (GB)", help: "Size-pressure cleanup runs until the database drops below this.", step: 0.1 },
+    { key: "sizeTriggerGb", label: "Max database size (GB)", help: "When the database reaches this size, the oldest log entries are removed automatically (down to ~0.5 GB below). SQL Server Express caps at 10 GB.", step: 0.1 },
   ];
   return (
     <SavePanel title="Retention" value={retention}

@@ -103,11 +103,13 @@ public sealed class PurgeWorker(
     {
         var size = await logs.GetDatabaseSizeBytesAsync(ct);
         var trigger = (long)(o.SizePressure.TriggerGb * BytesPerGb);
-        var target = (long)(o.SizePressure.TargetGb * BytesPerGb);
+        // Operators set a single size limit; purge down to a 0.5 GB buffer below it so we don't thrash at the cap.
+        var targetGb = Math.Max(0.5, o.SizePressure.TriggerGb - 0.5);
+        var target = (long)(targetGb * BytesPerGb);
         if (size < trigger) return 0;
 
         log.LogWarning("Database at {SizeGb:F1} GB — running size-pressure purge to {TargetGb:F1} GB",
-            size / (double)BytesPerGb, o.SizePressure.TargetGb);
+            size / (double)BytesPerGb, targetGb);
 
         var total = 0;
         while (!ct.IsCancellationRequested && await logs.GetDatabaseSizeBytesAsync(ct) >= target)
