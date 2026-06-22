@@ -179,6 +179,8 @@ public static class SettingsEndpoints
                     logFailedRetentionDays = await ReadInt(config, SqlPurgeSettings.LogFailedRetentionDaysKey, pd.Log.FailedRetentionDays, ct),
                     spoolFailedRetentionDays = await ReadInt(config, SqlPurgeSettings.SpoolFailedRetentionDaysKey, pd.SpoolFailedRetentionDays, ct),
                     capturedRetentionDays = await ReadInt(config, SqlPurgeSettings.CapturedRetentionDaysKey, pd.CapturedRetentionDays, ct),
+                    auditRetentionDays = await ReadInt(config, SqlPurgeSettings.AuditRetentionDaysKey, pd.AuditRetentionDays, ct),
+                    auditSecurityRetentionDays = await ReadInt(config, SqlPurgeSettings.AuditSecurityRetentionDaysKey, pd.AuditSecurityRetentionDays, ct),
                     sizeTriggerGb = await ReadDouble(config, SqlPurgeSettings.SizeTriggerGbKey, pd.SizePressure.TriggerGb, ct),
                     sizeTargetGb = await ReadDouble(config, SqlPurgeSettings.SizeTargetGbKey, pd.SizePressure.TargetGb, ct),
                 },
@@ -207,6 +209,8 @@ public static class SettingsEndpoints
                 if (re.LogFailedRetentionDays is { } v2) await SetInt(config, SqlPurgeSettings.LogFailedRetentionDaysKey, v2, ct);
                 if (re.SpoolFailedRetentionDays is { } v3) await SetInt(config, SqlPurgeSettings.SpoolFailedRetentionDaysKey, v3, ct);
                 if (re.CapturedRetentionDays is { } v4) await SetInt(config, SqlPurgeSettings.CapturedRetentionDaysKey, v4, ct);
+                if (re.AuditRetentionDays is { } va) await SetInt(config, SqlPurgeSettings.AuditRetentionDaysKey, va, ct);
+                if (re.AuditSecurityRetentionDays is { } vas) await SetInt(config, SqlPurgeSettings.AuditSecurityRetentionDaysKey, vas, ct);
                 if (re.SizeTriggerGb is { } v5) await SetDouble(config, SqlPurgeSettings.SizeTriggerGbKey, v5, ct);
                 if (re.SizeTargetGb is { } v6) await SetDouble(config, SqlPurgeSettings.SizeTargetGbKey, v6, ct);
             }
@@ -272,6 +276,8 @@ public static class SettingsEndpoints
         int? LogFailedRetentionDays,
         int? SpoolFailedRetentionDays,
         int? CapturedRetentionDays,
+        int? AuditRetentionDays,
+        int? AuditSecurityRetentionDays,
         double? SizeTriggerGb,
         double? SizeTargetGb);
 

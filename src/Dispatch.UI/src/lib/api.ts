@@ -151,6 +151,8 @@ export interface AppSettings {
     logFailedRetentionDays: number;
     spoolFailedRetentionDays: number;
     capturedRetentionDays: number;
+    auditRetentionDays: number;
+    auditSecurityRetentionDays: number;
     sizeTriggerGb: number;
     sizeTargetGb: number;
   };

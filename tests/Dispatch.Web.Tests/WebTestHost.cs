@@ -165,6 +165,8 @@ internal sealed class FakeAuditLog : Dispatch.Core.Audit.IAuditLog
             return Task.FromResult(new Dispatch.Core.Audit.AuditPage(rows, null));
         }
     }
+
+    public Task<int> PurgeAsync(int generalRetentionDays, int securityRetentionDays, CancellationToken ct = default) => Task.FromResult(0);
 }
 
 internal sealed class FakeApiKeyRepository : IApiKeyRepository

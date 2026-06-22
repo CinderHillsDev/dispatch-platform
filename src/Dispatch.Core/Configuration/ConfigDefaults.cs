@@ -61,6 +61,8 @@ public static class ConfigDefaults
         [ConfigKeys.PurgeCapturedRetentionDays] = "7",
         [ConfigKeys.PurgeLogDeliveredRetentionDays] = "30",
         [ConfigKeys.PurgeLogFailedRetentionDays] = "90",
+        [ConfigKeys.PurgeAuditRetentionDays] = "90",
+        [ConfigKeys.PurgeAuditSecurityRetentionDays] = "7",
         [ConfigKeys.PurgeSizeTriggerGb] = "9.5",
         [ConfigKeys.PurgeSizeTargetGb] = "9.0",
     };

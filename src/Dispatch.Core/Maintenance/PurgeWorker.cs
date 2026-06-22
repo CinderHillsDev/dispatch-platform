@@ -73,6 +73,13 @@ public sealed class PurgeWorker(
 
         logRows += await RunSizePressureAsync(o, ct);
 
+        // Audit log retention (general + shorter window for noisy security events).
+        if (audit is not null)
+        {
+            var auditDeleted = await audit.PurgeAsync(o.AuditRetentionDays, o.AuditSecurityRetentionDays, ct);
+            if (auditDeleted > 0) log.LogInformation("Purged {Count} audit_log rows", auditDeleted);
+        }
+
         long dbSize;
         try { dbSize = await logs.GetDatabaseSizeBytesAsync(ct); } catch { dbSize = 0; }
 

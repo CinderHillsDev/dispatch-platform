@@ -75,6 +75,44 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
         return new AuditPage(rows, next);
     }
 
+    public async Task<int> PurgeAsync(int generalRetentionDays, int securityRetentionDays, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var cn = await factory.OpenAsync(ct);
+            var total = 0;
+            // Noisy security events (allow-list denials, SMTP auth failures) are kept shorter.
+            if (securityRetentionDays > 0)
+                total += await DeleteBatchedAsync(cn,
+                    "DELETE TOP (@Batch) FROM audit_log WHERE category IN ('Access','SmtpAuth') AND logged_at < DATEADD(DAY, -@Days, SYSUTCDATETIME());",
+                    securityRetentionDays, ct);
+            if (generalRetentionDays > 0)
+                total += await DeleteBatchedAsync(cn,
+                    "DELETE TOP (@Batch) FROM audit_log WHERE logged_at < DATEADD(DAY, -@Days, SYSUTCDATETIME());",
+                    generalRetentionDays, ct);
+            return total;
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Audit log purge failed");
+            return 0;
+        }
+    }
+
+    private static async Task<int> DeleteBatchedAsync(System.Data.Common.DbConnection cn, string sql, int days, CancellationToken ct)
+    {
+        const int batch = 1000;
+        var total = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            var deleted = await cn.ExecuteAsync(new CommandDefinition(sql, new { Batch = batch, Days = days }, cancellationToken: ct));
+            total += deleted;
+            if (deleted < batch) break;
+            await Task.Delay(100, ct);
+        }
+        return total;
+    }
+
     private static string? Trunc(string? value, int max) =>
         value is { Length: > 0 } && value.Length > max ? value[..max] : value;
 }

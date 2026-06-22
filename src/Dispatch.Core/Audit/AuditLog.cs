@@ -24,6 +24,11 @@ public interface IAuditLog
         string? actor, string? sourceIp, string? detail, CancellationToken ct = default);
 
     Task<AuditPage> QueryAsync(AuditFilter filter, CancellationToken ct = default);
+
+    /// <summary>Retention purge: deletes audit entries older than <paramref name="generalRetentionDays"/>,
+    /// and the noisier Access/SmtpAuth security events older than <paramref name="securityRetentionDays"/>
+    /// (kept shorter). A retention of 0 means "keep forever" for that tier. Best-effort. Returns rows deleted.</summary>
+    Task<int> PurgeAsync(int generalRetentionDays, int securityRetentionDays, CancellationToken ct = default);
 }
 
 /// <summary>Ergonomic helpers so call sites read clearly and use consistent kinds/severities.</summary>

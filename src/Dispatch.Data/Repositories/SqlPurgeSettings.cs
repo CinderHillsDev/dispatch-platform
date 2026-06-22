@@ -17,6 +17,8 @@ public sealed class SqlPurgeSettings(IConfigRepository config, IOptions<PurgeOpt
     public const string SizeTargetGbKey = "purge.size_target_gb";
     public const string SpoolFailedRetentionDaysKey = "purge.spool_failed_retention_days";
     public const string CapturedRetentionDaysKey = "purge.captured_retention_days";
+    public const string AuditRetentionDaysKey = "purge.audit_retention_days";
+    public const string AuditSecurityRetentionDaysKey = "purge.audit_security_retention_days";
 
     private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(10);
     private readonly PurgeOptions _defaults = defaults.Value;
@@ -38,6 +40,8 @@ public sealed class SqlPurgeSettings(IConfigRepository config, IOptions<PurgeOpt
             ScheduleIntervalHours = _defaults.ScheduleIntervalHours,
             SpoolFailedRetentionDays = await ReadIntAsync(SpoolFailedRetentionDaysKey, _defaults.SpoolFailedRetentionDays, ct),
             CapturedRetentionDays = await ReadIntAsync(CapturedRetentionDaysKey, _defaults.CapturedRetentionDays, ct),
+            AuditRetentionDays = await ReadIntAsync(AuditRetentionDaysKey, _defaults.AuditRetentionDays, ct),
+            AuditSecurityRetentionDays = await ReadIntAsync(AuditSecurityRetentionDaysKey, _defaults.AuditSecurityRetentionDays, ct),
             Log = new PurgeOptions.LogRetention
             {
                 DeliveredRetentionDays = await ReadIntAsync(LogDeliveredRetentionDaysKey, _defaults.Log.DeliveredRetentionDays, ct),
