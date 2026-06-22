@@ -60,7 +60,26 @@ public static class LocalInboxEndpoints
                 date = msg.Date.UtcDateTime,
                 text = msg.TextBody,
                 html = msg.HtmlBody,
+                attachments = msg.Attachments.Select((a, i) => new
+                {
+                    index = i,
+                    name = AttachmentName(a, i),
+                    contentType = a.ContentType?.MimeType ?? "application/octet-stream",
+                    sizeBytes = AttachmentBytes(a)?.Length ?? 0,
+                }).ToArray(),
             });
+        });
+
+        // Download a single attachment (decoded) from a captured message.
+        group.MapGet("/local/messages/{id}/attachments/{index:int}", (string id, int index, SpoolDirectory spool) =>
+        {
+            if (!TryResolve(spool, id, out var path)) return Results.NotFound();
+            var msg = MimeMessage.Load(path);
+            var att = msg.Attachments.ElementAtOrDefault(index);
+            if (att is null) return Results.NotFound();
+            var bytes = AttachmentBytes(att);
+            if (bytes is null) return Results.NotFound();
+            return Results.File(bytes, att.ContentType?.MimeType ?? "application/octet-stream", AttachmentName(att, index));
         });
 
         group.MapDelete("/local/messages/{id}", (string id, SpoolDirectory spool) =>
@@ -77,6 +96,20 @@ public static class LocalInboxEndpoints
                     File.Delete(f);
             return Results.Ok(new { ok = true });
         });
+    }
+
+    private static string AttachmentName(MimeEntity entity, int index) =>
+        entity.ContentDisposition?.FileName
+        ?? entity.ContentType?.Name
+        ?? $"attachment-{index + 1}";
+
+    // Decoded bytes of an attachment (null for non-part entities, e.g. embedded message/rfc822).
+    private static byte[]? AttachmentBytes(MimeEntity entity)
+    {
+        if (entity is not MimePart part) return null;
+        using var ms = new MemoryStream();
+        part.Content.DecodeTo(ms);
+        return ms.ToArray();
     }
 
     // Guards against path traversal: the id must be a bare .eml filename inside the captured dir.

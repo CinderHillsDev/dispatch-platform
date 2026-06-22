@@ -104,7 +104,8 @@ export interface SimulateResult {
 }
 
 export interface InboxItem { id: string; from: string; to: string; subject: string; date: string; sizeBytes: number; }
-export interface InboxMessage extends InboxItem { cc: string; text: string | null; html: string | null; }
+export interface InboxAttachment { index: number; name: string; contentType: string; sizeBytes: number; }
+export interface InboxMessage extends InboxItem { cc: string; text: string | null; html: string | null; attachments: InboxAttachment[]; }
 
 export interface FailedItem {
   id: string; from: string; to: string[]; subject: string;

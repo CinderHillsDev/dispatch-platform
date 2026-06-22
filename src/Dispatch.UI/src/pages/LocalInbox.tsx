@@ -5,6 +5,9 @@ import { Modal } from "../Modal";
 const badgeClass = (status: string) =>
   status === "OK" ? "badge ok" : status === "Denied" ? "badge denied" : "badge error";
 
+const fmtBytes = (n: number) =>
+  n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+
 export function LocalInbox() {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [selected, setSelected] = useState<InboxMessage | null>(null);
@@ -119,6 +122,28 @@ export function LocalInbox() {
                     ))}
                   </ol>
                 )}
+              </div>
+            )}
+
+            {selected.attachments.length > 0 && (
+              <div>
+                <div className="muted" style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 6 }}>
+                  Attachments ({selected.attachments.length})
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {selected.attachments.map((a) => (
+                    <a
+                      key={a.index}
+                      href={`/api/local/messages/${encodeURIComponent(selected.id)}/attachments/${a.index}`}
+                      download={a.name}
+                      style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", textDecoration: "none", color: "var(--text)" }}
+                    >
+                      <span>📎</span>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+                      <span className="muted" style={{ fontSize: 12 }}>{fmtBytes(a.sizeBytes)} · ↓</span>
+                    </a>
+                  ))}
+                </div>
               </div>
             )}
 
