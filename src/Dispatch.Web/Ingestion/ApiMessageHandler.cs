@@ -87,6 +87,8 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
             ApiKeyId = apiKey?.Id,
             ApiKeyName = apiKey?.Name,
             Tags = tags.Length > 0 ? tags : null,
+            XMailer = mime.Headers["X-Mailer"]?.Trim() is { Length: > 0 } xm ? xm : null,
+            AttachmentCount = mime.Attachments.Count(),
         }.Save(emlPath);
 
         spool.Signal(Path.GetFileName(emlPath));

@@ -57,6 +57,8 @@ export interface MessageDetail {
   sourceIp: string | null;
   apiKeyName: string | null;
   tags: string[];
+  xMailer: string | null;
+  attachmentCount: number;
   history: MessageAttempt[];
 }
 

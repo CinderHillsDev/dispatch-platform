@@ -294,6 +294,8 @@ export function Messages() {
               <Section title="Origin">
                 <Row label="Source">{detail.ingestSource}{detail.sourceIp ? ` (${detail.sourceIp})` : ""}</Row>
                 <Row label="API key">{detail.apiKeyName ?? <Dash />}</Row>
+                <Row label="Mailer">{detail.xMailer ?? <Dash />}</Row>
+                <Row label="Attachments">{detail.attachmentCount}</Row>
                 <Row label="Size">{detail.sizeBytes.toLocaleString()} bytes</Row>
                 <Row label="Tags">{detail.tags.length > 0 ? detail.tags.map((t) => <span key={t} className="badge" style={{ marginRight: 6 }}>{t}</span>) : <Dash />}</Row>
                 <Row label="Spool ID"><code>{detail.spoolId}</code></Row>

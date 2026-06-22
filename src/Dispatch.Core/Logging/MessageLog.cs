@@ -90,6 +90,8 @@ public sealed class MessageLogDetail
     public string? SourceIp { get; init; }
     public string? ApiKeyName { get; init; }
     public IReadOnlyList<string> Tags { get; init; } = [];
+    public string? XMailer { get; init; }
+    public int AttachmentCount { get; init; }
 
     /// <summary>All relay_log rows for this spool id, oldest first — the retry/attempt timeline (spec §9.2).</summary>
     public IReadOnlyList<MessageLogAttempt> History { get; init; } = [];

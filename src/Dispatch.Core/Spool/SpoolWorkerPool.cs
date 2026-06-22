@@ -348,6 +348,8 @@ public sealed class SpoolWorkerPool : BackgroundService
                 ApiKeyId = meta.ApiKeyId,
                 ApiKeyName = meta.ApiKeyName,
                 Tags = meta.Tags,
+                XMailer = meta.XMailer,
+                AttachmentCount = meta.AttachmentCount,
             }, ct);
 
             DeleteSpoolFiles(emlPath);
@@ -489,6 +491,8 @@ public sealed class SpoolWorkerPool : BackgroundService
         ApiKeyId = meta.ApiKeyId,
         ApiKeyName = meta.ApiKeyName,
         Tags = meta.Tags,
+        XMailer = meta.XMailer,
+        AttachmentCount = meta.AttachmentCount,
     };
 
     private async Task SafeLog(RelayLogEntry entry, CancellationToken ct)

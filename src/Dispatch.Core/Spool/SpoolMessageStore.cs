@@ -53,6 +53,8 @@ public sealed class SpoolMessageStore : MessageStore
 
         // Minimal header scan for X-Dispatch-Tag and a From fallback — not a full MIME parse.
         string[]? tags = null;
+        string? xMailer = null;
+        var attachmentCount = 0;
         try
         {
             await using var rs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
@@ -63,6 +65,10 @@ public sealed class SpoolMessageStore : MessageStore
                 .Where(v => v.Length > 0)
                 .ToArray();
             if (tags.Length == 0) tags = null;
+
+            xMailer = msg.Headers["X-Mailer"]?.Trim();
+            if (string.IsNullOrEmpty(xMailer)) xMailer = null;
+            attachmentCount = msg.Attachments.Count();
 
             if (string.IsNullOrEmpty(from) && msg.From.Mailboxes.FirstOrDefault() is { } mb)
                 from = mb.Address;
@@ -81,6 +87,8 @@ public sealed class SpoolMessageStore : MessageStore
             IngestSource = "SMTP",
             SourceIp = RemoteIp(context),
             Tags = tags,
+            XMailer = xMailer,
+            AttachmentCount = attachmentCount,
         };
         meta.Save(path);
 

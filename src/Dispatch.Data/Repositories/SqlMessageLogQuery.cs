@@ -111,7 +111,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
                 relay_name AS RelayName, routing_rule_name AS RoutingRuleName, routing_matched AS RoutingMatched,
                 provider AS Provider, provider_message_id AS ProviderMessageId, provider_response AS ProviderResponse,
                 duration_ms AS DurationMs, error AS Error, ingest_source AS IngestSource, source_ip AS SourceIp,
-                api_key_name AS ApiKeyName, tags AS TagsJson
+                api_key_name AS ApiKeyName, tags AS TagsJson, x_mailer AS XMailer, attachment_count AS AttachmentCount
             FROM relay_log
             WHERE id = @id;
             """;
@@ -169,6 +169,8 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         public string? SourceIp { get; init; }
         public string? ApiKeyName { get; init; }
         public string? TagsJson { get; init; }
+        public string? XMailer { get; init; }
+        public int AttachmentCount { get; init; }
 
         public MessageLogDetail ToDetail(IReadOnlyList<MessageLogAttempt> history) => new()
         {
@@ -179,7 +181,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
             RoutingMatched = RoutingMatched, Provider = Provider, ProviderMessageId = ProviderMessageId,
             ProviderResponse = ProviderResponse, DurationMs = DurationMs, Error = Error,
             IngestSource = IngestSource, SourceIp = SourceIp, ApiKeyName = ApiKeyName,
-            Tags = ParseJsonArray(TagsJson), History = history,
+            Tags = ParseJsonArray(TagsJson), XMailer = XMailer, AttachmentCount = AttachmentCount, History = history,
         };
     }
 

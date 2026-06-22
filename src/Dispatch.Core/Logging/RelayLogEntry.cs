@@ -42,4 +42,6 @@ public sealed class RelayLogEntry
     public int? ApiKeyId { get; init; }
     public string? ApiKeyName { get; init; }
     public IReadOnlyList<string>? Tags { get; init; }
+    public string? XMailer { get; init; }
+    public int AttachmentCount { get; init; }
 }

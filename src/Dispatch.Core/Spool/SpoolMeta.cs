@@ -17,6 +17,10 @@ public sealed class SpoolMeta
     public int? ApiKeyId { get; set; }
     public string? ApiKeyName { get; set; }
     public string[]? Tags { get; set; }
+    /// <summary>Originating client from the X-Mailer header, if present (shown in the Message Log detail).</summary>
+    public string? XMailer { get; set; }
+    /// <summary>Number of attachments in the message (shown in the Message Log detail).</summary>
+    public int AttachmentCount { get; set; }
     public int RetryCount { get; set; }
     /// <summary>True once this message has been counted as Received, so crash-recovery can't double-count it.</summary>
     public bool ReceivedCounted { get; set; }
