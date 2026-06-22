@@ -70,6 +70,28 @@ try
         return 1;
     }
 
+    // Always have a shared TLS certificate on hand: generate a self-signed one on first run (or if the file
+    // went missing) and persist it, so SMTP STARTTLS and the HTTPS ingestion API work out of the box and the
+    // TLS certificate page reflects reality. Operators can replace it with their own under Settings.
+    try
+    {
+        var tlsPath = configCache.GetString(ConfigKeys.TlsCertPath, "");
+        if (string.IsNullOrWhiteSpace(tlsPath) || !File.Exists(tlsPath))
+        {
+            var cn = configCache.Listener().ServerName is { Length: > 0 } sn ? sn : "Dispatch";
+            var (path, pw) = TlsCert.Generate(builder.Environment.ContentRootPath, cn);
+            await bootstrapRepo.SetAsync(ConfigKeys.TlsCertPath, path, encrypted: false);
+            await bootstrapRepo.SetAsync(ConfigKeys.TlsCertPassword, pw, encrypted: true);
+            await bootstrapRepo.SetAsync(ConfigKeys.TlsCertSource, "generated", encrypted: false);
+            await configCache.LoadAsync(bootstrapRepo);
+            Log.Information("Generated a self-signed TLS certificate for SMTP STARTTLS + HTTPS API; replace it under Settings → Connections → TLS certificate.");
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Could not provision the shared TLS certificate; STARTTLS/HTTPS API stay off until one is configured.");
+    }
+
     var listenerSnapshot = configCache.Listener();
     var apiSnapshot = configCache.Api();
     var webSnapshot = configCache.WebUi();
