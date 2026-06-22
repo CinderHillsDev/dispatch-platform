@@ -36,6 +36,7 @@ export const PROVIDER_FIELDS: Record<string, ProviderField[]> = {
     { name: "Region", secret: false, required: false },
   ],
   Smtp2Go: [{ name: "ApiKey", secret: true, required: true }],
+  Maileroo: [{ name: "ApiKey", secret: true, required: true }],
 };
 
 // Friendly labels for the provider picker (enum name -> display name).
@@ -47,6 +48,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   Resend: "Resend",
   SparkPost: "SparkPost",
   Smtp2Go: "SMTP2GO",
+  Maileroo: "Maileroo",
   AzureCommunication: "Azure Communication Services",
   Smtp: "Generic SMTP host",
   Local: "Local (developer capture — no external delivery)",

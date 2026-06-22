@@ -63,6 +63,10 @@ public static class RelayProviderSchema
         [
             new("ApiKey", "smtp2go.api_key", Secret: true, Required: true),
         ],
+        RelayProviderType.Maileroo =>
+        [
+            new("ApiKey", "maileroo.api_key", Secret: true, Required: true),
+        ],
         _ => [],
     };
 }

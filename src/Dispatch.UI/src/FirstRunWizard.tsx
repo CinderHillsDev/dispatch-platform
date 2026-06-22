@@ -5,7 +5,7 @@ import { validCidr } from "./lib/cidr";
 
 // Real (deliverable) providers shown first; Local/SMTP at the end.
 const PROVIDER_ORDER = [
-  "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Smtp2Go", "AzureCommunication", "Smtp", "Local",
+  "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Smtp2Go", "Maileroo", "AzureCommunication", "Smtp", "Local",
 ];
 
 type Step = "welcome" | "provider" | "test" | "routing" | "access" | "done";
