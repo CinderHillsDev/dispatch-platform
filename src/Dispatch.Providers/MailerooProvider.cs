@@ -73,7 +73,7 @@ public sealed class MailerooProvider(RelayConfig config, HttpClient http) : IRel
         var list = new List<object>();
         foreach (var att in m.Message.Attachments)
         {
-            if (att is not MimePart part) continue;
+            if (att is not MimePart part || part.Content is null) continue;
             using var ms = new MemoryStream();
             part.Content.DecodeTo(ms);
             list.Add(new Dictionary<string, object?>

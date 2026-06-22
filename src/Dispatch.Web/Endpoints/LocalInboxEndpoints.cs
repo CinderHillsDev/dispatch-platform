@@ -103,10 +103,11 @@ public static class LocalInboxEndpoints
         ?? entity.ContentType?.Name
         ?? $"attachment-{index + 1}";
 
-    // Decoded bytes of an attachment (null for non-part entities, e.g. embedded message/rfc822).
+    // Decoded bytes of an attachment (null for non-part entities, e.g. embedded message/rfc822, or a part
+    // with no content).
     private static byte[]? AttachmentBytes(MimeEntity entity)
     {
-        if (entity is not MimePart part) return null;
+        if (entity is not MimePart part || part.Content is null) return null;
         using var ms = new MemoryStream();
         part.Content.DecodeTo(ms);
         return ms.ToArray();
