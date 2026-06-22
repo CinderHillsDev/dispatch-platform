@@ -1,3 +1,4 @@
+using Dispatch.Core.Audit;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
@@ -31,6 +32,7 @@ public sealed class SpoolWorkerPool : BackgroundService
     private readonly ILogger<SpoolWorkerPool> _log;
     private readonly SpoolOptions _spoolOptions;
     private readonly IRetrySettings _retry;
+    private readonly Dispatch.Core.Audit.IAuditLog? _audit;
 
     private readonly ConcurrentDictionary<int, SemaphoreSlim> _semaphores = new();
     private readonly Dictionary<int, int> _semaphoreMax = new();   // relayId → the max the semaphore was sized for
@@ -48,7 +50,8 @@ public sealed class SpoolWorkerPool : BackgroundService
         RelayConcurrencyTracker concurrency,
         IOptions<SpoolOptions> spoolOptions,
         IRetrySettings retry,
-        ILogger<SpoolWorkerPool> log)
+        ILogger<SpoolWorkerPool> log,
+        Dispatch.Core.Audit.IAuditLog? audit = null)
     {
         _spool = spool;
         _routing = routing;
@@ -61,6 +64,7 @@ public sealed class SpoolWorkerPool : BackgroundService
         _spoolOptions = spoolOptions.Value;
         _retry = retry;
         _log = log;
+        _audit = audit;
     }
 
     /// <summary>Per-relay concurrency gates. Exposed internally for tests.</summary>
@@ -388,6 +392,8 @@ public sealed class SpoolWorkerPool : BackgroundService
             meta.LastRelayId = relay.Id;
             MoveToFailed(emlPath, meta);
             _log.LogError(ex, "Permanent failure for {SpoolId}: {Error}", meta.SpoolId, ex.Message);
+            if (_audit is not null)
+                await _audit.Relay($"Delivery failed via relay \"{relay.Name}\" — moved to Retry Queue", ex.Message);
         }
     }
 

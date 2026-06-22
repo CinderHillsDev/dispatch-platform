@@ -1,5 +1,6 @@
 using System.Net;
 using Dispatch.Core.ApiKeys;
+using Dispatch.Core.Audit;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Logging;
 using Microsoft.AspNetCore.Http;
@@ -22,6 +23,7 @@ public sealed class ApiKeyMiddleware(
     ILogRepository logRepo,
     ILoggingSettings loggingSettings,
     Dispatch.Core.Counters.ICounterRepository counters,
+    Dispatch.Core.Audit.IAuditLog audit,
     ILogger<ApiKeyMiddleware> log) : IMiddleware
 {
     public const string ApiKeyItem = "ApiKey";
@@ -40,6 +42,8 @@ public sealed class ApiKeyMiddleware(
         {
             // 403 (never 401) so we don't leak whether a valid key was present (§7.2).
             log.LogWarning("API request denied from {Ip} (not in allow-list)", ctx.Connection.RemoteIpAddress);
+            await audit.Audit("Access", "API request denied (source IP not in allow-list)", "Warning",
+                sourceIp: ctx.Connection.RemoteIpAddress?.ToString());
             await DenyAsync(ctx, null, "Source IP not in allow-list");
             ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;

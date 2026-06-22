@@ -1,3 +1,4 @@
+using Dispatch.Core.Audit;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
@@ -32,6 +33,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
     private readonly ConnectionTracker _connections;
     private readonly ILogRepository _logRepo;
     private readonly ILoggingSettings _loggingSettings;
+    private readonly Dispatch.Core.Audit.IAuditLog? _audit;
     private readonly ILogger<CidrMailboxFilter> _log;
 
     // Memoised CIDR parse — reparsed only when the allow-list changes in the config table (spec §12.5 live).
@@ -47,7 +49,8 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         ConnectionTracker connections,
         ILogRepository logRepo,
         ILoggingSettings loggingSettings,
-        ILogger<CidrMailboxFilter> log)
+        ILogger<CidrMailboxFilter> log,
+        Dispatch.Core.Audit.IAuditLog? audit = null)
     {
         _config = config;
         _counters = counters;
@@ -57,6 +60,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         _logRepo = logRepo;
         _loggingSettings = loggingSettings;
         _log = log;
+        _audit = audit;
     }
 
     private IPNetwork[] AllowedNetworks(string[] cidrs)
@@ -131,6 +135,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         {
             await DenyAsync(context, from.AsAddress(), null, "SMTP allow-list is empty — all sources denied", cancellationToken);
             _log.LogWarning("Denied SMTP connection: allow-list is empty (closed by default; add ranges in Access Control)");
+            if (_audit is not null) await _audit.Audit("Access", "SMTP connection denied: allow-list is empty", "Warning", sourceIp: ip?.ToString());
             throw AccessDenied("no source IPs are allowed yet — add your network under Access Control → SMTP listener");
         }
         if (ip is null)
@@ -147,6 +152,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         {
             await DenyAsync(context, from.AsAddress(), null, $"Source IP {ip} not in allow-list", cancellationToken);
             _log.LogWarning("Denied connection from {Ip} (not in allow-list)", ip);
+            if (_audit is not null) await _audit.Audit("Access", $"SMTP connection denied: {ip} not in allow-list", "Warning", sourceIp: ip.ToString());
             throw AccessDenied($"source IP {ip} is not in the allow-list — add it under Access Control → SMTP listener");
         }
 

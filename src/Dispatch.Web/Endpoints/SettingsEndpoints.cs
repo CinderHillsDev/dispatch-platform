@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Dispatch.Core.Audit;
 using Dispatch.Core.Configuration;
 using Dispatch.Data.Repositories;
 using Microsoft.AspNetCore.Builder;
@@ -63,7 +64,7 @@ public static class SettingsEndpoints
         // PUT /api/config/{section} (spec §9.3, §12.5): persist the section's keys to SQL and refresh the
         // ConfigCache so live settings take effect within this request. Restart-bound keys (ports, spool,
         // TLS) are stored now and applied on the next restart.
-        group.MapPut("/config/listener", async (ListenerConfigDto d, IConfigRepository config, ConfigCache cache, CancellationToken ct) =>
+        group.MapPut("/config/listener", async (ListenerConfigDto d, IConfigRepository config, ConfigCache cache, IAuditLog audit, HttpContext http, CancellationToken ct) =>
         {
             if (d.Ports is { } ports) await config.SetAsync(ConfigKeys.ListenerPorts, JsonSerializer.Serialize(ports), false, ct);
             if (d.ServerName is { } sn) await config.SetAsync(ConfigKeys.ListenerServerName, sn, false, ct);
@@ -73,22 +74,24 @@ public static class SettingsEndpoints
             if (d.TlsCertPath is { } tp) await config.SetAsync(ConfigKeys.ListenerTlsCertPath, tp, false, ct);
             if (d.TlsCertPassword is { } tpw) await config.SetAsync(ConfigKeys.ListenerTlsCertPassword, tpw, encrypted: true, ct);
             await cache.LoadAsync(config, ct);
+            await audit.Audit("Config", "SMTP listener settings updated", "Notice", "admin", http.Connection.RemoteIpAddress?.ToString());
             return Results.Ok(new { ok = true });
         });
 
         // Shared TLS cert management — operators generate a self-signed cert or upload a cert + key (no file
         // paths). It secures both the SMTP listener (STARTTLS) and the HTTPS ingestion API; both load it at
         // startup, so changes take effect after a service restart.
-        group.MapPost("/config/tls-cert/generate", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
+        group.MapPost("/config/tls-cert/generate", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, IAuditLog audit, HttpContext http, CancellationToken ct) =>
         {
             var cn = cache.Listener().ServerName is { Length: > 0 } s ? s : "Dispatch";
             var (path, pw) = TlsCert.Generate(env.ContentRootPath, cn);
             await SetCertAsync(config, path, pw, "generated", ct);
             await cache.LoadAsync(config, ct);
+            await audit.Audit("Config", "TLS certificate generated (self-signed)", "Notice", "admin", http.Connection.RemoteIpAddress?.ToString());
             return Results.Ok(new { ok = true, source = "generated" });
         });
 
-        group.MapPost("/config/tls-cert/upload", async (HttpRequest req, ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
+        group.MapPost("/config/tls-cert/upload", async (HttpRequest req, ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, IAuditLog audit, CancellationToken ct) =>
         {
             if (!req.HasFormContentType) return Results.BadRequest(new { error = "Expected a multipart upload with 'cert' and 'key' files." });
             var form = await req.ReadFormAsync(ct);
@@ -103,18 +106,20 @@ public static class SettingsEndpoints
             catch (Exception ex) { return Results.BadRequest(new { error = $"Invalid certificate or key: {ex.Message}" }); }
             await SetCertAsync(config, path, pw, "uploaded", ct);
             await cache.LoadAsync(config, ct);
+            await audit.Audit("Config", "TLS certificate uploaded", "Notice", "admin", req.HttpContext.Connection.RemoteIpAddress?.ToString());
             return Results.Ok(new { ok = true, source = "uploaded" });
         });
 
-        group.MapDelete("/config/tls-cert", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, CancellationToken ct) =>
+        group.MapDelete("/config/tls-cert", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, IAuditLog audit, HttpContext http, CancellationToken ct) =>
         {
             TlsCert.Delete(env.ContentRootPath);
             await SetCertAsync(config, "", "", "", ct);
             await cache.LoadAsync(config, ct);
+            await audit.Audit("Config", "TLS certificate removed", "Notice", "admin", http.Connection.RemoteIpAddress?.ToString());
             return Results.Ok(new { ok = true });
         });
 
-        group.MapPut("/config/api", async (ApiConfigDto d, IConfigRepository config, ConfigCache cache, CancellationToken ct) =>
+        group.MapPut("/config/api", async (ApiConfigDto d, IConfigRepository config, ConfigCache cache, IAuditLog audit, HttpContext http, CancellationToken ct) =>
         {
             if (d.Port is { } p) await config.SetAsync(ConfigKeys.ApiPort, p.ToString(CultureInfo.InvariantCulture), false, ct);
             if (d.HttpEnabled is { } he) await config.SetAsync(ConfigKeys.ApiHttpEnabled, he ? "true" : "false", false, ct);
@@ -124,16 +129,18 @@ public static class SettingsEndpoints
             if (d.MaxMessageBytes is { } m) await config.SetAsync(ConfigKeys.ApiMaxMessageBytes, m.ToString(CultureInfo.InvariantCulture), false, ct);
             if (d.RateLimitPerKey is { } r) await config.SetAsync(ConfigKeys.ApiRateLimitPerKey, r.ToString(CultureInfo.InvariantCulture), false, ct);
             await cache.LoadAsync(config, ct);
+            await audit.Audit("Config", "HTTP API settings updated", "Notice", "admin", http.Connection.RemoteIpAddress?.ToString());
             return Results.Ok(new { ok = true });
         });
 
-        group.MapPut("/config/webui", async (WebUiConfigDto d, IConfigRepository config, ConfigCache cache, CancellationToken ct) =>
+        group.MapPut("/config/webui", async (WebUiConfigDto d, IConfigRepository config, ConfigCache cache, IAuditLog audit, HttpContext http, CancellationToken ct) =>
         {
             if (d.Port is { } p) await config.SetAsync(ConfigKeys.WebUiPort, p.ToString(CultureInfo.InvariantCulture), false, ct);
             if (d.AllowedCidrs is { } c) await config.SetAsync(ConfigKeys.WebUiAllowedCidrs, JsonSerializer.Serialize(c), false, ct);
             if (d.RequireHttps is { } rh) await config.SetAsync(ConfigKeys.WebUiRequireHttps, rh ? "true" : "false", false, ct);
             if (d.SessionTimeoutMinutes is { } s) await config.SetAsync(ConfigKeys.WebUiSessionTimeoutMinutes, s.ToString(CultureInfo.InvariantCulture), false, ct);
             await cache.LoadAsync(config, ct);
+            await audit.Audit("Config", "Dashboard settings updated", "Notice", "admin", http.Connection.RemoteIpAddress?.ToString());
             return Results.Ok(new { ok = true });
         });
 
