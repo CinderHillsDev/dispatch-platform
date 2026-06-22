@@ -18,12 +18,16 @@ export function LocalInbox() {
   const [logErr, setLogErr] = useState<string | null>(null);
 
   const refresh = async () => setItems(await api.inbox.list());
-  useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 5000);   // poll so new captures appear
-    return () => clearInterval(t);
-  }, []);
+  useEffect(() => { refresh(); }, []);
   useEffect(() => { api.settings.get().then((s) => setRetentionDays(s.retention.capturedRetentionDays)).catch(() => {}); }, []);
+
+  // Optional auto-refresh so new captures appear (off by default — same control as the Message Log).
+  const [autoMs, setAutoMs] = useState(0);
+  useEffect(() => {
+    if (!autoMs) return;
+    const t = setInterval(refresh, autoMs);
+    return () => clearInterval(t);
+  }, [autoMs]);
 
   const open = async (id: string) => { setLog(null); setLogErr(null); setSelected(await api.inbox.get(id)); };
   const closeDetail = () => { setSelected(null); setLog(null); setLogErr(null); };
@@ -53,9 +57,21 @@ export function LocalInbox() {
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
         <h1 className="page-title">Local Inbox</h1>
-        {items.length > 0 && <button onClick={clearAll}>Clear all</button>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => refresh()} title="Refresh now">↻ Refresh</button>
+          <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            Auto-refresh
+            <select value={autoMs} onChange={(e) => setAutoMs(Number(e.target.value))}>
+              <option value={0}>Never</option>
+              <option value={15000}>15s</option>
+              <option value={30000}>30s</option>
+              <option value={60000}>60s</option>
+            </select>
+          </label>
+          {items.length > 0 && <button onClick={clearAll}>Clear all</button>}
+        </div>
       </div>
       <p className="muted" style={{ marginTop: -10, marginBottom: 18 }}>
         Messages captured by the Local / developer provider — never sent externally.
