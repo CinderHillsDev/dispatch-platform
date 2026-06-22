@@ -164,6 +164,24 @@ public static class WebEndpoints
 
         group.MapGet("/stats/throughput", (MinuteCounterRing ring) => Results.Ok(ring.Snapshot()));
 
+        // Reports: aggregate daily counters over a date range (defaults to the last 30 days). Returns a
+        // range summary, a per-day time series, and a per-relay breakdown (spec §9.2).
+        group.MapGet("/reports", async (ICounterReader counters, HttpContext ctx, CancellationToken ct) =>
+        {
+            var (from, to) = ParseReportRange(ctx.Request.Query["from"], ctx.Request.Query["to"]);
+            var summary = await counters.GetRangeTotalsAsync(from, to, ct);
+            var daily = await counters.GetDailyAsync(from, to, ct);
+            var relays = await counters.GetRangeByRelayAsync(from, to, ct);
+            return Results.Ok(new
+            {
+                from = from.ToString("yyyy-MM-dd"),
+                to = to.ToString("yyyy-MM-dd"),
+                summary = new { summary.Received, summary.Delivered, summary.Failed, summary.Retried, summary.Denied },
+                daily,
+                relays,
+            });
+        });
+
         group.MapGet("/stats/relays", async (IRelayRepository relays, ICounterReader counters, RelayConcurrencyTracker concurrency, CancellationToken ct) =>
         {
             var records = await relays.GetAllAsync(ct);
@@ -292,6 +310,18 @@ public static class WebEndpoints
     private static DateTime? ParseDate(string? s) =>
         DateTime.TryParse(s, null, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal, out var d)
             ? d : null;
+
+    // Resolve a report date window (UTC, date-only, inclusive). Defaults to the last 30 days; orders
+    // swapped bounds; caps the span at ~1 year to bound the aggregation scan.
+    private static (DateTime From, DateTime To) ParseReportRange(string? from, string? to)
+    {
+        var today = DateTime.UtcNow.Date;
+        var toDate = (ParseDate(to) ?? today).Date;
+        var fromDate = (ParseDate(from) ?? toDate.AddDays(-29)).Date;
+        if (fromDate > toDate) (fromDate, toDate) = (toDate, fromDate);
+        if ((toDate - fromDate).TotalDays > 366) fromDate = toDate.AddDays(-366);
+        return (fromDate, toDate);
+    }
 
     private static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
 

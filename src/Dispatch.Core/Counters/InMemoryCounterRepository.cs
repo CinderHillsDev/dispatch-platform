@@ -34,4 +34,19 @@ public sealed class InMemoryCounterRepository : ICounterRepository, ICounterRead
             .ToList();
         return Task.FromResult<IReadOnlyList<RelayCounterTotals>>(result);
     }
+
+    // The in-memory store has no date dimension, so range queries collapse to the single bucket of totals.
+    public Task<CounterTotals> GetRangeTotalsAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default) => GetTodayAsync(ct);
+
+    public async Task<IReadOnlyList<DailyCounterTotals>> GetDailyAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+    {
+        var t = await GetTodayAsync(ct);
+        return [new DailyCounterTotals(toUtc.ToString("yyyy-MM-dd"), t.Received, t.Delivered, t.Failed, t.Retried, t.Denied)];
+    }
+
+    public async Task<IReadOnlyList<RelayReportRow>> GetRangeByRelayAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+    {
+        var rows = await GetTodayByRelayAsync(ct);
+        return rows.Select(r => new RelayReportRow(r.RelayId, $"relay-{r.RelayId}", r.Received, r.Delivered, r.Failed, r.Retried, r.Denied)).ToList();
+    }
 }

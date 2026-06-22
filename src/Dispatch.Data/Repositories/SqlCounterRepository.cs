@@ -69,4 +69,59 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
         var rows = await cn.QueryAsync<RelayCounterTotals>(new CommandDefinition(sql, cancellationToken: ct));
         return rows.ToList();
     }
+
+    public async Task<CounterTotals> GetRangeTotalsAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT
+                ISNULL(SUM(received), 0)  AS Received,
+                ISNULL(SUM(delivered), 0) AS Delivered,
+                ISNULL(SUM(failed), 0)    AS Failed,
+                ISNULL(SUM(retried), 0)   AS Retried,
+                ISNULL(SUM(denied), 0)    AS Denied
+            FROM relay_counters
+            WHERE date >= @From AND date <= @To;
+            """;
+        await using var cn = await factory.OpenAsync(ct);
+        return await cn.QuerySingleAsync<CounterTotals>(new CommandDefinition(sql, new { From = fromUtc.Date, To = toUtc.Date }, cancellationToken: ct));
+    }
+
+    public async Task<IReadOnlyList<DailyCounterTotals>> GetDailyAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT CONVERT(char(10), date, 23) AS Date,
+                   ISNULL(SUM(received), 0)  AS Received,
+                   ISNULL(SUM(delivered), 0) AS Delivered,
+                   ISNULL(SUM(failed), 0)    AS Failed,
+                   ISNULL(SUM(retried), 0)   AS Retried,
+                   ISNULL(SUM(denied), 0)    AS Denied
+            FROM relay_counters
+            WHERE date >= @From AND date <= @To
+            GROUP BY date
+            ORDER BY date ASC;
+            """;
+        await using var cn = await factory.OpenAsync(ct);
+        var rows = await cn.QueryAsync<DailyCounterTotals>(new CommandDefinition(sql, new { From = fromUtc.Date, To = toUtc.Date }, cancellationToken: ct));
+        return rows.ToList();
+    }
+
+    public async Task<IReadOnlyList<RelayReportRow>> GetRangeByRelayAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT c.relay_id AS RelayId, r.name AS RelayName,
+                   ISNULL(SUM(c.received), 0)  AS Received,
+                   ISNULL(SUM(c.delivered), 0) AS Delivered,
+                   ISNULL(SUM(c.failed), 0)    AS Failed,
+                   ISNULL(SUM(c.retried), 0)   AS Retried,
+                   ISNULL(SUM(c.denied), 0)    AS Denied
+            FROM relay_counters c
+            JOIN relays r ON r.id = c.relay_id
+            WHERE c.date >= @From AND c.date <= @To
+            GROUP BY c.relay_id, r.name
+            ORDER BY SUM(c.received) DESC, SUM(c.delivered) DESC;
+            """;
+        await using var cn = await factory.OpenAsync(ct);
+        var rows = await cn.QueryAsync<RelayReportRow>(new CommandDefinition(sql, new { From = fromUtc.Date, To = toUtc.Date }, cancellationToken: ct));
+        return rows.ToList();
+    }
 }

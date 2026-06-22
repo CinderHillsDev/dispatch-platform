@@ -6,6 +6,7 @@ import { api } from "./lib/api";
 import { FirstRunWizard } from "./FirstRunWizard";
 import { Dashboard } from "./pages/Dashboard";
 import { Messages } from "./pages/Messages";
+import { Reports } from "./pages/Reports";
 import { Relays } from "./pages/Relays";
 import { Routing } from "./pages/Routing";
 import { LocalInbox } from "./pages/LocalInbox";
@@ -30,6 +31,7 @@ function Layout() {
             <NavLink to="/messages">Message Log</NavLink>
             <NavLink to="/failed">Retry Queue</NavLink>
             <NavLink to="/inbox">Local Inbox</NavLink>
+            <NavLink to="/reports">Reports</NavLink>
           </div>
           <div className="nav-group">
             <div className="nav-label">Delivery</div>
@@ -73,6 +75,7 @@ function RouteError() {
 const pages: { path: string; element: ReactNode }[] = [
   { path: "/", element: <Dashboard /> },
   { path: "/messages", element: <Messages /> },
+  { path: "/reports", element: <Reports /> },
   { path: "/failed", element: <Failed /> },
   { path: "/relays", element: <Relays /> },
   { path: "/routing", element: <Routing /> },

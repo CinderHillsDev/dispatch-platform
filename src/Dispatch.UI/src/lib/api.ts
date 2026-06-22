@@ -209,10 +209,16 @@ async function sendJson<T>(url: string, method: string, body: unknown): Promise<
   return data as T;
 }
 
+export interface ReportSummary { received: number; delivered: number; failed: number; retried: number; denied: number; }
+export interface ReportDaily { date: string; received: number; delivered: number; failed: number; retried: number; denied: number; }
+export interface ReportRelay { relayId: number; relayName: string; received: number; delivered: number; failed: number; retried: number; denied: number; }
+export interface ReportData { from: string; to: string; summary: ReportSummary; daily: ReportDaily[]; relays: ReportRelay[]; }
+
 export const api = {
   stats: () => getJson<Stats>("/api/stats"),
   throughput: () => getJson<number[]>("/api/stats/throughput"),
   relayStats: () => getJson<RelayStat[]>("/api/stats/relays"),
+  reports: (from: string, to: string) => getJson<ReportData>(`/api/reports?from=${from}&to=${to}`),
   messages: (params: URLSearchParams) => getJson<MessagePage>(`/api/messages?${params}`),
   message: (id: number) => getJson<MessageDetail>(`/api/messages/${id}`),
   messageIdBySpool: (spoolId: string) => getJson<{ id: number }>(`/api/messages/by-spool/${encodeURIComponent(spoolId)}`),
