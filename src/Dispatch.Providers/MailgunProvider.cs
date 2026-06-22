@@ -15,10 +15,20 @@ public sealed class MailgunProvider(RelayConfig config, HttpClient http) : IRela
 {
     public string Name => "Mailgun";
 
+    // A DNS hostname: labels of letters/digits/hyphens separated by dots. No slashes, dots-dots, or other
+    // path/query characters that could redirect the request within the (pinned) Mailgun host.
+    private static readonly System.Text.RegularExpressions.Regex DomainPattern =
+        new(@"^(?=.{1,253}$)([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
     public async Task<RelayResult> SendAsync(RelayMessage message, CancellationToken ct)
     {
         var apiKey = Require("ApiKey");
-        var domain = Require("Domain");
+        var domain = Require("Domain").Trim();
+        // The domain is interpolated into the request path; reject anything that isn't a bare hostname so it
+        // can't alter the URL path (e.g. slashes, "..", query/fragment) — the host itself is already pinned.
+        if (!DomainPattern.IsMatch(domain))
+            throw new InvalidOperationException($"Mailgun relay 'Domain' is not a valid hostname: '{domain}'.");
         var region = (Setting("Region") ?? "US").Trim().ToUpperInvariant();
         var baseUrl = region == "EU" ? "https://api.eu.mailgun.net" : "https://api.mailgun.net";
 

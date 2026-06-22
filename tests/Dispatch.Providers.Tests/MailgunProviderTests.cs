@@ -75,6 +75,23 @@ public class MailgunProviderTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => new MailgunProvider(cfg, http).SendAsync(TestMessage(), default));
     }
 
+    [Theory]
+    [InlineData("mg.example.com/../admin")]
+    [InlineData("mg.example.com/evil")]
+    [InlineData("mg.example.com?x=1")]
+    [InlineData("../secrets")]
+    [InlineData("not a domain")]
+    public async Task Invalid_domain_is_rejected_before_request(string domain)
+    {
+        var http = new HttpClient(new StubHandler(HttpStatusCode.OK, "{}"));
+        var cfg = new RelayConfig
+        {
+            Provider = RelayProviderType.Mailgun,
+            Settings = new Dictionary<string, string?> { ["ApiKey"] = "k", ["Domain"] = domain },
+        };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new MailgunProvider(cfg, http).SendAsync(TestMessage(), default));
+    }
+
     private sealed class StubHandler(HttpStatusCode status, string responseBody) : HttpMessageHandler
     {
         public string? RequestUri { get; private set; }
