@@ -8,6 +8,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SmtpServer.Mail;
+using SmtpServer.Protocol;
 using System.Net;
 
 namespace Dispatch.Core.Tests;
@@ -93,8 +94,11 @@ public class CidrMailboxFilterTests
         var filter = Build(relayMaxBytes: 0, allowedCidrs: ConfigPrivateRanges);
         var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Parse("203.0.113.7"), 4242));
 
-        Assert.False(await filter.CanAcceptFromAsync(
+        // Rejection is a 550 5.7.1 access-denied (clear reason), not the generic "mailbox unavailable".
+        var ex = await Assert.ThrowsAsync<SmtpResponseException>(() => filter.CanAcceptFromAsync(
             ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None));
+        Assert.Equal(SmtpReplyCode.MailboxUnavailable, ex.Response.ReplyCode);
+        Assert.Contains("Access denied", ex.Response.Message);
     }
 
     [Theory]
@@ -119,8 +123,9 @@ public class CidrMailboxFilterTests
         var filter = Build(relayMaxBytes: 0, allowedCidrs: "[]");
         var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Parse("127.0.0.1"), 4242));
 
-        Assert.False(await filter.CanAcceptFromAsync(
+        var ex = await Assert.ThrowsAsync<SmtpResponseException>(() => filter.CanAcceptFromAsync(
             ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None));
+        Assert.Equal(SmtpReplyCode.MailboxUnavailable, ex.Response.ReplyCode);
     }
 
     [Fact]

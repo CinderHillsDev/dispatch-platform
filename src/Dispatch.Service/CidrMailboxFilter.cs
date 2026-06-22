@@ -123,19 +123,21 @@ public sealed class CidrMailboxFilter : IMailboxFilter
 
         // Closed model (spec §17.10): only source IPs in the allow-list may connect. An empty list denies
         // everyone — add ranges in Access Control to open it up. To allow all sources, add 0.0.0.0/0 + ::/0.
+        // Rejections use 550 5.7.1 (access denied) with a clear reason rather than the library's generic
+        // "mailbox unavailable", which misleads operators into thinking it's a recipient problem.
         var allowed = AllowedNetworks(listener.EffectiveAllowedCidrs);
         var ip = RemoteIp(context);
         if (allowed.Length == 0)
         {
             await DenyAsync(context, from.AsAddress(), null, "SMTP allow-list is empty — all sources denied", cancellationToken);
-            _log.LogWarning("Denied SMTP connection: allow-list is empty (closed by default; configure ranges in Access Control)");
-            return false;
+            _log.LogWarning("Denied SMTP connection: allow-list is empty (closed by default; add ranges in Access Control)");
+            throw AccessDenied("no source IPs are allowed yet — add your network under Access Control → SMTP listener");
         }
         if (ip is null)
         {
             await DenyAsync(context, from.AsAddress(), null, "Source IP unavailable — cannot verify allow-list", cancellationToken);
             _log.LogWarning("Denied SMTP connection: source IP unavailable, cannot match allow-list");
-            return false;
+            throw AccessDenied("could not determine your source IP to check the allow-list");
         }
 
         var test = ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
@@ -145,10 +147,15 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         {
             await DenyAsync(context, from.AsAddress(), null, $"Source IP {ip} not in allow-list", cancellationToken);
             _log.LogWarning("Denied connection from {Ip} (not in allow-list)", ip);
+            throw AccessDenied($"source IP {ip} is not in the allow-list — add it under Access Control → SMTP listener");
         }
 
-        return permitted;
+        return true;
     }
+
+    // 550 5.7.1 with a clear, actionable reason for an allow-list rejection.
+    private static SmtpResponseException AccessDenied(string reason) =>
+        new(new SmtpResponse(SmtpReplyCode.MailboxUnavailable, $"5.7.1 Access denied: {reason}"));
 
     public async Task<bool> CanDeliverToAsync(
         ISessionContext context, IMailbox to, IMailbox from, CancellationToken cancellationToken)
