@@ -29,7 +29,16 @@ export interface MessageRow {
 
 export interface MessagePage {
   rows: MessageRow[];
-  nextCursor: { at: string; id: number } | null;
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface InboxPage {
+  items: InboxItem[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface MessageDetail {
@@ -263,7 +272,7 @@ export const api = {
   },
 
   inbox: {
-    list: () => getJson<InboxItem[]>("/api/local/messages"),
+    list: (params?: URLSearchParams) => getJson<InboxPage>(`/api/local/messages${params ? `?${params}` : ""}`),
     get: (id: string) => getJson<InboxMessage>(`/api/local/messages/${encodeURIComponent(id)}`),
     remove: (id: string) => sendJson<{ ok: boolean }>(`/api/local/messages/${encodeURIComponent(id)}`, "DELETE", {}),
     clear: () => sendJson<{ ok: boolean }>("/api/local/messages", "DELETE", {}),

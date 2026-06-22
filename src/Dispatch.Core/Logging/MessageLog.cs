@@ -63,6 +63,9 @@ internal static class MessageLogJson
 
 public sealed record MessageLogPage(IReadOnlyList<MessageLogRow> Rows, MessageLogCursor? NextCursor);
 
+/// <summary>Offset-paginated result with a total count (for the Message Log page navigator).</summary>
+public sealed record MessageLogPaged(IReadOnlyList<MessageLogRow> Rows, int Total);
+
 /// <summary>Full per-message detail for the Message Log row-detail panel (spec §9.2).</summary>
 public sealed class MessageLogDetail
 {
@@ -105,6 +108,10 @@ public sealed record MessageLogAttempt(
 public interface IMessageLogQuery
 {
     Task<MessageLogPage> QueryAsync(MessageLogFilter filter, CancellationToken ct = default);
+
+    /// <summary>Offset-paginated query with a total count, for the dashboard page navigator (spec §9.2).
+    /// <paramref name="offset"/> rows are skipped; <c>filter.Limit</c> is the page size.</summary>
+    Task<MessageLogPaged> PageAsync(MessageLogFilter filter, int offset, CancellationToken ct = default);
 
     /// <summary>Most recent log row for a spool id, for delivery-status lookups (spec §7.4). When
     /// <paramref name="apiKeyId"/> is non-null the lookup is scoped to that key, so one key can't read

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, type InboxItem, type InboxMessage, type MessageDetail } from "../lib/api";
 import { Modal } from "../Modal";
+import { Pager } from "../Pager";
 
 const badgeClass = (status: string) =>
   status === "OK" ? "badge ok" : status === "Denied" ? "badge denied" : "badge error";
@@ -10,6 +11,9 @@ const fmtBytes = (n: number) =>
 
 export function LocalInbox() {
   const [items, setItems] = useState<InboxItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<InboxMessage | null>(null);
   const [retentionDays, setRetentionDays] = useState<number | null>(null);
   // Delivery-log detail for the open message, fetched on demand from the database (by spool id).
@@ -17,17 +21,21 @@ export function LocalInbox() {
   const [logLoading, setLogLoading] = useState(false);
   const [logErr, setLogErr] = useState<string | null>(null);
 
-  const refresh = async () => setItems(await api.inbox.list());
-  useEffect(() => { refresh(); }, []);
+  const refresh = useCallback(async () => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    const res = await api.inbox.list(params);
+    setItems(res.items); setTotal(res.total);
+  }, [page, pageSize]);
+  useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => { api.settings.get().then((s) => setRetentionDays(s.retention.capturedRetentionDays)).catch(() => {}); }, []);
 
   // Optional auto-refresh so new captures appear (off by default — same control as the Message Log).
   const [autoMs, setAutoMs] = useState(0);
   useEffect(() => {
     if (!autoMs) return;
-    const t = setInterval(refresh, autoMs);
+    const t = setInterval(() => { refresh(); }, autoMs);
     return () => clearInterval(t);
-  }, [autoMs]);
+  }, [autoMs, refresh]);
 
   const open = async (id: string) => { setLog(null); setLogErr(null); setSelected(await api.inbox.get(id)); };
   const closeDetail = () => { setSelected(null); setLog(null); setLogErr(null); };
@@ -99,6 +107,9 @@ export function LocalInbox() {
         </table>
         {items.length === 0 && <div className="center">No captured messages yet. Configure a relay as “Local” and send mail.</div>}
       </div>
+
+      <Pager page={page} pageSize={pageSize} total={total}
+        onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} />
 
       {selected && (
         <Modal title={selected.subject || "(no subject)"} onClose={closeDetail}>

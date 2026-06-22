@@ -19,9 +19,71 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         var where = new StringBuilder("WHERE 1 = 1");
         var p = new DynamicParameters();
         p.Add("Limit", limit);
+        AppendFilters(where, p, filter);
 
-        // Bind dates as datetime2 to match the column precision (a default DateTime param maps to the
-        // lower-precision SQL `datetime`, which breaks the keyset tie-break at high insert rates).
+        if (filter.Cursor is { } cursor)
+        {
+            where.Append(" AND (logged_at < @CursorLoggedAt OR (logged_at = @CursorLoggedAt AND id < @CursorId))");
+            p.Add("CursorLoggedAt", cursor.LoggedAt, DbType.DateTime2);
+            p.Add("CursorId", cursor.Id);
+        }
+
+        var sql = $"""
+            SELECT TOP (@Limit)
+                {RowColumns}
+            FROM relay_log
+            {where}
+            ORDER BY logged_at DESC, id DESC;
+            """;
+
+        await using var cn = await factory.OpenAsync(ct);
+        var rows = (await cn.QueryAsync<MessageLogRow>(new CommandDefinition(sql, p, cancellationToken: ct))).ToList();
+
+        MessageLogCursor? next = rows.Count == limit
+            ? new MessageLogCursor(rows[^1].LoggedAt, rows[^1].Id)
+            : null;
+
+        return new MessageLogPage(rows, next);
+    }
+
+    public async Task<MessageLogPaged> PageAsync(MessageLogFilter filter, int offset, CancellationToken ct = default)
+    {
+        var limit = Math.Clamp(filter.Limit, 1, 200);
+        offset = Math.Max(0, offset);
+        var where = new StringBuilder("WHERE 1 = 1");
+        var p = new DynamicParameters();
+        AppendFilters(where, p, filter);
+        p.Add("Offset", offset);
+        p.Add("Limit", limit);
+
+        var sql = $"""
+            SELECT COUNT(*) FROM relay_log {where};
+            SELECT {RowColumns}
+            FROM relay_log
+            {where}
+            ORDER BY logged_at DESC, id DESC
+            OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY;
+            """;
+
+        await using var cn = await factory.OpenAsync(ct);
+        await using var multi = await cn.QueryMultipleAsync(new CommandDefinition(sql, p, cancellationToken: ct));
+        var total = await multi.ReadSingleAsync<int>();
+        var rows = (await multi.ReadAsync<MessageLogRow>()).ToList();
+        return new MessageLogPaged(rows, total);
+    }
+
+    private const string RowColumns = """
+        id AS Id, logged_at AS LoggedAt, event AS Event, status AS Status, spool_id AS SpoolId,
+        from_address AS FromAddress, to_domain AS ToDomain, to_addresses AS ToAddressesJson,
+        subject AS Subject, relay_name AS RelayName,
+        provider AS Provider, duration_ms AS DurationMs, size_bytes AS SizeBytes,
+        ingest_source AS IngestSource, retry_attempt AS RetryAttempt, error AS Error
+        """;
+
+    // Shared filter clauses (no cursor/paging). Every user value is a parameter — never interpolated.
+    private static void AppendFilters(StringBuilder where, DynamicParameters p, MessageLogFilter filter)
+    {
+        // Bind dates as datetime2 to match the column precision.
         if (filter.FromUtc is { } from) { where.Append(" AND logged_at >= @FromUtc"); p.Add("FromUtc", from, DbType.DateTime2); }
         if (filter.ToUtc is { } to) { where.Append(" AND logged_at < @ToUtc"); p.Add("ToUtc", to, DbType.DateTime2); }
         if (filter.Statuses is { Length: > 0 } s) { where.Append(" AND status IN @Statuses"); p.Add("Statuses", s); }
@@ -39,37 +101,8 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
             p.Add("SubjectPattern", "%" + escaped + "%");
         }
         if (filter.ApiKeyId is { } apiKeyId) { where.Append(" AND api_key_id = @ApiKeyId"); p.Add("ApiKeyId", apiKeyId); }
-        // Tag: tags is a JSON array string (e.g. ["a","b"]); match the parameterised pattern %"tag"% — the value
-        // stays a Dapper parameter, only the LIKE wildcards are literal (no interpolation of user input).
+        // Tag: tags is a JSON array string; match %"tag"% with the value as a parameter (only wildcards literal).
         if (!string.IsNullOrWhiteSpace(filter.Tag)) { where.Append(" AND tags LIKE @TagPattern"); p.Add("TagPattern", "%\"" + filter.Tag + "\"%"); }
-
-        if (filter.Cursor is { } cursor)
-        {
-            where.Append(" AND (logged_at < @CursorLoggedAt OR (logged_at = @CursorLoggedAt AND id < @CursorId))");
-            p.Add("CursorLoggedAt", cursor.LoggedAt, DbType.DateTime2);
-            p.Add("CursorId", cursor.Id);
-        }
-
-        var sql = $"""
-            SELECT TOP (@Limit)
-                id AS Id, logged_at AS LoggedAt, event AS Event, status AS Status, spool_id AS SpoolId,
-                from_address AS FromAddress, to_domain AS ToDomain, to_addresses AS ToAddressesJson,
-                subject AS Subject, relay_name AS RelayName,
-                provider AS Provider, duration_ms AS DurationMs, size_bytes AS SizeBytes,
-                ingest_source AS IngestSource, retry_attempt AS RetryAttempt, error AS Error
-            FROM relay_log
-            {where}
-            ORDER BY logged_at DESC, id DESC;
-            """;
-
-        await using var cn = await factory.OpenAsync(ct);
-        var rows = (await cn.QueryAsync<MessageLogRow>(new CommandDefinition(sql, p, cancellationToken: ct))).ToList();
-
-        MessageLogCursor? next = rows.Count == limit
-            ? new MessageLogCursor(rows[^1].LoggedAt, rows[^1].Id)
-            : null;
-
-        return new MessageLogPage(rows, next);
     }
 
     public async Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, int? apiKeyId, CancellationToken ct = default)

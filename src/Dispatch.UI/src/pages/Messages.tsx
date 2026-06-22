@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, type MessageRow, type MessageDetail, type RelayListItem, type RuleItem, type ApiKeyItem } from "../lib/api";
 import { Modal } from "../Modal";
 import { HeaderFilter, FilterChoices } from "../HeaderFilter";
+import { Pager } from "../Pager";
 
 function badgeClass(status: string) {
   if (status === "OK") return "badge ok";
@@ -39,7 +40,6 @@ const EMPTY: Filters = { events: [], source: "", relay: "", rule: "", apiKeyId: 
 
 function toParams(f: Filters): URLSearchParams {
   const p = new URLSearchParams();
-  p.set("limit", "50");
   if (f.events.length) p.set("event", f.events.join(","));
   if (f.source) p.set("source", f.source);
   if (f.relay) p.set("relay", f.relay);
@@ -61,9 +61,10 @@ export function Messages() {
   const [rules, setRules] = useState<RuleItem[]>([]);
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
   const [rows, setRows] = useState<MessageRow[]>([]);
-  const [cursor, setCursor] = useState<{ at: string; id: number } | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<MessageDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -90,48 +91,41 @@ export function Messages() {
     filters.apiKeyId || filters.fromDomain || filters.toDomain || filters.tag);
   const anyActive = advancedActive || filters.events.length > 0 || !!filters.subject;
 
-  const loadMore = useCallback(async () => {
-    if (!cursor) return;
-    setLoading(true);
-    const params = toParams(filters);
-    params.set("cursorAt", cursor.at);
-    params.set("cursorId", String(cursor.id));
-    try {
-      const page = await api.messages(params);
-      setRows((prev) => [...prev, ...page.rows]);
-      setCursor(page.nextCursor);
-      setDone(page.nextCursor === null);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, cursor]);
-
-  // Fetch the first page for the current filters. reset=true clears the list first (filter changes, so
-  // stale rows don't linger); reset=false just replaces it (manual/auto refresh — no flicker).
-  const loadFirst = useCallback(async (reset = false) => {
-    if (reset) { setRows([]); setCursor(null); setDone(false); }
+  // Load the current page for the current filters.
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const page = await api.messages(toParams(filters));
-      setRows(page.rows); setCursor(page.nextCursor); setDone(page.nextCursor === null);
+      const params = toParams(filters);
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+      const res = await api.messages(params);
+      setRows(res.rows); setTotal(res.total);
     } finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, page, pageSize]);
 
-  // Reload the first page whenever filters change, debounced 300 ms (spec §9.2).
+  // Reset to page 1 whenever the filters change (skip the very first render).
+  const filtersKey = JSON.stringify(filters);
+  const firstFilters = useRef(true);
+  useEffect(() => {
+    if (firstFilters.current) { firstFilters.current = false; return; }
+    setPage(1);
+  }, [filtersKey]);
+
+  // Reload (debounced for filter typing) when filters/page/page-size change.
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => { loadFirst(true); }, 300);
+    timer.current = setTimeout(() => { load(); }, 300);
     return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [loadFirst]);
+  }, [load]);
 
-  // Optional auto-refresh of the first page (off by default).
+  // Optional auto-refresh of the current page (off by default).
   const [autoMs, setAutoMs] = useState(0);
   useEffect(() => {
     if (!autoMs) return;
-    const t = setInterval(() => { loadFirst(); }, autoMs);
+    const t = setInterval(() => { load(); }, autoMs);
     return () => clearInterval(t);
-  }, [autoMs, loadFirst]);
+  }, [autoMs, load]);
 
   const openDetail = useCallback((id: number) => {
     if (selected === id) { setSelected(null); setDetail(null); return; }
@@ -167,7 +161,7 @@ export function Messages() {
                 </>
               : <span className="muted" style={{ fontSize: 12 }}>Click a column header to filter.</span>}
           </div>
-          <button type="button" onClick={() => loadFirst()} disabled={loading} title="Refresh now">↻ Refresh</button>
+          <button type="button" onClick={() => load()} disabled={loading} title="Refresh now">↻ Refresh</button>
           <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
             Auto-refresh
             <select value={autoMs} onChange={(e) => setAutoMs(Number(e.target.value))}>
@@ -264,9 +258,8 @@ export function Messages() {
           {loading && <div className="center">Loading…</div>}
         </div>
 
-        {!done && rows.length > 0 && (
-          <button onClick={loadMore} disabled={loading}>Load more</button>
-        )}
+        <Pager page={page} pageSize={pageSize} total={total} loading={loading}
+          onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(1); }} />
       </div>
 
       {selected !== null && (

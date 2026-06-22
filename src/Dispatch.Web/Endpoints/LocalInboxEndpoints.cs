@@ -14,14 +14,19 @@ public static class LocalInboxEndpoints
 {
     public static void MapLocalInbox(this RouteGroupBuilder group)
     {
-        group.MapGet("/local/messages", (SpoolDirectory spool) =>
+        group.MapGet("/local/messages", (SpoolDirectory spool, HttpContext ctx) =>
         {
             var dir = new DirectoryInfo(spool.CapturedDir);
-            if (!dir.Exists) return Results.Ok(Array.Empty<object>());
+            if (!dir.Exists) return Results.Ok(new { items = Array.Empty<object>(), total = 0, page = 1, pageSize = 50 });
 
-            var items = dir.EnumerateFiles("*.eml")
-                .OrderByDescending(f => f.LastWriteTimeUtc)
-                .Take(200)
+            var q = ctx.Request.Query;
+            var pageSize = Math.Clamp(int.TryParse(q["pageSize"], out var ps) ? ps : 50, 1, 200);
+            var page = Math.Max(1, int.TryParse(q["page"], out var pg) ? pg : 1);
+
+            var all = dir.EnumerateFiles("*.eml").OrderByDescending(f => f.LastWriteTimeUtc).ToList();
+            var items = all
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .Select(f =>
                 {
                     try
@@ -43,7 +48,7 @@ public static class LocalInboxEndpoints
                     }
                 })
                 .ToList();
-            return Results.Ok(items);
+            return Results.Ok(new { items, total = all.Count, page, pageSize });
         });
 
         group.MapGet("/local/messages/{id}", (string id, SpoolDirectory spool) =>

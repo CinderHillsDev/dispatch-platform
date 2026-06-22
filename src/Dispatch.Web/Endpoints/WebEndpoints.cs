@@ -240,16 +240,17 @@ public static class WebEndpoints
                 RoutingRuleName = NullIfEmpty(q["rule"].ToString()),
                 Subject = NullIfEmpty(q["subject"].ToString()),
                 Tag = NullIfEmpty(q["tag"].ToString()),
-                Limit = int.TryParse(q["limit"], out var l) ? l : 50,
-                Cursor = ParseDate(q["cursorAt"]) is { } at && long.TryParse(q["cursorId"], out var cid)
-                    ? new MessageLogCursor(at, cid)
-                    : null,
+                Limit = int.TryParse(q["pageSize"], out var ps) ? ps : 50,
             };
-            var page = await logs.QueryAsync(filter, ct);
+            // Page navigator: 1-based page → offset. Total returned for "showing X–Y of N".
+            var page = int.TryParse(q["page"], out var pg) && pg > 0 ? pg : 1;
+            var result = await logs.PageAsync(filter, (page - 1) * Math.Clamp(filter.Limit, 1, 200), ct);
             return Results.Ok(new
             {
-                rows = page.Rows,
-                nextCursor = page.NextCursor is { } c ? new { at = c.LoggedAt, id = c.Id } : null,
+                rows = result.Rows,
+                total = result.Total,
+                page,
+                pageSize = Math.Clamp(filter.Limit, 1, 200),
             });
         });
 
