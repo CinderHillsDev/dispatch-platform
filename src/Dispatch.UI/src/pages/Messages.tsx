@@ -105,18 +105,32 @@ export function Messages() {
     }
   }, [filters, cursor]);
 
+  // Fetch the first page for the current filters. reset=true clears the list first (filter changes, so
+  // stale rows don't linger); reset=false just replaces it (manual/auto refresh — no flicker).
+  const loadFirst = useCallback(async (reset = false) => {
+    if (reset) { setRows([]); setCursor(null); setDone(false); }
+    setLoading(true);
+    try {
+      const page = await api.messages(toParams(filters));
+      setRows(page.rows); setCursor(page.nextCursor); setDone(page.nextCursor === null);
+    } finally { setLoading(false); }
+  }, [filters]);
+
   // Reload the first page whenever filters change, debounced 300 ms (spec §9.2).
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      setRows([]); setCursor(null); setDone(false); setLoading(true);
-      api.messages(toParams(filters)).then((page) => {
-        setRows(page.rows); setCursor(page.nextCursor); setDone(page.nextCursor === null);
-      }).finally(() => setLoading(false));
-    }, 300);
+    timer.current = setTimeout(() => { loadFirst(true); }, 300);
     return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [filters]);
+  }, [loadFirst]);
+
+  // Optional auto-refresh of the first page (off by default).
+  const [autoMs, setAutoMs] = useState(0);
+  useEffect(() => {
+    if (!autoMs) return;
+    const t = setInterval(() => { loadFirst(); }, autoMs);
+    return () => clearInterval(t);
+  }, [autoMs, loadFirst]);
 
   const openDetail = useCallback((id: number) => {
     if (selected === id) { setSelected(null); setDetail(null); return; }
@@ -141,14 +155,27 @@ export function Messages() {
       <div>
         <h1 className="page-title">Message Log</h1>
 
-        {/* Filters live in the column headers below (click a header). This bar just reflects/clears them. */}
+        {/* Filters live in the column headers below (click a header). This bar reflects/clears them and
+            holds the refresh + auto-refresh controls. */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, minHeight: 30 }}>
-          {anyActive
-            ? <>
-                <span className="muted" style={{ fontSize: 12 }}>Filters active</span>
-                <button type="button" onClick={() => setFilters(EMPTY)}>Clear filters</button>
-              </>
-            : <span className="muted" style={{ fontSize: 12 }}>Click a column header to filter.</span>}
+          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10 }}>
+            {anyActive
+              ? <>
+                  <span className="muted" style={{ fontSize: 12 }}>Filters active</span>
+                  <button type="button" onClick={() => setFilters(EMPTY)}>Clear filters</button>
+                </>
+              : <span className="muted" style={{ fontSize: 12 }}>Click a column header to filter.</span>}
+          </div>
+          <button type="button" onClick={() => loadFirst()} disabled={loading} title="Refresh now">↻ Refresh</button>
+          <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            Auto-refresh
+            <select value={autoMs} onChange={(e) => setAutoMs(Number(e.target.value))}>
+              <option value={0}>Never</option>
+              <option value={15000}>15s</option>
+              <option value={30000}>30s</option>
+              <option value={60000}>60s</option>
+            </select>
+          </label>
         </div>
 
         <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
