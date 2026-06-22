@@ -1,3 +1,4 @@
+using Dispatch.Core.Audit;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Logging;
 using Dispatch.Core.Spool;
@@ -18,7 +19,8 @@ public sealed class PurgeWorker(
     DiskMonitor diskMonitor,
     IPurgeSettings settings,
     PurgeHistory history,
-    ILogger<PurgeWorker> log) : BackgroundService
+    ILogger<PurgeWorker> log,
+    IAuditLog? audit = null) : BackgroundService
 {
     private const long BytesPerGb = 1024L * 1024 * 1024;
 
@@ -76,6 +78,9 @@ public sealed class PurgeWorker(
 
         var result = new PurgeRunResult(DateTime.UtcNow, manual, failed + captured, logRows, dbSize);
         history.Record(result);
+        if (audit is not null && (result.SpoolFilesDeleted + result.LogRowsDeleted) > 0)
+            await audit.Lifecycle(manual ? "Storage cleanup ran (manual)" : "Storage cleanup ran",
+                $"Removed {result.SpoolFilesDeleted} spool files and {result.LogRowsDeleted} log rows.");
         return result;
     }
 

@@ -250,6 +250,10 @@ try
     app.MapHub<TestProviderHub>("/hub/test-provider");
     app.MapEmbeddedUiFallback(webSnapshot.Port);
 
+    // Record a startup lifecycle event in the audit log (best-effort).
+    try { await app.Services.GetRequiredService<IAuditLog>().Lifecycle("Dispatch service started"); }
+    catch (Exception ex) { Log.Warning(ex, "Could not write startup audit event"); }
+
     await app.RunAsync();
     return 0;
 }

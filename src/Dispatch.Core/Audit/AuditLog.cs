@@ -37,6 +37,10 @@ public static class AuditLogExtensions
     public static Task System(this IAuditLog log, string @event, string? detail, string? sourceIp = null, CancellationToken ct = default)
         => log.WriteAsync("system", "System", @event, "Error", actor: null, sourceIp, detail, ct);
 
+    /// <summary>A normal system lifecycle event (startup, scheduled cleanup, disk-pressure change).</summary>
+    public static Task Lifecycle(this IAuditLog log, string @event, string? detail = null, string severity = "Info", CancellationToken ct = default)
+        => log.WriteAsync("system", "System", @event, severity, actor: null, sourceIp: null, detail, ct);
+
     /// <summary>A relay/delivery problem (e.g. a provider rejected the message — bad API key, etc.).</summary>
     public static Task Relay(this IAuditLog log, string @event, string? detail, string severity = "Error", CancellationToken ct = default)
         => log.WriteAsync("relay", "Relay", @event, severity, actor: null, sourceIp: null, detail, ct);

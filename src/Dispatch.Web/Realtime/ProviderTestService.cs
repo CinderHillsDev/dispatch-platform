@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Dispatch.Core.Audit;
 using Dispatch.Core.Providers;
 using Microsoft.AspNetCore.SignalR;
 using MimeKit;
@@ -38,11 +39,15 @@ public sealed class ProviderTestService : IDisposable
     private readonly ConcurrentDictionary<string, TestRun> _runs = new();
     private readonly Timer _cleanup;
 
-    public ProviderTestService(IRelayProviderFactory factory, IHubContext<TestProviderHub> hub, Dispatch.Core.Configuration.ConfigCache config)
+    private readonly Dispatch.Core.Audit.IAuditLog? _audit;
+
+    public ProviderTestService(IRelayProviderFactory factory, IHubContext<TestProviderHub> hub,
+        Dispatch.Core.Configuration.ConfigCache config, Dispatch.Core.Audit.IAuditLog? audit = null)
     {
         _factory = factory;
         _hub = hub;
         _config = config;
+        _audit = audit;
         _cleanup = new Timer(_ => EvictExpired(), null, Retention, Retention);
     }
 
@@ -107,6 +112,7 @@ public sealed class ProviderTestService : IDisposable
             run.DurationMs = sw.ElapsedMilliseconds;
             run.Status = "Success";
             await LogAsync(run, "Success", $"Test completed in {sw.ElapsedMilliseconds} ms");
+            if (_audit is not null) await _audit.Relay($"Provider test passed: {run.Provider}", $"to {recipient} in {sw.ElapsedMilliseconds} ms", "Info");
         }
         catch (Exception ex)
         {
@@ -114,6 +120,7 @@ public sealed class ProviderTestService : IDisposable
             run.DurationMs = sw.ElapsedMilliseconds;
             run.Status = "Failed";
             await LogAsync(run, "Failed", $"Test failed after {sw.ElapsedMilliseconds} ms");
+            if (_audit is not null) await _audit.Relay($"Provider test failed: {run.Provider}", ex.Message, "Warning");
         }
     }
 
