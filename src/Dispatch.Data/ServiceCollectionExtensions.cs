@@ -25,6 +25,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICounterRepository>(sp => sp.GetRequiredService<SqlCounterRepository>());
         services.AddSingleton<ICounterReader>(sp => sp.GetRequiredService<SqlCounterRepository>());
 
+        services.AddSingleton<Dispatch.Core.Audit.IAuditLog, SqlAuditLog>();
+
         services.AddSingleton<IConfigRepository, SqlConfigRepository>();
         services.AddSingleton<IRelaySettingsStore, SqlRelaySettingsStore>();
         services.AddSingleton<IRelayRepository, SqlRelayRepository>();

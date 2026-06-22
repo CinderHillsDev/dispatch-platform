@@ -55,6 +55,8 @@ export function System() {
         )}
       </div>
 
+      <ChangePasswordPanel />
+
       <div className="panel" style={{ maxWidth: 620 }}>
         <h2>Restart</h2>
         <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
@@ -75,5 +77,41 @@ export function System() {
         </p>
       </div>
     </>
+  );
+}
+
+function ChangePasswordPanel() {
+  const [pw, setPw] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const save = async () => {
+    if (pw !== confirm) { setMsg("Error: Passwords do not match."); return; }
+    setBusy(true); setMsg(null);
+    try { await api.setPassword(pw); setMsg("Password changed."); setPw(""); setConfirm(""); }
+    catch (e) { setMsg(`Error: ${(e as Error).message}`); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="panel" style={{ maxWidth: 620 }}>
+      <h2>Admin password</h2>
+      <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
+        Change the dashboard sign-in password. Minimum 12 characters with an uppercase letter, a lowercase letter and a digit.
+      </p>
+      <label style={{ display: "block", margin: "8px 0" }}>
+        <div style={{ fontSize: 13 }}>New password</div>
+        <input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} style={{ width: 320 }} />
+      </label>
+      <label style={{ display: "block", margin: "8px 0" }}>
+        <div style={{ fontSize: 13 }}>Confirm new password</div>
+        <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} style={{ width: 320 }} />
+      </label>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}>
+        <button onClick={save} disabled={busy || !pw || !confirm}>Change password</button>
+        {msg && <span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span>}
+      </div>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Dispatch.Core.ApiKeys;
+using Dispatch.Core.Audit;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
@@ -164,6 +165,23 @@ public static class WebEndpoints
 
         group.MapGet("/stats/throughput", (MinuteCounterRing ring) => Results.Ok(ring.Snapshot()));
 
+        // System Logs: audit/security events + relay & system errors. Keyset-paginated, filter by kind
+        // (audit|relay|system) and a free-text search.
+        group.MapGet("/audit", async (IAuditLog audit, HttpContext ctx, CancellationToken ct) =>
+        {
+            var q = ctx.Request.Query;
+            var limit = int.TryParse(q["limit"], out var l) ? Math.Clamp(l, 1, 200) : 50;
+            AuditCursor? cursor = ParseDate(q["cursorAt"]) is { } at && long.TryParse(q["cursorId"], out var cid)
+                ? new AuditCursor(at, cid) : null;
+            var page = await audit.QueryAsync(new AuditFilter(
+                NullIfEmpty(q["kind"]), NullIfEmpty(q["category"]), NullIfEmpty(q["severity"]), NullIfEmpty(q["search"]), limit, cursor), ct);
+            return Results.Ok(new
+            {
+                rows = page.Rows,
+                nextCursor = page.NextCursor is { } nx ? new { at = nx.LoggedAt, id = nx.Id } : null,
+            });
+        });
+
         // Reports: aggregate daily counters over a date range (defaults to the last 30 days). Returns a
         // range summary, a per-day time series, and a per-relay breakdown (spec §9.2).
         group.MapGet("/reports", async (ICounterReader counters, HttpContext ctx, CancellationToken ct) =>
@@ -260,11 +278,13 @@ public static class WebEndpoints
         group.MapGet("/keys", async (IApiKeyRepository keys, CancellationToken ct) =>
             Results.Ok((await keys.ListAsync(includeRevoked: true, ct)).Select(Public)));
 
-        group.MapPost("/keys", async (CreateKeyRequest req, IApiKeyRepository keys, CancellationToken ct) =>
+        group.MapPost("/keys", async (CreateKeyRequest req, IApiKeyRepository keys, IAuditLog audit, HttpContext ctx, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.Name))
                 return Results.BadRequest(new { error = "Name is required." });
             var created = await keys.CreateAsync(req.Name, req.RateLimitPerMinute ?? 0, ct);
+            await audit.Audit("ApiKey", $"API key created: {created.Key.Name} ({created.Key.KeyId})", "Notice",
+                actor: "admin", sourceIp: ctx.Connection.RemoteIpAddress?.ToString());
             return Results.Ok(new
             {
                 created.Key.Id, created.Key.KeyId, created.Key.Name,
@@ -272,10 +292,12 @@ public static class WebEndpoints
             });
         });
 
-        group.MapDelete("/keys/{id:int}", async (int id, IApiKeyRepository keys, ApiKeyCache cache, CancellationToken ct) =>
+        group.MapDelete("/keys/{id:int}", async (int id, IApiKeyRepository keys, ApiKeyCache cache, IAuditLog audit, HttpContext ctx, CancellationToken ct) =>
         {
             if (!await keys.RevokeAsync(id, ct)) return Results.NotFound();
             cache.Invalidate(id);   // stop the key working now, not after the 30s cache TTL (spec §17.4)
+            await audit.Audit("ApiKey", $"API key revoked (id {id})", "Notice",
+                actor: "admin", sourceIp: ctx.Connection.RemoteIpAddress?.ToString());
             return Results.Ok();
         });
     }

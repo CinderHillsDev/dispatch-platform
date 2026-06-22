@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Dispatch.Core.Audit;
 using Dispatch.Core.Configuration;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -30,7 +31,7 @@ public static class AuthEndpoints
             });
         });
 
-        group.MapPost("/auth/login", async (LoginRequest req, HttpContext ctx, IConfigRepository config, LoginThrottle throttle) =>
+        group.MapPost("/auth/login", async (LoginRequest req, HttpContext ctx, IConfigRepository config, LoginThrottle throttle, IAuditLog audit) =>
         {
             // Per-IP lockout (spec §17.3): 10 failed attempts within 5 minutes → 15-minute lockout. bcrypt-12
             // makes each verify costly; the lockout caps sustained online brute force on top of that.
@@ -38,6 +39,7 @@ public static class AuthEndpoints
             if (throttle.IsLocked(ip, out var retryAfter))
             {
                 ctx.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+                await audit.Audit("Auth", "Login blocked (locked out)", "Warning", actor: "admin", sourceIp: ip);
                 return Results.StatusCode(StatusCodes.Status429TooManyRequests);
             }
 
@@ -45,24 +47,27 @@ public static class AuthEndpoints
             if (string.IsNullOrEmpty(hash) || string.IsNullOrEmpty(req.Password) || !BCrypt.Net.BCrypt.Verify(req.Password, hash))
             {
                 throttle.RecordFailure(ip);
+                await audit.Audit("Auth", "Login failed", "Warning", actor: "admin", sourceIp: ip);
                 return Results.Unauthorized();
             }
 
             throttle.RecordSuccess(ip);
             var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "admin")], CookieAuthenticationDefaults.AuthenticationScheme);
             await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+            await audit.Audit("Auth", "Login succeeded", "Info", actor: "admin", sourceIp: ip);
             return Results.Ok(new { ok = true });
         });
 
-        group.MapPost("/auth/logout", async (HttpContext ctx) =>
+        group.MapPost("/auth/logout", async (HttpContext ctx, IAuditLog audit) =>
         {
             await ctx.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            await audit.Audit("Auth", "Logout", "Info", actor: "admin", sourceIp: ctx.Connection.RemoteIpAddress?.ToString());
             return Results.Ok(new { ok = true });
         });
 
         // First-run setup or password change. Allowed without auth ONLY when no password exists yet
         // (bootstrap); afterwards the caller must already be authenticated.
-        group.MapPost("/auth/password", async (SetPasswordRequest req, HttpContext ctx, IConfigRepository config) =>
+        group.MapPost("/auth/password", async (SetPasswordRequest req, HttpContext ctx, IConfigRepository config, IAuditLog audit) =>
         {
             var hasPassword = !string.IsNullOrEmpty(await config.GetAsync(PasswordHashKey, ctx.RequestAborted));
             if (hasPassword && !(ctx.User.Identity?.IsAuthenticated ?? false))
@@ -71,6 +76,8 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { error });
 
             await config.SetAsync(PasswordHashKey, BCrypt.Net.BCrypt.HashPassword(req.Password, 12), encrypted: false, ctx.RequestAborted);
+            await audit.Audit("Auth", hasPassword ? "Admin password changed" : "Admin password set (first-run)", "Notice",
+                actor: "admin", sourceIp: ctx.Connection.RemoteIpAddress?.ToString());
 
             // Sign the admin in immediately after first-run setup.
             if (!hasPassword)

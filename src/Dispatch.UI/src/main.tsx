@@ -15,6 +15,7 @@ import { SmtpAuth } from "./pages/SmtpAuth";
 import { ApiKeys } from "./pages/ApiKeys";
 import { Settings } from "./pages/Settings";
 import { System } from "./pages/System";
+import { Logs } from "./pages/Logs";
 import { AccessControl } from "./pages/AccessControl";
 import { AuthGate, logout } from "./auth";
 import "./index.css";
@@ -47,6 +48,7 @@ function Layout() {
           <div className="nav-group">
             <div className="nav-label">System</div>
             <NavLink to="/settings">Settings</NavLink>
+            <NavLink to="/logs">Logs</NavLink>
             <NavLink to="/system">About</NavLink>
           </div>
         </nav>
@@ -84,6 +86,7 @@ const pages: { path: string; element: ReactNode }[] = [
   { path: "/api-keys", element: <ApiKeys /> },
   { path: "/inbox", element: <LocalInbox /> },
   { path: "/settings", element: <Settings /> },
+  { path: "/logs", element: <Logs /> },
   { path: "/system", element: <System /> },
 ];
 

@@ -209,6 +209,12 @@ async function sendJson<T>(url: string, method: string, body: unknown): Promise<
   return data as T;
 }
 
+export interface AuditEntry {
+  id: number; loggedAt: string; kind: string; category: string; event: string;
+  severity: string; actor: string | null; sourceIp: string | null; detail: string | null;
+}
+export interface AuditPage { rows: AuditEntry[]; nextCursor: { at: string; id: number } | null; }
+
 export interface ReportSummary { received: number; delivered: number; failed: number; retried: number; denied: number; }
 export interface ReportDaily { date: string; received: number; delivered: number; failed: number; retried: number; denied: number; }
 export interface ReportRelay { relayId: number; relayName: string; received: number; delivered: number; failed: number; retried: number; denied: number; }
@@ -219,6 +225,8 @@ export const api = {
   throughput: () => getJson<number[]>("/api/stats/throughput"),
   relayStats: () => getJson<RelayStat[]>("/api/stats/relays"),
   reports: (from: string, to: string) => getJson<ReportData>(`/api/reports?from=${from}&to=${to}`),
+  audit: (params: URLSearchParams) => getJson<AuditPage>(`/api/audit?${params}`),
+  setPassword: (password: string) => sendJson<{ ok: boolean }>("/api/auth/password", "POST", { password }),
   messages: (params: URLSearchParams) => getJson<MessagePage>(`/api/messages?${params}`),
   message: (id: number) => getJson<MessageDetail>(`/api/messages/${id}`),
   messageIdBySpool: (spoolId: string) => getJson<{ id: number }>(`/api/messages/by-spool/${encodeURIComponent(spoolId)}`),

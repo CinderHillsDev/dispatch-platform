@@ -1,3 +1,4 @@
+using Dispatch.Core.Audit;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Maintenance;
@@ -196,6 +197,27 @@ try
     builder.Services.AddHostedService(sp => sp.GetRequiredService<DiskMonitor>());
 
     var app = builder.Build();
+
+    // Global exception handler (OWASP A10): never leak internals — log with an error id, record a System
+    // audit event, and return a generic 500 carrying just that id. Must be first to catch downstream throws.
+    app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
+    {
+        var feature = ctx.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+        var ex = feature?.Error;
+        var errorId = Guid.NewGuid().ToString("N")[..12];
+        Log.Error(ex, "Unhandled exception {ErrorId} on {Path}", errorId, feature?.Path);
+        try
+        {
+            var audit = ctx.RequestServices.GetService<Dispatch.Core.Audit.IAuditLog>();
+            if (audit is not null)
+                await audit.System($"Unhandled error on {feature?.Path ?? ctx.Request.Path.Value}",
+                    $"[{errorId}] {ex?.GetType().Name}: {ex?.Message}", ctx.Connection.RemoteIpAddress?.ToString());
+        }
+        catch { /* audit is best-effort */ }
+        ctx.Response.StatusCode = Microsoft.AspNetCore.Http.StatusCodes.Status500InternalServerError;
+        ctx.Response.ContentType = "application/json";
+        await ctx.Response.WriteAsync($"{{\"error\":\"An unexpected error occurred.\",\"id\":\"{errorId}\"}}");
+    }));
 
     // Schema + default config were applied during bootstrap (before listeners were configured). The default
     // relay is seeded "Unconfigured" by the schema migration; an administrator selects its provider in the UI.

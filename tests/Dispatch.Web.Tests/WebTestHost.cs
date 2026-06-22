@@ -105,6 +105,7 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton<ISmtpCredentialRepository, FakeSmtpCredentialRepository>();
         builder.Services.AddSingleton<IRelayProviderFactory, FakeProviderFactory>();
         builder.Services.AddSingleton<IRelayResolver, RoutingEngine>();
+        builder.Services.AddSingleton<Dispatch.Core.Audit.IAuditLog, FakeAuditLog>();
         builder.Services.AddSingleton<ILogRepository, NullLogRepository>();   // decorated by AddDispatchWeb
         builder.Services.AddDispatchWeb();
 
@@ -132,6 +133,37 @@ public sealed class WebTestHost : IAsyncLifetime
         await _app.StopAsync();
         await _app.DisposeAsync();
         try { Directory.Delete(SpoolDir, recursive: true); } catch { /* best effort */ }
+    }
+}
+
+internal sealed class FakeAuditLog : Dispatch.Core.Audit.IAuditLog
+{
+    private readonly List<Dispatch.Core.Audit.AuditEntry> _entries = new();
+    private long _id;
+
+    public Task WriteAsync(string kind, string category, string @event, string severity,
+        string? actor, string? sourceIp, string? detail, CancellationToken ct = default)
+    {
+        lock (_entries)
+            _entries.Insert(0, new Dispatch.Core.Audit.AuditEntry(
+                ++_id, DateTime.UtcNow, kind, category, @event, severity, actor, sourceIp, detail));
+        return Task.CompletedTask;
+    }
+
+    public Task<Dispatch.Core.Audit.AuditPage> QueryAsync(Dispatch.Core.Audit.AuditFilter filter, CancellationToken ct = default)
+    {
+        lock (_entries)
+        {
+            IEnumerable<Dispatch.Core.Audit.AuditEntry> q = _entries;
+            if (!string.IsNullOrWhiteSpace(filter.Kind)) q = q.Where(e => e.Kind == filter.Kind);
+            if (!string.IsNullOrWhiteSpace(filter.Category)) q = q.Where(e => e.Category == filter.Category);
+            if (!string.IsNullOrWhiteSpace(filter.Severity)) q = q.Where(e => e.Severity == filter.Severity);
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+                q = q.Where(e => (e.Event + " " + e.Detail + " " + e.Actor + " " + e.Category)
+                    .Contains(filter.Search, StringComparison.OrdinalIgnoreCase));
+            var rows = q.Take(Math.Clamp(filter.Limit, 1, 200)).ToList();
+            return Task.FromResult(new Dispatch.Core.Audit.AuditPage(rows, null));
+        }
     }
 }
 
