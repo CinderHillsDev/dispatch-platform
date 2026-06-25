@@ -17,7 +17,7 @@ const PRESETS: Preset[] = [
 
 const n = (v: number) => v.toLocaleString();
 
-const DEFAULT_PRESET = PRESETS.find((p) => p.label === "This month")!;
+const DEFAULT_PRESET = PRESETS.find((p) => p.label === "Today")!;
 
 export function Reports() {
   const [[from, to], setRange] = useState<[string, string]>(DEFAULT_PRESET.range());
