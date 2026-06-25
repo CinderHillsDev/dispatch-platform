@@ -272,7 +272,8 @@ cat > "$CONFIG_DIR/appsettings.json" <<JSON
 }
 JSON
 
-# The admin password is consumed once on first start (hashed into SQL); the file is root/dispatch-only.
+# The admin password is consumed once on first start: hashed into SQL, then the plaintext seed is wiped
+# from appsettings.json by the service so the password lives only in the database. File is root/dispatch-only.
 chown -R dispatch:dispatch "$INSTALL_DIR" "$DATA_DIR" "$LOG_DIR" "$CONFIG_DIR"
 chmod 600 "$CONFIG_DIR/appsettings.json"
 [[ -n "$TLS_CERT_PATH" ]] && chown dispatch:dispatch "$TLS_CERT_PATH"

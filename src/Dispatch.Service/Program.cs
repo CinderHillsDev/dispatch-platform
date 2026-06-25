@@ -238,6 +238,28 @@ try
         Log.Information("Seeded admin password from install configuration");
     }
 
+    // Once the password hash exists in SQL, the plaintext AdminPassword seed in appsettings is redundant.
+    // Wipe it so the admin password lives ONLY in the database (the file should hold just the connection
+    // string + TLS cert). Best-effort; covers both fresh seeds and installs that still carry an old seed.
+    if (!string.IsNullOrWhiteSpace(adminPassword)
+        && !string.IsNullOrEmpty(await configRepo.GetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey)))
+    {
+        foreach (var name in new[] { "appsettings.json", $"appsettings.{builder.Environment.EnvironmentName}.json" })
+        {
+            var path = Path.Combine(builder.Environment.ContentRootPath, name);
+            try
+            {
+                if (!File.Exists(path)) continue;
+                if (System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path)) is not System.Text.Json.Nodes.JsonObject obj
+                    || !obj.ContainsKey("AdminPassword")) continue;
+                obj.Remove("AdminPassword");
+                File.WriteAllText(path, obj.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                Log.Information("Removed the consumed AdminPassword seed from {File}; the admin password now lives only in the database.", name);
+            }
+            catch (Exception ex) { Log.Warning(ex, "Could not strip the AdminPassword seed from {File}", name); }
+        }
+    }
+
     app.UseSecurityHeaders(webSnapshot.Port, enforceHttps);
     app.UseEmbeddedUi(webSnapshot.Port);
     app.UseAuthentication();
