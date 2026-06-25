@@ -61,7 +61,10 @@ export function LocalInbox() {
     await refresh();
   };
 
-  const clearAll = async () => { await api.inbox.clear(); setSelected(null); await refresh(); };
+  const clearAll = async () => {
+    if (!confirm(`Delete all ${total} captured message${total === 1 ? "" : "s"} from the Local Inbox? This can't be undone.`)) return;
+    await api.inbox.clear(); setSelected(null); await refresh();
+  };
 
   return (
     <>
