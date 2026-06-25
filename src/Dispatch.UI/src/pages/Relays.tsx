@@ -377,14 +377,24 @@ function RelayEditor({ relay, onChanged, setMsg }: {
 
       {fields.map((f) => (
         <div key={f.name} style={{ marginBottom: 10 }}>
-          <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>{f.name}{f.required ? " *" : ""}</label>
-          <input
-            style={{ width: "100%" }}
-            type={f.secret ? "password" : "text"}
-            placeholder={f.secret && secretHasValue(f.name) ? "•••••••• (unchanged)" : ""}
-            value={values[f.name] ?? ""}
-            onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
-          />
+          <label className="muted" style={{ display: "block", fontSize: 12, marginBottom: 4 }}>{f.label ?? f.name}{f.required ? " *" : ""}</label>
+          {f.options
+            ? (
+              <select style={{ width: "100%" }} value={values[f.name] ?? ""} onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}>
+                <option value="">{f.required ? "— select —" : "(default)"}</option>
+                {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            )
+            : (
+              <input
+                style={{ width: "100%" }}
+                type={f.secret ? "password" : "text"}
+                placeholder={f.secret && secretHasValue(f.name) ? "•••••••• (unchanged)" : f.placeholder}
+                value={values[f.name] ?? ""}
+                onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
+              />
+            )}
+          {f.help && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{f.help}</div>}
         </div>
       ))}
 

@@ -1,7 +1,7 @@
 // Credential field schema per provider, mirrored from RelayProviderSchema (Core). Shared by the Relays
 // page and the first-run wizard so the credential forms stay in sync. `options` renders a dropdown (e.g.
 // regions) instead of a free-text box; `placeholder` is an optional input hint.
-export interface ProviderField { name: string; secret: boolean; required: boolean; options?: string[]; placeholder?: string }
+export interface ProviderField { name: string; secret: boolean; required: boolean; options?: string[]; placeholder?: string; label?: string; help?: string }
 
 // Common AWS region codes for Amazon SES (the SES region is an AWS region, not a US/EU choice).
 const AWS_REGIONS = [
@@ -28,6 +28,12 @@ export const PROVIDER_FIELDS: Record<string, ProviderField[]> = {
   AzureCommunication: [
     { name: "ConnectionString", secret: true, required: true },
     { name: "SenderAddress", secret: false, required: true, placeholder: "DoNotReply@your-domain.azurecomm.net" },
+    {
+      name: "AllowedSenders", secret: false, required: false,
+      label: "Allowed senders (MailFrom)",
+      placeholder: "noreply@example.com, example.com",
+      help: "Comma-separated verified MailFrom addresses or whole domains. Mail whose From isn't listed is rejected before it reaches Azure. Leave blank to send everything as the sender address above.",
+    },
   ],
   AmazonSes: [
     { name: "AccessKeyId", secret: false, required: true },

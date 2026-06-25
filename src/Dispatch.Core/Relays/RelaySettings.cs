@@ -30,6 +30,7 @@ public static class RelayProviderSchema
         [
             new("ConnectionString", "azure.connection_string", Secret: true, Required: true),
             new("SenderAddress", "azure.sender_address", Secret: false, Required: true),
+            new("AllowedSenders", "azure.allowed_senders", Secret: false, Required: false),
         ],
         RelayProviderType.Smtp =>
         [

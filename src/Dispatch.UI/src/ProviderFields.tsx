@@ -10,7 +10,7 @@ export function ProviderFieldsInput({ fields, values, onChange }: {
     <>
       {fields.map((f) => (
         <label key={f.name} style={{ display: "block", margin: "10px 0" }}>
-          <div style={{ fontSize: 13 }}>{f.name}{f.required ? " *" : ""}</div>
+          <div style={{ fontSize: 13 }}>{f.label ?? f.name}{f.required ? " *" : ""}</div>
           {f.options
             ? (
               <select value={values[f.name] ?? ""} onChange={(e) => set(f.name, e.target.value)} style={{ width: "100%" }}>
@@ -22,6 +22,7 @@ export function ProviderFieldsInput({ fields, values, onChange }: {
               <input type={f.secret ? "password" : "text"} placeholder={f.placeholder}
                 value={values[f.name] ?? ""} onChange={(e) => set(f.name, e.target.value)} style={{ width: "100%" }} />
             )}
+          {f.help && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{f.help}</div>}
         </label>
       ))}
     </>
