@@ -29,8 +29,9 @@ public static class RelayProviderSchema
         RelayProviderType.AzureCommunication =>
         [
             new("ConnectionString", "azure.connection_string", Secret: true, Required: true),
-            new("SenderAddress", "azure.sender_address", Secret: false, Required: true),
-            new("AllowedSenders", "azure.allowed_senders", Secret: false, Required: false),
+            // One field for the verified MailFrom address(es). Storage suffix kept as the legacy
+            // "azure.sender_address" so existing relays' configured sender carries over unchanged.
+            new("MailFrom", "azure.sender_address", Secret: false, Required: true),
         ],
         RelayProviderType.Smtp =>
         [

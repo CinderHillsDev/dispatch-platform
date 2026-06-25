@@ -27,12 +27,11 @@ export const PROVIDER_FIELDS: Record<string, ProviderField[]> = {
   SendGrid: [{ name: "ApiKey", secret: true, required: true }],
   AzureCommunication: [
     { name: "ConnectionString", secret: true, required: true },
-    { name: "SenderAddress", secret: false, required: true, placeholder: "DoNotReply@your-domain.azurecomm.net" },
     {
-      name: "AllowedSenders", secret: false, required: false,
-      label: "Allowed senders (MailFrom)",
-      placeholder: "noreply@example.com, example.com",
-      help: "Comma-separated verified MailFrom addresses or whole domains. Mail whose From isn't listed is rejected before it reaches Azure. Leave blank to send everything as the sender address above.",
+      name: "MailFrom", secret: false, required: true,
+      label: "MailFrom address(es)",
+      placeholder: "DoNotReply@your-domain.azurecomm.net, alerts@your-domain.azurecomm.net",
+      help: "Comma-separated MailFrom addresses configured on your ACS resource. Mail must be sent from one of these exact addresses (ACS has no domain wildcard) — anything else is rejected before it reaches Azure. The first is used when a message has no From.",
     },
   ],
   AmazonSes: [
@@ -50,13 +49,27 @@ export const PROVIDER_FIELDS: Record<string, ProviderField[]> = {
     { name: "Region", secret: false, required: false, options: ["US", "EU"] },
   ],
   Smtp2Go: [{ name: "ApiKey", secret: true, required: true }],
-  Maileroo: [{ name: "ApiKey", secret: true, required: true }],
+  Maileroo: [{ name: "ApiKey", secret: true, required: true, label: "Sending Key" }],
   Bird: [
     { name: "ApiKey", secret: true, required: true },
     { name: "WorkspaceId", secret: false, required: true },
     { name: "ChannelId", secret: false, required: true, placeholder: "your email channel id" },
   ],
 };
+
+// Azure requires the test From to be one of the resource's configured MailFrom addresses (ACS has no
+// domain-level wildcard). Returns the relay's configured MailFrom addresses as test-From choices, de-duplicated and
+// order-preserved so the first is the natural default. Mirrors backend ProviderTestService.AzureMailFromSuggestions.
+export function azureMailFromSuggestions(allowedSenders: string | undefined | null): string[] {
+  if (!allowedSenders) return [];
+  const out: string[] = [];
+  for (const raw of allowedSenders.split(/[,;\n\r]+/)) {
+    const e = raw.trim();
+    if (!e) continue;
+    if (!out.some((x) => x.toLowerCase() === e.toLowerCase())) out.push(e);
+  }
+  return out;
+}
 
 // Brand-colored monogram per provider (self-contained, no external/trademarked logo assets) for the
 // provider cards. `fg` overrides the text color on light backgrounds.

@@ -33,14 +33,35 @@ public sealed class Smtp2GoProvider(RelayConfig config, HttpClient http) : IRela
 
         var (status, json) = await ProviderHttp.SendAsync(http, req, Name, ct);
 
-        string? id = null;
-        try
-        {
-            var root = JsonDocument.Parse(json).RootElement;
-            if (root.TryGetProperty("data", out var d) && d.TryGetProperty("email_id", out var m)) id = m.GetString();
-        }
-        catch { /* best-effort */ }
+        // SMTP2GO returns HTTP 200 even when it rejects the message — the real outcome lives in `data`
+        // (succeeded/failed counts, or an error/field_validation_errors). Treat anything that isn't a
+        // confirmed success as a permanent failure so it's logged and surfaced rather than silently "sent".
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException($"SMTP2GO returned an unexpected response (HTTP {status}): {json}");
 
-        return RelayResult.Success(id, $"HTTP {status} — SMTP2GO email_id: {id}");
+        if (data.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.String)
+        {
+            var code = data.TryGetProperty("error_code", out var ec) ? ec.GetString() : null;
+            var fields = data.TryGetProperty("field_validation_errors", out var fve) ? fve.GetRawText() : null;
+            throw new InvalidOperationException(
+                $"SMTP2GO rejected the message: {err.GetString()}" +
+                (code is not null ? $" (code {code})" : "") +
+                (fields is not null ? $" — {fields}" : ""));
+        }
+
+        var succeeded = data.TryGetProperty("succeeded", out var s) && s.TryGetInt32(out var sv) ? sv : 0;
+        if (succeeded < 1)
+        {
+            var failures = data.TryGetProperty("failures", out var f) && f.ValueKind == JsonValueKind.Array
+                ? string.Join("; ", f.EnumerateArray().Select(x => x.ToString()))
+                : null;
+            throw new InvalidOperationException(
+                $"SMTP2GO did not accept the message (succeeded=0){(string.IsNullOrWhiteSpace(failures) ? $": {json}" : $": {failures}")}");
+        }
+
+        string? id = data.TryGetProperty("email_id", out var m) ? m.GetString() : null;
+        return RelayResult.Success(id, $"HTTP {status} — SMTP2GO succeeded={succeeded}, email_id: {id}");
     }
 }

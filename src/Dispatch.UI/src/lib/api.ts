@@ -255,8 +255,8 @@ export const api = {
   },
 
   config: {
-    testProvider: (provider: string, settings: Record<string, string>, testRecipient: string) =>
-      sendJson<TestRunStart>("/api/config/test-provider", "POST", { provider, settings, testRecipient }),
+    testProvider: (provider: string, settings: Record<string, string>, testRecipient: string, from?: string) =>
+      sendJson<TestRunStart>("/api/config/test-provider", "POST", { provider, settings, testRecipient, from: from || undefined }),
     testProviderRun: (runId: string) => getJson<TestRun>(`/api/config/test-provider/${encodeURIComponent(runId)}`),
   },
 

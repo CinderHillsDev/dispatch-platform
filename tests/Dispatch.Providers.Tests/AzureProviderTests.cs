@@ -6,14 +6,13 @@ namespace Dispatch.Providers.Tests;
 
 public class AzureProviderTests
 {
-    private static RelayConfig Config(string? allowedSenders) => new()
+    private static RelayConfig Config(string? mailFrom) => new()
     {
         Provider = RelayProviderType.AzureCommunication,
         Settings = new Dictionary<string, string?>
         {
             ["ConnectionString"] = "endpoint=https://x.communication.azure.com/;accesskey=k",
-            ["SenderAddress"] = "DoNotReply@verified.azurecomm.net",
-            ["AllowedSenders"] = allowedSenders,
+            ["MailFrom"] = mailFrom,
         },
     };
 
@@ -27,13 +26,13 @@ public class AzureProviderTests
     }
 
     [Fact]
-    public async Task Rejects_sender_not_in_allowed_list_without_contacting_acs()
+    public async Task Rejects_sender_not_in_mailfrom_list_without_contacting_acs()
     {
         var factory = new TripwireFactory();
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new AzureProvider(Config("other@example.org"), factory).SendAsync(ProviderTestSupport.Message(), default));
 
-        Assert.Contains("not an allowed MailFrom", ex.Message);
+        Assert.Contains("not a configured MailFrom", ex.Message);
         Assert.False(factory.Created);   // never reached the ACS client
     }
 
@@ -48,20 +47,32 @@ public class AzureProviderTests
     }
 
     [Fact]
-    public async Task Allows_whole_domain_match()
+    public async Task Allows_match_against_one_of_several_mailfroms()
     {
         var factory = new TripwireFactory();
         await Assert.ThrowsAsync<SentinelException>(() =>
-            new AzureProvider(Config("example.com"), factory).SendAsync(ProviderTestSupport.Message(), default));
+            new AzureProvider(Config("noreply@example.com, sender@example.com"), factory).SendAsync(ProviderTestSupport.Message(), default));
         Assert.True(factory.Created);
     }
 
     [Fact]
-    public async Task No_allowed_senders_skips_validation()
+    public async Task Domain_only_entry_does_not_match_address()
+    {
+        // ACS has no domain wildcard — a bare domain must NOT grant a same-domain address.
+        var factory = new TripwireFactory();
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new AzureProvider(Config("example.com"), factory).SendAsync(ProviderTestSupport.Message(), default));
+        Assert.Contains("not a configured MailFrom", ex.Message);
+        Assert.False(factory.Created);
+    }
+
+    [Fact]
+    public async Task Missing_mailfrom_is_permanent_and_never_contacts_acs()
     {
         var factory = new TripwireFactory();
-        await Assert.ThrowsAsync<SentinelException>(() =>
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new AzureProvider(Config(null), factory).SendAsync(ProviderTestSupport.Message(), default));
-        Assert.True(factory.Created);
+        Assert.Contains("'MailFrom' is not configured", ex.Message);
+        Assert.False(factory.Created);
     }
 }

@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { api, type RelayDetail, type RelayListItem, type TestResult, type TestRunLine } from "../lib/api";
-import { createTestProviderConnection } from "../lib/signalr";
-import { PROVIDER_FIELDS, PROVIDER_LABELS, PROVIDER_ORDER, PROVIDER_DOCS, PROVIDER_BRAND } from "../lib/providers";
+import { useEffect, useState } from "react";
+import { api, type RelayDetail, type RelayListItem, type TestResult } from "../lib/api";
+import { PROVIDER_FIELDS, PROVIDER_LABELS, PROVIDER_ORDER, PROVIDER_DOCS, PROVIDER_BRAND, azureMailFromSuggestions } from "../lib/providers";
 import { ProviderFieldsInput } from "../ProviderFields";
 import { TestResultView } from "../TestResultView";
 import { Modal } from "../Modal";
@@ -125,6 +124,9 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
       await api.relays.update(id, { name: finalName, provider, enabled: true, maxConcurrency: 4, settings: values });
       setCreatedId(id);
       await onAdded();
+      // Azure rejects any sender that isn't a verified MailFrom — default the test From to the first one defined.
+      const sug = provider === "AzureCommunication" ? azureMailFromSuggestions(values["MailFrom"]) : [];
+      if (sug.length > 0) setTestFrom(sug[0]);
       setStep("test");
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
@@ -191,10 +193,13 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
             Relay created 🎉 Send a quick test to confirm it delivers — or just finish.
           </p>
           <Lbl label="From address">
-            <input type="email" placeholder="sender@your-verified-domain.com" value={testFrom} onChange={(e) => setTestFrom(e.target.value)} style={{ width: "100%" }} />
+            <FromField suggestions={provider === "AzureCommunication" ? azureMailFromSuggestions(values["MailFrom"]) : []}
+              value={testFrom} onChange={setTestFrom} />
           </Lbl>
           <p className="muted" style={{ fontSize: 12, margin: "-4px 0 0" }}>
-            Most providers only accept mail from a domain you've <strong>verified</strong> with them — use an address on that domain or the test will be rejected.
+            {provider === "AzureCommunication" && azureMailFromSuggestions(values["MailFrom"]).length > 0
+              ? <>Azure only accepts mail from a <strong>verified MailFrom</strong> — pick one of the senders you defined.</>
+              : <>Most providers only accept mail from a domain you've <strong>verified</strong> with them — use an address on that domain or the test will be rejected.</>}
           </p>
           <Lbl label="Send a test to">
             <input type="email" placeholder="you@example.com" value={testTo} onChange={(e) => setTestTo(e.target.value)} style={{ width: "100%" }} />
@@ -217,8 +222,24 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
 function TestRelayModal({ relay, onClose }: { relay: RelayListItem; onClose: () => void }) {
   const [to, setTo] = useState("");
   const [from, setFrom] = useState("");
+  const [fromSuggestions, setFromSuggestions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
+
+  // Azure rejects any sender that isn't a verified MailFrom — load the relay's defined senders so the From
+  // becomes a dropdown of valid choices (the list page doesn't carry settings, so fetch the detail).
+  useEffect(() => {
+    if (relay.provider !== "AzureCommunication") return;
+    let cancelled = false;
+    api.relays.get(relay.id).then((d) => {
+      if (cancelled) return;
+      const allowed = d.fields.find((f) => f.name === "MailFrom")?.value;
+      const sug = azureMailFromSuggestions(allowed);
+      setFromSuggestions(sug);
+      if (sug.length > 0) setFrom(sug[0]);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [relay.id, relay.provider]);
 
   const send = async () => {
     setBusy(true); setResult(null);
@@ -232,10 +253,12 @@ function TestRelayModal({ relay, onClose }: { relay: RelayListItem; onClose: () 
       <div style={{ display: "grid", gap: 12 }}>
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>Sends a real test message through this relay's saved credentials.</p>
         <Lbl label="From address">
-          <input type="email" value={from} onChange={(e) => setFrom(e.target.value)} placeholder="sender@your-verified-domain.com" style={{ width: "100%" }} />
+          <FromField suggestions={fromSuggestions} value={from} onChange={setFrom} />
         </Lbl>
         <p className="muted" style={{ fontSize: 12, margin: "-6px 0 0" }}>
-          Most providers only accept mail from a domain you've <strong>verified</strong> with them — use an address on that domain.
+          {fromSuggestions.length > 0
+            ? <>Azure only accepts mail from a <strong>verified MailFrom</strong> — pick one of the senders you defined.</>
+            : <>Most providers only accept mail from a domain you've <strong>verified</strong> with them — use an address on that domain.</>}
         </p>
         <Lbl label="Send test to"><input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="you@example.com" style={{ width: "100%" }} /></Lbl>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -245,6 +268,24 @@ function TestRelayModal({ relay, onClose }: { relay: RelayListItem; onClose: () 
         {result && <TestResultView result={result} />}
       </div>
     </Modal>
+  );
+}
+
+// The "From" input for a test send. For Azure with verified MailFroms defined, it becomes a dropdown of those
+// addresses (Azure rejects any other sender) — otherwise a free-text email box. `suggestions` drives the choice.
+function FromField({ suggestions, value, onChange }: {
+  suggestions: string[]; value: string; onChange: (v: string) => void;
+}) {
+  if (suggestions.length > 0) {
+    return (
+      <select value={value} onChange={(e) => onChange(e.target.value)} style={{ width: "100%" }}>
+        {suggestions.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
+    );
+  }
+  return (
+    <input type="email" placeholder="sender@your-verified-domain.com" value={value}
+      onChange={(e) => onChange(e.target.value)} style={{ width: "100%" }} />
   );
 }
 
@@ -270,57 +311,7 @@ function RelayEditor({ relay, onChanged, setMsg }: {
     for (const f of relay.fields) v[f.name] = f.secret ? "" : f.value;
     return v;
   });
-  const [testTo, setTestTo] = useState("");
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [busy, setBusy] = useState(false);
-
-  // Live streaming provider test (spec §11) — tests the CURRENTLY ENTERED credentials, no save required.
-  const [testLines, setTestLines] = useState<TestRunLine[]>([]);
-  const [testStatus, setTestStatus] = useState<"" | "Running" | "Success" | "Failed">("");
-  const [testStartedAt, setTestStartedAt] = useState(0);
-  const testConn = useRef<ReturnType<typeof createTestProviderConnection> | null>(null);
-
-  useEffect(() => () => { testConn.current?.stop(); }, []);
-
-  const runStreamingTest = async () => {
-    if (!testTo) return;
-    setBusy(true);
-    setTestLines([]);
-    setTestStatus("Running");
-    setTestStartedAt(Date.now());
-    try {
-      await testConn.current?.stop();
-      const conn = createTestProviderConnection((line) => {
-        setTestLines((prev) => [...prev, { ts: line.ts, level: line.level, message: line.message }]);
-        if (line.level === "Success") setTestStatus("Success");
-        if (line.level === "Failed") setTestStatus("Failed");
-      });
-      testConn.current = conn;
-      await conn.start();
-
-      const start = await api.config.testProvider(provider, values, testTo);
-      await conn.invoke("Join", start.runId);
-
-      // Poll as a fallback so the terminal status is reached even if a line is missed.
-      const poll = setInterval(async () => {
-        try {
-          const run = await api.config.testProviderRun(start.runId);
-          if (run.status !== "Running") {
-            clearInterval(poll);
-            setTestLines(run.lines);
-            setTestStatus(run.status === "Success" ? "Success" : "Failed");
-          }
-        } catch { clearInterval(poll); }
-      }, 750);
-    } catch (e) {
-      setTestLines((prev) => [...prev, { ts: new Date().toISOString(), level: "Failed", message: (e as Error).message }]);
-      setTestStatus("Failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const elapsed = (ts: string) => testStartedAt ? `+${Math.max(0, (new Date(ts).getTime() - testStartedAt) / 1000).toFixed(3)}s` : "";
 
   const fields = PROVIDER_FIELDS[provider] ?? [];
   // Surface the implicit "Unconfigured" state in the dropdown until a real provider is chosen.
@@ -404,51 +395,6 @@ function RelayEditor({ relay, onChanged, setMsg }: {
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button onClick={save} disabled={busy}>Save</button>
-      </div>
-
-      <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-        <label className="muted" style={{ fontSize: 12 }}>Send test email</label>
-        <p className="muted" style={{ marginTop: 2, marginBottom: 6, fontSize: 11 }}>
-          Tests the credentials entered above — they do not need to be saved first.
-        </p>
-        <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-          <input style={{ flex: 1 }} placeholder="recipient@example.com" value={testTo} onChange={(e) => setTestTo(e.target.value)} />
-          <button disabled={busy || !testTo || testStatus === "Running"} onClick={runStreamingTest}>Send Test Email</button>
-          <button disabled={busy || !testTo} onClick={async () => {
-            setBusy(true); setTestResult(null);
-            try { setTestResult(await api.relays.test(relay.id, testTo)); }
-            catch (e) { setTestResult({ ok: false, error: (e as Error).message }); }
-            finally { setBusy(false); }
-          }}>Quick Test</button>
-        </div>
-        {testResult && (
-          <div style={{ marginTop: 10 }}>
-            {testResult.ok
-              ? <span className="badge ok">Sent via {testResult.provider}</span>
-              : <span className="badge error">Failed: {testResult.error}</span>}
-          </div>
-        )}
-
-        {(testStatus || testLines.length > 0) && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-              <span className="muted" style={{ fontSize: 12 }}>Test Log</span>
-              <button disabled={testStatus === "Running"} onClick={() => { setTestLines([]); setTestStatus(""); }} style={{ padding: "2px 8px", fontSize: 11 }}>Clear</button>
-            </div>
-            <div style={{
-              fontFamily: "monospace", fontSize: 12, background: "var(--bg, #111)", border: "1px solid var(--border)",
-              borderRadius: 4, padding: 8, maxHeight: 220, overflowY: "auto", whiteSpace: "pre-wrap",
-            }}>
-              {testLines.length === 0 && <div className="muted">Starting…</div>}
-              {testLines.map((l, i) => (
-                <div key={i} style={{ color: l.level === "Success" ? "#3fb950" : l.level === "Failed" || l.level === "Error" ? "#f85149" : undefined }}>
-                  <span className="muted">{elapsed(l.ts)} </span>
-                  <strong>{l.level === "Success" ? "✓ SUCCESS" : l.level === "Failed" ? "✗ FAILED" : l.level.toUpperCase()}</strong>{"  "}{l.message}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </>
   );

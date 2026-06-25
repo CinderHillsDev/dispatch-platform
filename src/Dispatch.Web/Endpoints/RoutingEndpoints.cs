@@ -104,9 +104,7 @@ public static class RoutingEndpoints
             // subject, text+HTML bodies, X-Dispatch-Test header) rather than an ad-hoc plaintext stub.
             var fromOverride = !string.IsNullOrWhiteSpace(req.From)
                 ? req.From!
-                : s.Provider == RelayProviderType.Mailgun && !string.IsNullOrEmpty(s.Settings.GetValueOrDefault("Domain"))
-                    ? $"dispatch-test@{s.Settings["Domain"]}"
-                    : null;
+                : Dispatch.Web.Realtime.ProviderTestService.DefaultTestFrom(s.Provider, s.Settings);
 
             var mime = Dispatch.Web.Realtime.ProviderTestService.BuildTestMessage(
                 s.Provider, req.To, cache.Listener().ServerName, fromOverride);

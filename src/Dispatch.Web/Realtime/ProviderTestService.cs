@@ -21,8 +21,8 @@ public sealed class TestRun
     public List<TestRunLine> Lines { get; } = [];
 }
 
-/// <summary>Initiates a provider test (spec §11.4).</summary>
-public sealed record TestProviderRequest(string Provider, Dictionary<string, string?>? Settings, string? TestRecipient);
+/// <summary>Initiates a provider test (spec §11.4). <c>From</c> overrides the test sender (e.g. a verified MailFrom).</summary>
+public sealed record TestProviderRequest(string Provider, Dictionary<string, string?>? Settings, string? TestRecipient, string? From = null);
 
 /// <summary>
 /// Runs a provider test against the credentials supplied in the request (no saving required), appending
@@ -73,13 +73,19 @@ public sealed class ProviderTestService : IDisposable
         var run = new TestRun { Provider = providerType.ToString() };
         _runs[run.RunId] = run;
 
+        // Resolve the test sender: an explicit From wins, else the provider's implicit verified sender (so an
+        // Azure relay isn't rejected by its own pre-send MailFrom check).
+        var fromOverride = !string.IsNullOrWhiteSpace(request.From)
+            ? request.From!.Trim()
+            : DefaultTestFrom(providerType, config.Settings);
+
         // Fire and forget — the caller gets the runId immediately; the test streams over SignalR.
-        _ = Task.Run(() => ExecuteAsync(run, config, recipient));
+        _ = Task.Run(() => ExecuteAsync(run, config, recipient, fromOverride));
 
         return run;
     }
 
-    private async Task ExecuteAsync(TestRun run, RelayConfig config, string recipient)
+    private async Task ExecuteAsync(TestRun run, RelayConfig config, string recipient, string? fromOverride)
     {
         var sw = Stopwatch.StartNew();
         try
@@ -89,7 +95,7 @@ public sealed class ProviderTestService : IDisposable
 
             var provider = _factory.Build(config);   // throws for Unconfigured / unsupported
 
-            var message = BuildTestMessage(config.Provider, recipient, _config.Listener().ServerName);
+            var message = BuildTestMessage(config.Provider, recipient, _config.Listener().ServerName, fromOverride);
             await LogAsync(run, "Info", "Building test MimeMessage");
             await LogAsync(run, "Info", $"From: {message.From}");
             await LogAsync(run, "Info", $"To:   {recipient}");
@@ -152,6 +158,34 @@ public sealed class ProviderTestService : IDisposable
         var body = new BodyBuilder { TextBody = text, HtmlBody = html };
         message.Body = body.ToMessageBody();
         return message;
+    }
+
+    /// <summary>
+    /// The implicit test sender for a provider that constrains the From, used when the operator didn't supply one.
+    /// Mailgun must send from its verified domain; Azure must send from one of its configured MailFrom addresses
+    /// or its own pre-send check rejects the message. Returns null when there's no such constraint.
+    /// </summary>
+    public static string? DefaultTestFrom(RelayProviderType provider, IReadOnlyDictionary<string, string?> settings) => provider switch
+    {
+        RelayProviderType.Mailgun =>
+            string.IsNullOrWhiteSpace(settings.GetValueOrDefault("Domain")) ? null : $"dispatch-test@{settings["Domain"]}",
+        RelayProviderType.AzureCommunication =>
+            AzureMailFromSuggestions(settings.GetValueOrDefault("MailFrom")).FirstOrDefault(),
+        _ => null,
+    };
+
+    /// <summary>
+    /// The Azure relay's configured MailFrom addresses, de-duplicated and order-preserved so the first is the
+    /// natural test default. ACS only accepts these exact addresses (no domain wildcard). Mirrors the UI's
+    /// azureMailFromSuggestions.
+    /// </summary>
+    public static IReadOnlyList<string> AzureMailFromSuggestions(string? allowedSenders)
+    {
+        if (string.IsNullOrWhiteSpace(allowedSenders)) return [];
+        var result = new List<string>();
+        foreach (var entry in allowedSenders.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (!result.Contains(entry, StringComparer.OrdinalIgnoreCase)) result.Add(entry);
+        return result;
     }
 
     private async Task LogAsync(TestRun run, string level, string message)
