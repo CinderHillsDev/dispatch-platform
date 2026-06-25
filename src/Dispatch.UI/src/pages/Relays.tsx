@@ -51,13 +51,12 @@ export function Relays() {
 
       <div className="panel" style={{ padding: 0 }}>
         <table>
-          <thead><tr><th>Name</th><th>Provider</th><th>Role</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Provider</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {list.map((r) => (
               <tr key={r.id}>
-                <td>{r.isDefault ? "★ " : ""}{r.name}</td>
+                <td>{r.name}</td>
                 <td>{PROVIDER_LABELS[r.provider] ?? r.provider}</td>
-                <td>{r.isDefault ? <span className="badge ok">catch-all</span> : ""}</td>
                 <td>{r.enabled ? "Enabled" : <span className="muted">Disabled</span>}</td>
                 <td style={{ textAlign: "right" }}>
                   <ActionsMenu items={[
@@ -68,7 +67,7 @@ export function Relays() {
                 </td>
               </tr>
             ))}
-            {list.length === 0 && <tr><td colSpan={5} className="center">No relays yet — click “Add relay”.</td></tr>}
+            {list.length === 0 && <tr><td colSpan={4} className="center">No relays yet — click “Add relay”.</td></tr>}
           </tbody>
         </table>
       </div>
