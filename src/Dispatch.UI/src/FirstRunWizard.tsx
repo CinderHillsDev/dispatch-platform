@@ -1,7 +1,8 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { api } from "./lib/api";
+import { api, type TestResult } from "./lib/api";
 import { PROVIDER_FIELDS, PROVIDER_LABELS, PROVIDER_ORDER } from "./lib/providers";
 import { ProviderFieldsInput } from "./ProviderFields";
+import { TestResultView } from "./TestResultView";
 import { validCidr } from "./lib/cidr";
 
 type Step = "welcome" | "provider" | "test" | "routing" | "access" | "done";
@@ -122,15 +123,14 @@ function ProviderStep({ onDone, onBack }: { onDone: (id: number, provider: strin
 
 function TestStep({ relayId, onBack, onNext }: { relayId: number; onBack: () => void; onNext: () => void }) {
   const [to, setTo] = useState("");
+  const [from, setFrom] = useState("");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [result, setResult] = useState<TestResult | null>(null);
 
   const send = async () => {
     setBusy(true); setResult(null);
-    try {
-      const r = await api.relays.test(relayId, to.trim());
-      setResult({ ok: r.ok, detail: r.ok ? (r.detail ?? "Delivered to the provider.") : (r.error ?? "Failed.") });
-    } catch (e) { setResult({ ok: false, detail: (e as Error).message }); }
+    try { setResult(await api.relays.test(relayId, to.trim(), from.trim())); }
+    catch (e) { setResult({ ok: false, error: (e as Error).message }); }
     finally { setBusy(false); }
   };
 
@@ -138,17 +138,15 @@ function TestStep({ relayId, onBack, onNext }: { relayId: number; onBack: () => 
     <>
       <h2 style={h2}>Send a test email</h2>
       <p style={p}>Optional, but worth it — confirm your credentials actually deliver before you rely on them.</p>
+      <label style={lbl}>From address</label>
+      <input type="email" placeholder="sender@your-verified-domain.com" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: "100%" }} />
+      <p style={{ ...p, fontSize: 12, margin: "4px 0 0" }}>Most providers only accept mail from a domain you've <strong>verified</strong> with them.</p>
       <label style={lbl}>Send a test to</label>
       <input type="email" placeholder="you@example.com" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: "100%" }} />
-      <div style={{ marginTop: 10 }}>
+      <div style={{ margin: "10px 0" }}>
         <button onClick={send} disabled={busy || !to.trim()}>{busy ? "Sending…" : "Send test"}</button>
       </div>
-      {result && (
-        <p style={{ marginTop: 12 }}>
-          <span className={result.ok ? "badge ok" : "badge error"}>{result.ok ? "Delivered" : "Failed"}</span>
-          <span style={{ marginLeft: 8, fontSize: 13, color: "var(--muted)" }}>{result.detail}</span>
-        </p>
-      )}
+      {result && <TestResultView result={result} />}
       <Nav
         left={<button onClick={onBack} style={ghostBtn}>← Back</button>}
         right={<button onClick={onNext}>{result?.ok ? "Continue →" : "Skip →"}</button>}

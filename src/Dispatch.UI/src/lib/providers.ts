@@ -45,6 +45,11 @@ export const PROVIDER_FIELDS: Record<string, ProviderField[]> = {
   ],
   Smtp2Go: [{ name: "ApiKey", secret: true, required: true }],
   Maileroo: [{ name: "ApiKey", secret: true, required: true }],
+  Bird: [
+    { name: "ApiKey", secret: true, required: true },
+    { name: "WorkspaceId", secret: false, required: true },
+    { name: "ChannelId", secret: false, required: true, placeholder: "your email channel id" },
+  ],
 };
 
 // Brand-colored monogram per provider (self-contained, no external/trademarked logo assets) for the
@@ -55,7 +60,8 @@ export const PROVIDER_BRAND: Record<string, { bg: string; fg?: string; mark: str
   AmazonSes: { bg: "#FF9900", fg: "#1a1a1a", mark: "SES" },
   Postmark: { bg: "#FFDD33", fg: "#1a1a1a", mark: "PM" },
   Resend: { bg: "#111827", mark: "RS" },
-  SparkPost: { bg: "#2A21E5", mark: "BD" },
+  SparkPost: { bg: "#FA6423", mark: "SP" },
+  Bird: { bg: "#2A21E5", mark: "BD" },
   Smtp2Go: { bg: "#00A4E4", mark: "S2" },
   Maileroo: { bg: "#4F46E5", mark: "ML" },
   AzureCommunication: { bg: "#0078D4", mark: "AZ" },
@@ -73,12 +79,13 @@ export const PROVIDER_DOCS: Record<string, string> = {
   SparkPost: "https://app.sparkpost.com/account/api-keys",
   Smtp2Go: "https://app.smtp2go.com/settings/api-keys",
   Maileroo: "https://maileroo.com/docs/email-api/introduction",
+  Bird: "https://docs.bird.com/api/channels-api",
   AzureCommunication: "https://learn.microsoft.com/azure/communication-services/quickstarts/email/send-email",
 };
 
 // Display order for provider pickers (real deliverable providers first; Local/SMTP last).
 export const PROVIDER_ORDER = [
-  "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Smtp2Go", "Maileroo", "AzureCommunication", "Smtp", "Local",
+  "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Bird", "Smtp2Go", "Maileroo", "AzureCommunication", "Smtp", "Local",
 ];
 
 // Friendly labels for the provider picker (enum name -> display name).
@@ -88,7 +95,8 @@ export const PROVIDER_LABELS: Record<string, string> = {
   AmazonSes: "Amazon SES",
   Postmark: "Postmark",
   Resend: "Resend",
-  SparkPost: "Bird (SparkPost)",
+  SparkPost: "SparkPost",
+  Bird: "Bird",
   Smtp2Go: "SMTP2GO",
   Maileroo: "Maileroo",
   AzureCommunication: "Azure Communication Services",

@@ -20,4 +20,5 @@ public enum RelayProviderType
     SparkPost,
     Smtp2Go,
     Maileroo,
+    Bird,
 }

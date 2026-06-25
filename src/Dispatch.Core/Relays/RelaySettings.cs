@@ -67,6 +67,12 @@ public static class RelayProviderSchema
         [
             new("ApiKey", "maileroo.api_key", Secret: true, Required: true),
         ],
+        RelayProviderType.Bird =>
+        [
+            new("ApiKey", "bird.api_key", Secret: true, Required: true),
+            new("WorkspaceId", "bird.workspace_id", Secret: false, Required: true),
+            new("ChannelId", "bird.channel_id", Secret: false, Required: true),
+        ],
         _ => [],
     };
 }

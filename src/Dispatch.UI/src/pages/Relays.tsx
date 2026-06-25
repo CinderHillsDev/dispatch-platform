@@ -3,6 +3,7 @@ import { api, type RelayDetail, type RelayListItem, type TestResult, type TestRu
 import { createTestProviderConnection } from "../lib/signalr";
 import { PROVIDER_FIELDS, PROVIDER_LABELS, PROVIDER_ORDER, PROVIDER_DOCS, PROVIDER_BRAND } from "../lib/providers";
 import { ProviderFieldsInput } from "../ProviderFields";
+import { TestResultView } from "../TestResultView";
 import { Modal } from "../Modal";
 import { ActionsMenu } from "../ActionsMenu";
 
@@ -85,7 +86,6 @@ export function Relays() {
             key={selected.id}
             relay={selected}
             onChanged={async () => { await refresh(); await select(selected.id); }}
-            onDeleted={async () => { setSelected(null); await refresh(); }}
             setMsg={setMsg}
           />
         </Modal>
@@ -108,7 +108,8 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [testTo, setTestTo] = useState("");
-  const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [testFrom, setTestFrom] = useState("");
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   const fields = provider ? (PROVIDER_FIELDS[provider] ?? []) : [];
   const missing = fields.filter((f) => f.required && !values[f.name]?.trim()).map((f) => f.name);
@@ -133,9 +134,8 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
     if (!createdId) return;
     setBusy(true); setTestResult(null);
     try {
-      const r = await api.relays.test(createdId, testTo.trim());
-      setTestResult({ ok: r.ok, detail: r.ok ? (r.detail ?? "Delivered to the provider.") : (r.error ?? "Failed.") });
-    } catch (e) { setTestResult({ ok: false, detail: (e as Error).message }); }
+      setTestResult(await api.relays.test(createdId, testTo.trim(), testFrom.trim()));
+    } catch (e) { setTestResult({ ok: false, error: (e as Error).message }); }
     finally { setBusy(false); }
   };
 
@@ -190,14 +190,19 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
           <p className="muted" style={{ fontSize: 13, margin: 0 }}>
             Relay created 🎉 Send a quick test to confirm it delivers — or just finish.
           </p>
+          <Lbl label="From address">
+            <input type="email" placeholder="sender@your-verified-domain.com" value={testFrom} onChange={(e) => setTestFrom(e.target.value)} style={{ width: "100%" }} />
+          </Lbl>
+          <p className="muted" style={{ fontSize: 12, margin: "-4px 0 0" }}>
+            Most providers only accept mail from a domain you've <strong>verified</strong> with them — use an address on that domain or the test will be rejected.
+          </p>
           <Lbl label="Send a test to">
             <input type="email" placeholder="you@example.com" value={testTo} onChange={(e) => setTestTo(e.target.value)} style={{ width: "100%" }} />
           </Lbl>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div>
             <button onClick={sendTest} disabled={busy || !testTo.trim()}>{busy ? "Sending…" : "Send test"}</button>
-            {testResult && <span className={testResult.ok ? "badge ok" : "badge error"}>{testResult.ok ? "Delivered" : "Failed"}</span>}
           </div>
-          {testResult && <p className="muted" style={{ fontSize: 13, margin: 0, wordBreak: "break-word" }}>{testResult.detail}</p>}
+          {testResult && <TestResultView result={testResult} />}
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
             <button onClick={onClose}>Finish</button>
           </div>
@@ -211,12 +216,13 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
 // unsaved edits; this is the one-click version from the row menu).
 function TestRelayModal({ relay, onClose }: { relay: RelayListItem; onClose: () => void }) {
   const [to, setTo] = useState("");
+  const [from, setFrom] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
 
   const send = async () => {
     setBusy(true); setResult(null);
-    try { setResult(await api.relays.test(relay.id, to.trim())); }
+    try { setResult(await api.relays.test(relay.id, to.trim(), from.trim())); }
     catch (e) { setResult({ ok: false, error: (e as Error).message }); }
     finally { setBusy(false); }
   };
@@ -225,17 +231,18 @@ function TestRelayModal({ relay, onClose }: { relay: RelayListItem; onClose: () 
     <Modal title={`Send test · ${relay.name}`} onClose={onClose}>
       <div style={{ display: "grid", gap: 12 }}>
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>Sends a real test message through this relay's saved credentials.</p>
+        <Lbl label="From address">
+          <input type="email" value={from} onChange={(e) => setFrom(e.target.value)} placeholder="sender@your-verified-domain.com" style={{ width: "100%" }} />
+        </Lbl>
+        <p className="muted" style={{ fontSize: 12, margin: "-6px 0 0" }}>
+          Most providers only accept mail from a domain you've <strong>verified</strong> with them — use an address on that domain.
+        </p>
         <Lbl label="Send test to"><input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="you@example.com" style={{ width: "100%" }} /></Lbl>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onClose}>Close</button>
           <button onClick={send} disabled={busy || !to.trim()}>{busy ? "Sending…" : "Send test"}</button>
         </div>
-        {result && (
-          <p style={{ margin: 0 }}>
-            <span className={result.ok ? "badge ok" : "badge error"}>{result.ok ? "Delivered" : "Failed"}</span>
-            <span className="muted" style={{ marginLeft: 8, fontSize: 13 }}>{result.ok ? (result.detail ?? "Sent to the provider.") : (result.error ?? "Failed.")}</span>
-          </p>
-        )}
+        {result && <TestResultView result={result} />}
       </div>
     </Modal>
   );
@@ -250,10 +257,9 @@ function Lbl({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
+function RelayEditor({ relay, onChanged, setMsg }: {
   relay: RelayDetail;
   onChanged: () => Promise<void>;
-  onDeleted: () => Promise<void>;
   setMsg: (m: string | null) => void;
 }) {
   const [name, setName] = useState(relay.name);
@@ -331,13 +337,6 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
     finally { setBusy(false); }
   };
 
-  const act = async (fn: () => Promise<unknown>, ok: string) => {
-    setBusy(true); setMsg(null);
-    try { await fn(); setMsg(ok); await onChanged(); }
-    catch (e) { setMsg(`Error: ${(e as Error).message}`); }
-    finally { setBusy(false); }
-  };
-
   return (
     <>
 
@@ -395,7 +394,6 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button onClick={save} disabled={busy}>Save</button>
-        {!relay.isDefault && <button onClick={() => act(() => api.relays.remove(relay.id), "Deleted.").then(onDeleted)} disabled={busy}>Delete</button>}
       </div>
 
       <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 14 }}>

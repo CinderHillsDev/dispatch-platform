@@ -26,6 +26,7 @@ public sealed class RelayProviderFactory(
         RelayProviderType.SparkPost => new SparkPostProvider(config, httpClientFactory.CreateClient("sparkpost")),
         RelayProviderType.Smtp2Go => new Smtp2GoProvider(config, httpClientFactory.CreateClient("smtp2go")),
         RelayProviderType.Maileroo => new MailerooProvider(config, httpClientFactory.CreateClient("maileroo")),
+        RelayProviderType.Bird => new BirdProvider(config, httpClientFactory.CreateClient("bird")),
         _ => throw new NotSupportedException($"Relay provider '{config.Provider}' is not supported."),
     };
 }

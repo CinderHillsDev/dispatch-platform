@@ -251,7 +251,7 @@ export const api = {
       sendJson<{ ok: boolean }>(`/api/relays/${id}`, "PUT", body),
     setDefault: (id: number) => sendJson<{ ok: boolean }>(`/api/relays/${id}/set-default`, "POST", {}),
     remove: (id: number) => sendJson<{ ok: boolean }>(`/api/relays/${id}`, "DELETE", {}),
-    test: (id: number, to: string) => sendJson<TestResult>(`/api/relays/${id}/test`, "POST", { to }),
+    test: (id: number, to: string, from?: string) => sendJson<TestResult>(`/api/relays/${id}/test`, "POST", { to, from: from || undefined }),
   },
 
   config: {
