@@ -7,8 +7,8 @@ const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 type Preset = { label: string; range: () => [string, string] };
 
 const PRESETS: Preset[] = [
+  { label: "Today", range: () => { const t = fmt(new Date()); return [t, t]; } },
   { label: "Last 7 days", range: () => { const t = new Date(); const s = new Date(); s.setDate(t.getDate() - 6); return [fmt(s), fmt(t)]; } },
-  { label: "Last 30 days", range: () => { const t = new Date(); const s = new Date(); s.setDate(t.getDate() - 29); return [fmt(s), fmt(t)]; } },
   { label: "This week", range: () => { const t = new Date(); const s = new Date(); const dow = (t.getDay() + 6) % 7; s.setDate(t.getDate() - dow); return [fmt(s), fmt(t)]; } },
   { label: "This month", range: () => { const t = new Date(); return [fmt(new Date(t.getFullYear(), t.getMonth(), 1)), fmt(t)]; } },
   { label: "Last month", range: () => { const t = new Date(); return [fmt(new Date(t.getFullYear(), t.getMonth() - 1, 1)), fmt(new Date(t.getFullYear(), t.getMonth(), 0))]; } },
@@ -17,9 +17,11 @@ const PRESETS: Preset[] = [
 
 const n = (v: number) => v.toLocaleString();
 
+const DEFAULT_PRESET = PRESETS.find((p) => p.label === "This month")!;
+
 export function Reports() {
-  const [[from, to], setRange] = useState<[string, string]>(PRESETS[1].range());
-  const [activePreset, setActivePreset] = useState<string | null>("Last 30 days");
+  const [[from, to], setRange] = useState<[string, string]>(DEFAULT_PRESET.range());
+  const [activePreset, setActivePreset] = useState<string | null>(DEFAULT_PRESET.label);
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
 
