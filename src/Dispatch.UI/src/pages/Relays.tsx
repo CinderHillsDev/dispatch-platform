@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type RelayDetail, type RelayListItem, type TestResult, type TestRunLine } from "../lib/api";
 import { createTestProviderConnection } from "../lib/signalr";
-import { PROVIDER_FIELDS, PROVIDER_LABELS } from "../lib/providers";
+import { PROVIDER_FIELDS, PROVIDER_LABELS, PROVIDER_ORDER, PROVIDER_DOCS } from "../lib/providers";
+import { ProviderFieldsInput } from "../ProviderFields";
 import { Modal } from "../Modal";
 import { ActionsMenu } from "../ActionsMenu";
 
@@ -96,50 +97,103 @@ export function Relays() {
 
 // "Add relay" dialog: pick a provider and fill its credentials in one step (like the first-run wizard),
 // instead of the old free-text-name + dropdown row. Creates the relay and saves its settings.
+// Stepped add-relay wizard: choose provider → enter credentials (with help link + region dropdowns) →
+// optional send-test.
 function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => Promise<void> }) {
+  const [step, setStep] = useState<"provider" | "credentials" | "test">("provider");
+  const [provider, setProvider] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState("Mailgun");
   const [values, setValues] = useState<Record<string, string>>({});
+  const [createdId, setCreatedId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const fields = PROVIDER_FIELDS[provider] ?? [];
+  const [testTo, setTestTo] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+
+  const fields = provider ? (PROVIDER_FIELDS[provider] ?? []) : [];
   const missing = fields.filter((f) => f.required && !values[f.name]?.trim()).map((f) => f.name);
 
+  const pick = (p: string) => { setProvider(p); setValues({}); setName(""); setErr(null); setStep("credentials"); };
+
   const create = async () => {
+    if (!provider) return;
     setBusy(true); setErr(null);
     try {
       const finalName = name.trim() || (PROVIDER_LABELS[provider] ?? provider);
       const { id } = await api.relays.create(finalName, provider);
       await api.relays.update(id, { name: finalName, provider, enabled: true, maxConcurrency: 4, settings: values });
+      setCreatedId(id);
       await onAdded();
-      onClose();
+      setStep("test");
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
 
+  const sendTest = async () => {
+    if (!createdId) return;
+    setBusy(true); setTestResult(null);
+    try {
+      const r = await api.relays.test(createdId, testTo.trim());
+      setTestResult({ ok: r.ok, detail: r.ok ? (r.detail ?? "Delivered to the provider.") : (r.error ?? "Failed.") });
+    } catch (e) { setTestResult({ ok: false, detail: (e as Error).message }); }
+    finally { setBusy(false); }
+  };
+
+  const title = step === "provider" ? "Add relay · choose a provider"
+    : step === "credentials" ? `Add relay · ${PROVIDER_LABELS[provider!] ?? provider}`
+    : "Add relay · test";
+
   return (
-    <Modal title="Add relay" onClose={onClose}>
-      <div style={{ display: "grid", gap: 12 }}>
-        <Lbl label="Name (optional)">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={PROVIDER_LABELS[provider] ?? provider} style={{ width: "100%" }} />
-        </Lbl>
-        <Lbl label="Provider">
-          <select value={provider} onChange={(e) => { setProvider(e.target.value); setValues({}); }} style={{ width: "100%" }}>
-            {Object.keys(PROVIDER_FIELDS).map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p] ?? p}</option>)}
-          </select>
-        </Lbl>
-        {fields.map((f) => (
-          <Lbl key={f.name} label={f.name + (f.required ? " *" : "")}>
-            <input type={f.secret ? "password" : "text"} value={values[f.name] ?? ""} onChange={(e) => setValues({ ...values, [f.name]: e.target.value })} style={{ width: "100%" }} />
-          </Lbl>
-        ))}
-        {err && <p style={{ color: "var(--red)", fontSize: 13, margin: 0 }}>{err}</p>}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
-          <button onClick={onClose}>Cancel</button>
-          <button onClick={create} disabled={busy || missing.length > 0}>{busy ? "Adding…" : "Add relay"}</button>
+    <Modal title={title} onClose={onClose}>
+      {step === "provider" && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
+          {PROVIDER_ORDER.map((p) => (
+            <button key={p} onClick={() => pick(p)}
+              style={{ textAlign: "left", padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--panel-2)" }}>
+              {PROVIDER_LABELS[p] ?? p}
+            </button>
+          ))}
         </div>
-        {missing.length > 0 && <p className="muted" style={{ fontSize: 12, textAlign: "right", margin: 0 }}>Required: {missing.join(", ")}</p>}
-      </div>
+      )}
+
+      {step === "credentials" && provider && (
+        <div style={{ display: "grid", gap: 6 }}>
+          <Lbl label="Name (optional)">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={PROVIDER_LABELS[provider] ?? provider} style={{ width: "100%" }} />
+          </Lbl>
+          <ProviderFieldsInput fields={fields} values={values} onChange={setValues} />
+          {PROVIDER_DOCS[provider] && (
+            <a href={PROVIDER_DOCS[provider]} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+              Where do I find these? ↗
+            </a>
+          )}
+          {err && <p style={{ color: "var(--red)", fontSize: 13, margin: 0 }}>{err}</p>}
+          <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+            <button onClick={() => setStep("provider")} style={{ background: "transparent" }}>← Back</button>
+            <button onClick={create} disabled={busy || missing.length > 0}>{busy ? "Creating…" : "Create relay →"}</button>
+          </div>
+          {missing.length > 0 && <p className="muted" style={{ fontSize: 12, textAlign: "right", margin: 0 }}>Required: {missing.join(", ")}</p>}
+        </div>
+      )}
+
+      {step === "test" && (
+        <div style={{ display: "grid", gap: 10 }}>
+          <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+            Relay created 🎉 Send a quick test to confirm it delivers — or just finish.
+          </p>
+          <Lbl label="Send a test to">
+            <input type="email" placeholder="you@example.com" value={testTo} onChange={(e) => setTestTo(e.target.value)} style={{ width: "100%" }} />
+          </Lbl>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button onClick={sendTest} disabled={busy || !testTo.trim()}>{busy ? "Sending…" : "Send test"}</button>
+            {testResult && <span className={testResult.ok ? "badge ok" : "badge error"}>{testResult.ok ? "Delivered" : "Failed"}</span>}
+          </div>
+          {testResult && <p className="muted" style={{ fontSize: 13, margin: 0, wordBreak: "break-word" }}>{testResult.detail}</p>}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+            <button onClick={onClose}>Finish</button>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

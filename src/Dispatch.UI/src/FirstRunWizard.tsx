@@ -1,12 +1,8 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "./lib/api";
-import { PROVIDER_FIELDS, PROVIDER_LABELS, type ProviderField } from "./lib/providers";
+import { PROVIDER_FIELDS, PROVIDER_LABELS, PROVIDER_ORDER } from "./lib/providers";
+import { ProviderFieldsInput } from "./ProviderFields";
 import { validCidr } from "./lib/cidr";
-
-// Real (deliverable) providers shown first; Local/SMTP at the end.
-const PROVIDER_ORDER = [
-  "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Smtp2Go", "Maileroo", "AzureCommunication", "Smtp", "Local",
-];
 
 type Step = "welcome" | "provider" | "test" | "routing" | "access" | "done";
 
@@ -111,7 +107,7 @@ function ProviderStep({ onDone, onBack }: { onDone: (id: number, provider: strin
         {PROVIDER_ORDER.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p] ?? p}</option>)}
       </select>
 
-      <ProviderFields fields={fields} values={values} onChange={setValues} />
+      <ProviderFieldsInput fields={fields} values={values} onChange={setValues} />
       {provider === "Local" && <p style={{ ...p, fontSize: 13 }}>Local mode captures mail to the dashboard and never delivers externally — handy for testing.</p>}
 
       {err && <p style={{ color: "var(--red)", fontSize: 13 }}>{err}</p>}
@@ -210,7 +206,7 @@ function RoutingStep({ catchAllProvider, onBack, onNext }: { catchAllProvider: s
           <select value={provider} onChange={(e) => { setProvider(e.target.value); setValues({}); }} style={{ width: "100%" }}>
             {PROVIDER_ORDER.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p] ?? p}</option>)}
           </select>
-          <ProviderFields fields={fields} values={values} onChange={setValues} />
+          <ProviderFieldsInput fields={fields} values={values} onChange={setValues} />
           {err && <p style={{ color: "var(--red)", fontSize: 13 }}>{err}</p>}
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <button onClick={addRule} disabled={busy || missing}>{busy ? "Adding…" : "Add rule"}</button>
@@ -342,27 +338,6 @@ function Done({ onFinish }: { onFinish: () => void }) {
 }
 
 // ---- Shared bits -----------------------------------------------------------------------------
-
-function ProviderFields({ fields, values, onChange }: {
-  fields: ProviderField[]; values: Record<string, string>; onChange: (v: Record<string, string>) => void;
-}) {
-  if (fields.length === 0) return null;
-  return (
-    <>
-      {fields.map((f) => (
-        <div key={f.name}>
-          <label style={lbl}>{f.name}{f.required ? " *" : ""}</label>
-          <input
-            type={f.secret ? "password" : "text"}
-            value={values[f.name] ?? ""}
-            onChange={(e) => onChange({ ...values, [f.name]: e.target.value })}
-            style={{ width: "100%" }}
-          />
-        </div>
-      ))}
-    </>
-  );
-}
 
 function Nav({ left, right }: { left?: ReactNode; right?: ReactNode }) {
   return (

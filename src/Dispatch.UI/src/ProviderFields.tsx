@@ -1,0 +1,29 @@
+import { type ProviderField } from "./lib/providers";
+
+// Renders a provider's credential fields: a dropdown when the field declares `options` (e.g. Region),
+// a password box for secrets, otherwise a text box. Shared by the add-relay wizard and first-run wizard.
+export function ProviderFieldsInput({ fields, values, onChange }: {
+  fields: ProviderField[]; values: Record<string, string>; onChange: (v: Record<string, string>) => void;
+}) {
+  const set = (name: string, value: string) => onChange({ ...values, [name]: value });
+  return (
+    <>
+      {fields.map((f) => (
+        <label key={f.name} style={{ display: "block", margin: "10px 0" }}>
+          <div style={{ fontSize: 13 }}>{f.name}{f.required ? " *" : ""}</div>
+          {f.options
+            ? (
+              <select value={values[f.name] ?? ""} onChange={(e) => set(f.name, e.target.value)} style={{ width: "100%" }}>
+                <option value="">{f.required ? "— select —" : "(default)"}</option>
+                {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            )
+            : (
+              <input type={f.secret ? "password" : "text"} placeholder={f.placeholder}
+                value={values[f.name] ?? ""} onChange={(e) => set(f.name, e.target.value)} style={{ width: "100%" }} />
+            )}
+        </label>
+      ))}
+    </>
+  );
+}
