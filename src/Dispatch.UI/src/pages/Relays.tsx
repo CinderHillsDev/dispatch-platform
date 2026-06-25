@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type RelayDetail, type RelayListItem, type TestResult, type TestRunLine } from "../lib/api";
 import { createTestProviderConnection } from "../lib/signalr";
-import { PROVIDER_FIELDS, PROVIDER_LABELS, PROVIDER_ORDER, PROVIDER_DOCS } from "../lib/providers";
+import { PROVIDER_FIELDS, PROVIDER_LABELS, PROVIDER_ORDER, PROVIDER_DOCS, PROVIDER_BRAND } from "../lib/providers";
 import { ProviderFieldsInput } from "../ProviderFields";
 import { Modal } from "../Modal";
 import { ActionsMenu } from "../ActionsMenu";
@@ -147,12 +147,21 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
     <Modal title={title} onClose={onClose}>
       {step === "provider" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
-          {PROVIDER_ORDER.map((p) => (
-            <button key={p} onClick={() => pick(p)}
-              style={{ textAlign: "left", padding: "12px 14px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--panel-2)" }}>
-              {PROVIDER_LABELS[p] ?? p}
-            </button>
-          ))}
+          {PROVIDER_ORDER.map((p) => {
+            const b = PROVIDER_BRAND[p];
+            return (
+              <button key={p} onClick={() => pick(p)}
+                style={{ display: "flex", alignItems: "center", gap: 10, textAlign: "left", padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--panel-2)" }}>
+                {b && (
+                  <span style={{
+                    flexShrink: 0, width: 30, height: 30, borderRadius: 7, background: b.bg, color: b.fg ?? "#fff",
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, letterSpacing: ".02em",
+                  }}>{b.mark}</span>
+                )}
+                <span style={{ fontSize: 13, lineHeight: 1.2 }}>{PROVIDER_LABELS[p] ?? p}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 

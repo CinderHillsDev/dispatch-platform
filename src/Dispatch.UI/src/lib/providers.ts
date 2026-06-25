@@ -47,6 +47,22 @@ export const PROVIDER_FIELDS: Record<string, ProviderField[]> = {
   Maileroo: [{ name: "ApiKey", secret: true, required: true }],
 };
 
+// Brand-colored monogram per provider (self-contained, no external/trademarked logo assets) for the
+// provider cards. `fg` overrides the text color on light backgrounds.
+export const PROVIDER_BRAND: Record<string, { bg: string; fg?: string; mark: string }> = {
+  Mailgun: { bg: "#C02126", mark: "MG" },
+  SendGrid: { bg: "#1A82E2", mark: "SG" },
+  AmazonSes: { bg: "#FF9900", fg: "#1a1a1a", mark: "SES" },
+  Postmark: { bg: "#FFDD33", fg: "#1a1a1a", mark: "PM" },
+  Resend: { bg: "#111827", mark: "RS" },
+  SparkPost: { bg: "#FA6423", mark: "SP" },
+  Smtp2Go: { bg: "#00A4E4", mark: "S2" },
+  Maileroo: { bg: "#4F46E5", mark: "ML" },
+  AzureCommunication: { bg: "#0078D4", mark: "AZ" },
+  Smtp: { bg: "#64748B", mark: "@" },
+  Local: { bg: "#475569", mark: "DEV" },
+};
+
 // Per-provider "where do I get this?" help links, shown in the add-relay wizard.
 export const PROVIDER_DOCS: Record<string, string> = {
   Mailgun: "https://documentation.mailgun.com/docs/mailgun/api-reference/intro/",
