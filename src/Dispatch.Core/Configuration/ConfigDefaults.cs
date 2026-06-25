@@ -49,7 +49,7 @@ public static class ConfigDefaults
         [ConfigKeys.WebUiPort] = "8420",
         [ConfigKeys.WebUiAllowedCidrs] = DashboardAllowAll,
         [ConfigKeys.WebUiSessionTimeoutMinutes] = "480",
-        [ConfigKeys.WebUiRequireHttps] = "false",
+        [ConfigKeys.WebUiRequireHttps] = "true",
 
         [ConfigKeys.LoggingLogDelivered] = "true",
         [ConfigKeys.LoggingLogRetrying] = "true",

@@ -90,7 +90,7 @@ public sealed class ConfigCache
     public WebUiOptions WebUi() => new()
     {
         Port = GetInt(ConfigKeys.WebUiPort, 8420),
-        RequireHttps = GetBool(ConfigKeys.WebUiRequireHttps, false),
+        RequireHttps = GetBool(ConfigKeys.WebUiRequireHttps, true),
     };
 
     public SpoolOptions Spool() => new()

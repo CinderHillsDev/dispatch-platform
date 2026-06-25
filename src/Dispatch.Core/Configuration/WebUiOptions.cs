@@ -12,7 +12,7 @@ public sealed class WebUiOptions
     /// Set this once the dashboard is fronted by TLS / a reverse proxy. Defaults to false so the cookie
     /// still works when the dashboard is reached over plain HTTP during local development.
     /// </summary>
-    public bool RequireHttps { get; set; }
+    public bool RequireHttps { get; set; } = true;
 
     /// <summary>
     /// Path to a PFX certificate for the dashboard HTTPS listener. This is the one exception to the
