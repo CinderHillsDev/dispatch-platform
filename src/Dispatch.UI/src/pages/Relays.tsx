@@ -32,10 +32,6 @@ export function Relays() {
 
   const select = async (id: number) => { setMsg(null); setSelected(await api.relays.get(id)); };
 
-  const makeDefault = async (id: number) => {
-    try { await api.relays.setDefault(id); await refresh(); setMsg("Catch-all updated."); }
-    catch (e) { setMsg(`Error: ${(e as Error).message}`); }
-  };
   const del = async (r: RelayListItem) => {
     if (!confirm(`Delete relay “${r.name}”? This can't be undone.`)) return;
     try { await api.relays.remove(r.id); await refresh(); setMsg("Relay deleted."); }
@@ -49,8 +45,8 @@ export function Relays() {
         <button onClick={() => setAdding(true)}>+ Add relay</button>
       </div>
       <p className="muted" style={{ fontSize: 13, margin: "8px 0 18px" }}>
-        A relay is an upstream provider Dispatch delivers through. The <strong>catch-all</strong> relay handles
-        any mail that no routing rule matches — with one provider, that's the one it uses.
+        A relay is an upstream provider Dispatch delivers through. The <strong>catch-all</strong> relay (chosen
+        on the <strong>Routing</strong> page) handles any mail that no rule matches.
       </p>
 
       <div className="panel" style={{ padding: 0 }}>
@@ -67,7 +63,6 @@ export function Relays() {
                   <ActionsMenu items={[
                     { label: "Edit", onClick: () => select(r.id) },
                     { label: "Send test", onClick: () => setTesting(r) },
-                    { label: r.isDefault ? "Already catch-all" : "Make catch-all", onClick: () => makeDefault(r.id), disabled: r.isDefault },
                     { label: "Delete", danger: true, disabled: r.isDefault, onClick: () => del(r) },
                   ]} />
                 </td>
@@ -338,7 +333,6 @@ function RelayEditor({ relay, onChanged, onDeleted, setMsg }: {
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button onClick={save} disabled={busy}>Save</button>
-        {!relay.isDefault && <button onClick={() => act(() => api.relays.setDefault(relay.id), "Set as catch-all.")} disabled={busy}>Make catch-all</button>}
         {!relay.isDefault && <button onClick={() => act(() => api.relays.remove(relay.id), "Deleted.").then(onDeleted)} disabled={busy}>Delete</button>}
       </div>
 

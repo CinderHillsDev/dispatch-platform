@@ -47,6 +47,12 @@ export function Routing() {
 
   const catchAll = relays.find((r) => r.isDefault);
 
+  // The catch-all (fallback) relay is chosen here, since it's a routing decision.
+  const setCatchAll = async (id: number) => {
+    try { await api.relays.setDefault(id); await refresh(); }
+    catch (e) { setErr((e as Error).message); }
+  };
+
   const simulate = async () => {
     setErr(null);
     try { setSim(await api.rules.simulate(simFrom, simTo)); }
@@ -61,7 +67,7 @@ export function Routing() {
       </div>
       <p className="muted" style={{ fontSize: 13, margin: "8px 0 18px" }}>
         Rules are checked in order (#1 first); the first match wins. Mail that matches no rule falls through
-        to the catch-all at the bottom.
+        to the catch-all at the bottom — choose which relay handles it there.
       </p>
 
       <div className="panel" style={{ padding: 0 }}>
@@ -94,7 +100,16 @@ export function Routing() {
               <td>Catch-all <span className="badge ok">default</span></td>
               <td className="muted">(any)</td>
               <td className="muted">(any)</td>
-              <td>{catchAll ? catchAll.name : <span className="muted">— no relay configured —</span>}</td>
+              <td>
+                {relays.length === 0
+                  ? <span className="muted">— no relay configured —</span>
+                  : (
+                    <select value={catchAll?.id ?? ""} onChange={(e) => setCatchAll(Number(e.target.value))} style={{ width: "100%" }}>
+                      {!catchAll && <option value="">— select a relay —</option>}
+                      {relays.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  )}
+              </td>
               <td>✓</td>
               <td style={{ textAlign: "right" }}><span className="muted" style={{ fontSize: 11 }}>built-in</span></td>
             </tr>
