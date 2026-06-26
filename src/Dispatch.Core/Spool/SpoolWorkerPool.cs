@@ -310,6 +310,11 @@ public sealed class SpoolWorkerPool : BackgroundService
             await using (var fs = File.OpenRead(emlPath))
                 mime = await MimeMessage.LoadAsync(fs, ct);
 
+            // RFC 5322 requires a Date and providers penalise mail missing Date/Message-Id — add them if the
+            // submitting client didn't (using the spool receipt time for Date). Existing values are untouched.
+            MessageNormalizer.EnsureRequiredHeaders(
+                mime, new DateTimeOffset(DateTime.SpecifyKind(meta.ReceivedAt, DateTimeKind.Utc)));
+
             var relayMessage = new RelayMessage
             {
                 Message = mime,
