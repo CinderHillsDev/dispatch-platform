@@ -67,7 +67,7 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
     {
         if (string.IsNullOrEmpty(rawKey) || rawKey.Length < KeyIdLength || !rawKey.StartsWith(Prefix))
         {
-            BCrypt.Net.BCrypt.Verify("dummy", DummyHash);   // constant-time even on malformed input
+            BCrypt.Net.BCrypt.Verify(rawKey ?? "", DummyHash);   // constant-time even on malformed input (verify the input, not a constant)
             return null;
         }
 

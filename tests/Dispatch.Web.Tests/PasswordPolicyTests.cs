@@ -45,6 +45,26 @@ public class PasswordPolicyTests
     {
         Assert.NotNull(AuthEndpoints.ValidatePassword(password));
     }
+
+    [Theory]
+    [InlineData("MyQwerty12345")]      // long & char-class-compliant but embeds "qwerty"
+    [InlineData("Summerfootball9")]    // embeds "football"
+    [InlineData("Trustno1Always")]     // embeds "trustno1"
+    [InlineData("Abc123456789xy")]     // embeds the "123456789" sequence
+    public void Rejects_predictable_base_tokens_even_when_otherwise_compliant(string password)
+    {
+        var error = AuthEndpoints.ValidatePassword(password);
+        Assert.NotNull(error);
+        Assert.Contains("common", error);   // "common, easily-guessed word or sequence"
+    }
+
+    [Theory]
+    [InlineData("Brightolive47kx")]    // 12+ chars, upper+lower+digit, no common token
+    [InlineData("Velvet9Harbor2x")]
+    public void Accepts_unpredictable_compliant_passwords(string password)
+    {
+        Assert.Null(AuthEndpoints.ValidatePassword(password));
+    }
 }
 
 [Collection("web")]

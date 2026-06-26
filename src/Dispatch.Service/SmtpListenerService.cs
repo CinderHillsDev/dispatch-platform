@@ -53,7 +53,13 @@ public sealed class SmtpListenerService : BackgroundService
                 // the clear. Operators can re-enable plaintext AUTH (internal/dev) via listener.allow_unsecure_auth.
                 e.AllowUnsecureAuthentication(_options.AllowUnsecureAuth);
                 if (_options.RequireAuth) e.AuthenticationRequired();
-                if (certificate is not null) e.Certificate(certificate);
+                if (certificate is not null)
+                {
+                    e.Certificate(certificate);
+                    // Pin a modern TLS floor for STARTTLS (no TLS 1.0/1.1 fallback to the OS default).
+                    e.SupportedSslProtocols(
+                        System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13);
+                }
             });
         }
         if (_options.MaxMessageBytes is > 0 and <= int.MaxValue)

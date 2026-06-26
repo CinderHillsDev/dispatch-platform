@@ -72,7 +72,7 @@ public sealed class SmtpProvider : IRelayProvider
     private string? Setting(string key) =>
         _config.Settings.TryGetValue(key, out var v) ? v : null;
 
-    private static SecureSocketOptions ParseTls(string? mode) => mode?.Trim().ToLowerInvariant() switch
+    internal static SecureSocketOptions ParseTls(string? mode) => mode?.Trim().ToLowerInvariant() switch
     {
         "none" => SecureSocketOptions.None,
         "ssl" or "sslonconnect" => SecureSocketOptions.SslOnConnect,
@@ -81,7 +81,7 @@ public sealed class SmtpProvider : IRelayProvider
         _ => SecureSocketOptions.Auto,
     };
 
-    private static bool IsTransient(Exception ex) => ex switch
+    internal static bool IsTransient(Exception ex) => ex switch
     {
         SmtpCommandException sce => (int)sce.StatusCode is >= 400 and < 500,
         SmtpProtocolException => true,

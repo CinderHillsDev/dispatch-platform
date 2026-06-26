@@ -130,9 +130,11 @@ public sealed class SpoolMessageStore : MessageStore
     /// </summary>
     private byte[] BuildReceivedHeader(ISessionContext context, Guid id, string? firstRecipient)
     {
-        var ip = RemoteIp(context) ?? "unknown";
-        var server = _config.Listener().ServerName;
-        if (string.IsNullOrWhiteSpace(server)) server = Environment.MachineName;
+        // Strip CR/LF from every interpolated value so this builder can never emit a smuggled header line,
+        // independent of upstream parsing guarantees (defence-in-depth against header injection).
+        var ip = NoCrLf(RemoteIp(context) ?? "unknown");
+        var server = NoCrLf(_config.Listener().ServerName);
+        if (string.IsNullOrWhiteSpace(server)) server = NoCrLf(Environment.MachineName);
         var secure = false;
         try { secure = context.Pipe?.IsSecure ?? false; } catch { /* pipe state best-effort */ }
         var proto = secure ? "ESMTPS" : "ESMTP";
@@ -144,11 +146,14 @@ public sealed class SpoolMessageStore : MessageStore
         sb.Append("\tby ").Append(server).Append(" (Dispatch SMTP Relay) with ").Append(proto)
           .Append(" id ").Append(queueId).Append("\r\n");
         if (!string.IsNullOrEmpty(firstRecipient))
-            sb.Append("\tfor <").Append(firstRecipient).Append(">; ").Append(date).Append("\r\n");
+            sb.Append("\tfor <").Append(NoCrLf(firstRecipient)).Append(">; ").Append(date).Append("\r\n");
         else
             sb.Append("\t; ").Append(date).Append("\r\n");
         return Encoding.UTF8.GetBytes(sb.ToString());
     }
+
+    /// <summary>Removes CR/LF so an interpolated value can't break out of its header line.</summary>
+    private static string NoCrLf(string s) => s.Replace("\r", "").Replace("\n", "");
 
     private static string SafeAddress(IMailbox? mailbox)
     {

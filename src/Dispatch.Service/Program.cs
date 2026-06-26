@@ -119,20 +119,25 @@ try
         }
     }
 
+    // Pin a modern TLS floor on every HTTPS listener (no TLS 1.0/1.1 fallback to the OS default).
+    const System.Security.Authentication.SslProtocols TlsFloor =
+        System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13;
     builder.WebHost.ConfigureKestrel(k =>
     {
         k.ListenAnyIP(webSnapshot.Port, lo =>
         {
             if (!string.IsNullOrWhiteSpace(webSnapshot.TlsCertPath))
                 lo.UseHttps(webSnapshot.TlsCertPath,
-                    string.IsNullOrEmpty(webSnapshot.TlsCertPassword) ? null : webSnapshot.TlsCertPassword);
+                    string.IsNullOrEmpty(webSnapshot.TlsCertPassword) ? null : webSnapshot.TlsCertPassword,
+                    o => o.SslProtocols = TlsFloor);
             else
-                lo.UseHttps(SelfSignedCert.GetOrCreate(builder.Environment.ContentRootPath));
+                lo.UseHttps(SelfSignedCert.GetOrCreate(builder.Environment.ContentRootPath),
+                    o => o.SslProtocols = TlsFloor);
         });
         if (apiSnapshot.HttpEnabled)
             k.ListenAnyIP(apiSnapshot.Port);
         if (apiTlsCert is not null)
-            k.ListenAnyIP(apiSnapshot.TlsPort, lo => lo.UseHttps(apiTlsCert));
+            k.ListenAnyIP(apiSnapshot.TlsPort, lo => lo.UseHttps(apiTlsCert, o => o.SslProtocols = TlsFloor));
     });
 
     // ConfigCache is the runtime source of truth (spec §12.5). Section snapshots are exposed as IOptions for

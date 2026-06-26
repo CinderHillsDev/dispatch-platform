@@ -49,6 +49,42 @@ public class SpoolMessageStoreTests
         var signaled = await t.Spool.WaitAsync(cts.Token);
         Assert.Equal(Path.GetFileName(emls[0]), signaled);
     }
+
+    [Fact]
+    public async Task SaveAsync_prepends_a_Received_trace_header()
+    {
+        using var t = new TempSpool();
+        var store = new SpoolMessageStore(t.Spool, new ConfigCache(), NullLogger<SpoolMessageStore>.Instance);
+        var raw = TestData.SampleEml(from: "alice@example.com", to: "bob@example.org", tag: "x");
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Loopback, 4242));
+        var tx = new FakeMessageTransaction(new Mailbox("alice", "example.com"), [new Mailbox("bob", "example.org")]);
+
+        await store.SaveAsync(ctx, tx, new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes(raw)), CancellationToken.None);
+
+        var text = await File.ReadAllTextAsync(Directory.GetFiles(t.Spool.IncomingDir, "*.eml")[0]);
+        Assert.StartsWith("Received: from [127.0.0.1]", text);
+        Assert.Contains("with ESMTP id ", text);                 // plaintext session → ESMTP, not ESMTPS
+        Assert.Contains("for <bob@example.org>;", text);         // envelope recipient recorded
+    }
+
+    [Fact]
+    public async Task SaveAsync_rejects_mail_loop_and_deletes_the_file()
+    {
+        using var t = new TempSpool();
+        var store = new SpoolMessageStore(t.Spool, new ConfigCache(), NullLogger<SpoolMessageStore>.Instance);
+
+        // 30 pre-existing Received headers + the one we prepend = 31, over the 30 cap → loop.
+        var sb = new StringBuilder();
+        for (var i = 0; i < 30; i++) sb.Append($"Received: from hop{i}.example by relay; now\r\n");
+        sb.Append("From: a@b.com\r\nTo: c@d.com\r\nSubject: loop\r\n\r\nbody\r\n");
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Loopback, 4242));
+        var tx = new FakeMessageTransaction(new Mailbox("a", "b.com"), [new Mailbox("c", "d.com")]);
+
+        var response = await store.SaveAsync(ctx, tx, new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes(sb.ToString())), CancellationToken.None);
+
+        Assert.Equal(SmtpReplyCode.TransactionFailed, response.ReplyCode);
+        Assert.Empty(Directory.GetFiles(t.Spool.IncomingDir, "*.eml"));   // spooled file was cleaned up
+    }
 }
 
 // ---- Minimal SmtpServer fakes (only the members SpoolMessageStore touches) ----------------

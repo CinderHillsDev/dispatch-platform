@@ -97,13 +97,20 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         if (!string.IsNullOrWhiteSpace(filter.Subject))
         {
             where.Append(" AND subject LIKE @SubjectPattern ESCAPE '\\'");
-            var escaped = filter.Subject.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
-            p.Add("SubjectPattern", "%" + escaped + "%");
+            p.Add("SubjectPattern", "%" + EscapeLike(filter.Subject) + "%");
         }
         if (filter.ApiKeyId is { } apiKeyId) { where.Append(" AND api_key_id = @ApiKeyId"); p.Add("ApiKeyId", apiKeyId); }
-        // Tag: tags is a JSON array string; match %"tag"% with the value as a parameter (only wildcards literal).
-        if (!string.IsNullOrWhiteSpace(filter.Tag)) { where.Append(" AND tags LIKE @TagPattern"); p.Add("TagPattern", "%\"" + filter.Tag + "\"%"); }
+        // Tag: tags is a JSON array string; match %"tag"% with the value as a parameter. Escape LIKE wildcards
+        // so a tag containing % or _ matches literally (parameterised, so never an injection risk regardless).
+        if (!string.IsNullOrWhiteSpace(filter.Tag))
+        {
+            where.Append(" AND tags LIKE @TagPattern ESCAPE '\\'");
+            p.Add("TagPattern", "%\"" + EscapeLike(filter.Tag) + "\"%");
+        }
     }
+
+    // Escapes the SQL LIKE metacharacters (\, %, _) so a user value is matched literally (used with ESCAPE '\').
+    private static string EscapeLike(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
     public async Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, int? apiKeyId, CancellationToken ct = default)
     {

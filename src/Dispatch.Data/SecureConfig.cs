@@ -24,6 +24,10 @@ public static class SecureConfig
     /// Encrypt/Decrypt and point it at a persistent location (the spool/data dir).</summary>
     public static void UseKeyDirectory(string dir) => _keyDir = dir;
 
+    /// <summary>True once at-rest encryption has fallen back to the (non-secret) machine-derived key because no
+    /// writable key directory was available — a weaker posture the host should surface to the operator.</summary>
+    public static bool UsedMachineKeyFallback { get; private set; }
+
     public static string Encrypt(string plaintext)
     {
         if (OperatingSystem.IsWindows())
@@ -70,6 +74,12 @@ public static class SecureConfig
 
         // Fallback only when no writable key directory is available: a machine-derived key. Weaker (the
         // machine id is not secret) but keeps the app functional; UseKeyDirectory should be set in normal runs.
+        UsedMachineKeyFallback = true;
+        Console.Error.WriteLine(
+            "SECURITY WARNING: at-rest encryption is using a machine-derived key because no writable key " +
+            "directory was available. Stored secrets (provider credentials, TLS password) are weakly protected — " +
+            "an attacker with the config DB and the host machine-id could decrypt them. Set DISPATCH_KEY_DIR to a " +
+            "persistent, writable, private directory so a random key file is used instead.");
         var machine = TryReadMachineId() ?? Environment.MachineName;
         return Rfc2898DeriveBytes.Pbkdf2(
             Encoding.UTF8.GetBytes(machine), AppSalt, 100_000, HashAlgorithmName.SHA256, 32);
