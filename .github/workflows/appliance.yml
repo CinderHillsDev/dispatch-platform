@@ -79,20 +79,24 @@ jobs:
           varsrc=$(ls /usr/share/OVMF/OVMF_VARS*.fd | head -1)
           cp "$varsrc" vars.fd
           echo "OVMF: $code / $varsrc"
-          sudo qemu-system-x86_64 \
-            -machine q35 -accel kvm -accel tcg -cpu host -m 4096 -smp 2 \
+          # -cpu host requires KVM; under the TCG fallback use a TCG-compatible CPU model.
+          if [ -e /dev/kvm ]; then echo "KVM available"; ACCEL="-enable-kvm -cpu host"; else echo "KVM NOT available — TCG (slow)"; ACCEL="-accel tcg -cpu max"; fi
+          # shellcheck disable=SC2086
+          sudo qemu-system-x86_64 -machine q35 $ACCEL -m 4096 -smp 2 \
             -drive if=pflash,format=raw,readonly=on,file="$code" \
             -drive if=pflash,format=raw,file=vars.fd \
             -drive file=dispatch-appliance.vhdx,format=vhdx,if=virtio \
             -netdev user,id=n0,hostfwd=tcp::8420-:8420 -device virtio-net-pci,netdev=n0 \
-            -display none -serial file:console.log -daemonize
+            -display none -serial file:console.log -daemonize 2>qemu.err \
+            || { echo "=== qemu failed to launch ==="; cat qemu.err; exit 1; }
           ok=0
-          for _ in $(seq 1 96); do          # up to 8 min: cloud-init + SQL setup + DB init + service start
+          for _ in $(seq 1 120); do         # up to 10 min: boot + SQL setup + DB init + service start
             if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
             sleep 5
           done
           if [ "$ok" != 1 ]; then
-            echo "=== serial console (tail) ==="; tail -n 200 console.log 2>/dev/null || true
+            echo "=== qemu.err ==="; cat qemu.err 2>/dev/null || true
+            echo "=== serial console ==="; cat console.log 2>/dev/null || true
             echo "appliance did not serve /health within the timeout"; exit 1
           fi
           echo "appliance /health OK"
