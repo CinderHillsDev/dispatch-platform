@@ -40,6 +40,20 @@ printf '[Unit]\nAfter=dispatch-firstboot.service\nRequires=dispatch-firstboot.se
   > /etc/systemd/system/dispatch.service.d/10-appliance.conf
 systemctl enable dispatch-firstboot.service
 
+echo "==> Ensure the UEFI removable/fallback bootloader path exists"
+# A freshly-created VM (QEMU/OVMF, or a Hyper-V Gen2 VM importing this disk) starts with empty firmware
+# NVRAM, so it boots via the removable-media path \EFI\BOOT\BOOTX64.EFI. Ubuntu only installs \EFI\ubuntu\,
+# so copy shim (+ grub) into the fallback path. shim keeps Secure Boot working (MS UEFI CA template).
+ESP=/boot/efi/EFI
+if [ -d "$ESP/ubuntu" ]; then
+  mkdir -p "$ESP/BOOT"
+  [ -f "$ESP/ubuntu/shimx64.efi" ] && cp -f "$ESP/ubuntu/shimx64.efi" "$ESP/BOOT/BOOTX64.EFI"
+  [ -f "$ESP/ubuntu/grubx64.efi" ] && cp -f "$ESP/ubuntu/grubx64.efi" "$ESP/BOOT/grubx64.efi"
+  echo "   fallback bootloader: $(ls "$ESP/BOOT" 2>/dev/null | tr '\n' ' ')"
+else
+  echo "   WARN: $ESP/ubuntu not found (ESP not mounted?) — skipping fallback bootloader"
+fi
+
 echo "==> cloud-init: no cloud metadata service on Hyper-V — avoid boot-time probing delays"
 mkdir -p /etc/cloud/cloud.cfg.d
 printf 'datasource_list: [ NoCloud, None ]\n' > /etc/cloud/cloud.cfg.d/99-dispatch-datasource.cfg
