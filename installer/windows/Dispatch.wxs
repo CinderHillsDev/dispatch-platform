@@ -37,6 +37,18 @@
       <Directory Id="INSTALLFOLDER" Name="Dispatch" />
     </StandardDirectory>
 
+    <!-- %ProgramData%\Dispatch\logs — the service's data dir (appsettings.json) and log location. Created
+         up front so the log directory always exists and is easy to find, even before the first start. -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DataFolder" Name="Dispatch">
+        <Directory Id="LogsFolder" Name="logs" />
+      </Directory>
+    </StandardDirectory>
+
+    <Component Id="LogsFolderComponent" Directory="LogsFolder" Guid="b1f2c3d4-0002-4a2b-9c3d-aa11bb22cc33" Permanent="yes">
+      <CreateFolder />   <!-- Permanent: keep logs (and the data dir) on uninstall for post-mortem. -->
+    </Component>
+
     <!-- Harvest the published output (everything except the service exe, which is its own component). -->
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
       <Files Include="$(var.PublishDir)\**">
@@ -87,6 +99,7 @@
     <Feature Id="Main">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="ServiceComponent" />
+      <ComponentRef Id="LogsFolderComponent" />
     </Feature>
   </Package>
 </Wix>

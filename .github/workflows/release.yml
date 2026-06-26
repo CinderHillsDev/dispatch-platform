@@ -92,7 +92,7 @@ jobs:
 
       - name: Build the MSI
         working-directory: installer/windows
-        run: wix build Dispatch.wxs -d PublishDir=publish -d Version=${{ steps.ver.outputs.version }} -ext WixToolset.Firewall.wixext -o Dispatch.msi
+        run: wix build Dispatch.wxs -arch x64 -d PublishDir=publish -d Version=${{ steps.ver.outputs.version }} -ext WixToolset.Firewall.wixext -o Dispatch.msi
 
       # --- Sign the MSI (opt-in) ----------------------------------------------------------------
       - name: Azure login (signing)
