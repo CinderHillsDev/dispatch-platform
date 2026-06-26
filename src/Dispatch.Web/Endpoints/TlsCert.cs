@@ -16,14 +16,16 @@ public static class TlsCert
     /// <summary>Generate a self-signed cert and write it as a PFX. Returns (absolute path, random password).</summary>
     public static (string Path, string Password) Generate(string dir, string commonName)
     {
-        using var rsa = RSA.Create(2048);
-        var req = new CertificateRequest($"CN={commonName}", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        // ECDSA P-256 (modern, smaller, faster) instead of RSA-2048.
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var req = new CertificateRequest($"CN={commonName}", ecdsa, HashAlgorithmName.SHA256);
+        req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, false));
         req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, false)); // serverAuth
         var san = new SubjectAlternativeNameBuilder();
         san.AddDnsName(commonName);
         try { san.AddDnsName(Environment.MachineName); } catch { /* best-effort */ }
         req.CertificateExtensions.Add(san.Build());
-        using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(5));
+        using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(2));
         var pw = NewPassword();
         return Write(dir, cert.Export(X509ContentType.Pfx, pw), pw);
     }

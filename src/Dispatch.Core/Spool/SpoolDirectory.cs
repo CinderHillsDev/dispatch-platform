@@ -31,10 +31,23 @@ public sealed class SpoolDirectory
         ProcessingDir = Path.Combine(Root, "processing");
         FailedDir = Path.Combine(Root, "failed");
         CapturedDir = Path.Combine(Root, "captured");
-        Directory.CreateDirectory(IncomingDir);
-        Directory.CreateDirectory(ProcessingDir);
-        Directory.CreateDirectory(FailedDir);
-        Directory.CreateDirectory(CapturedDir);
+        // The spool holds full message bodies (and the .dispatch-key lives in the data dir) — restrict to the
+        // owner (700) on non-Windows so other local users can't read spooled mail.
+        CreatePrivate(Root);
+        CreatePrivate(IncomingDir);
+        CreatePrivate(ProcessingDir);
+        CreatePrivate(FailedDir);
+        CreatePrivate(CapturedDir);
+    }
+
+    private static void CreatePrivate(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        if (!OperatingSystem.IsWindows())
+        {
+            try { File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); } // 700
+            catch { /* best-effort — a restrictive umask or unsupported FS shouldn't block startup */ }
+        }
     }
 
     public string IncomingPath(Guid id) => Path.Combine(IncomingDir, $"{id}.eml");

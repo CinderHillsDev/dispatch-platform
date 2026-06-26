@@ -170,10 +170,26 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
 
         if (headers is not null)
             foreach (var (name, value) in headers)
+            {
+                if (HasControlChars(name) || HasControlChars(value))
+                    throw new ApiValidationException($"Header '{name}' contains illegal control characters.");
+                if (BlockedHeaders.Contains(name.Trim()))
+                    throw new ApiValidationException($"Header '{name}' may not be set via the API.");
                 msg.Headers.Add(name, value);
+            }
 
         return msg;
     }
+
+    // Trace/routing headers the relay owns or that would forge provenance / leak blind recipients — callers
+    // must not inject them through the custom-header channel.
+    private static readonly HashSet<string> BlockedHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Received", "Return-Path", "Bcc",
+    };
+
+    // Reject CR/LF (header smuggling) and other C0 control chars; tab is allowed (legal header whitespace).
+    private static bool HasControlChars(string s) => s.Any(c => char.IsControl(c) && c != '\t');
 
     private static string[] Flatten(StringValues values) =>
         values.SelectMany(v => (v ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))

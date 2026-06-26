@@ -62,6 +62,48 @@ public class ApiMessageHandlerTests
         }
     }
 
+    [Theory]
+    [InlineData("Received")]      // trace header the relay owns
+    [InlineData("Return-Path")]
+    [InlineData("Bcc")]           // would leak/confuse blind recipients
+    public async Task Blocked_custom_header_is_rejected_with_400(string header)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "dispatch-apihandler", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var handler = new ApiMessageHandler(new SpoolDirectory(dir),
+                Options.Create(new ApiOptions { MaxMessageBytes = 0 }), Resolver(maxBytes: 0),
+                NullLogger<ApiMessageHandler>.Instance);
+            var json = "{\"from\":\"a@x.com\",\"to\":[\"b@y.com\"],\"subject\":\"hi\",\"text\":\"body\",\"headers\":{\"" + header + "\":\"x\"}}";
+
+            var result = await handler.HandleAsync(JsonRequest(json), default);
+
+            Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+            Assert.Empty(Directory.GetFiles(new SpoolDirectory(dir).IncomingDir, "*.eml"));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task Custom_header_with_crlf_is_rejected_with_400()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "dispatch-apihandler", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var handler = new ApiMessageHandler(new SpoolDirectory(dir),
+                Options.Create(new ApiOptions { MaxMessageBytes = 0 }), Resolver(maxBytes: 0),
+                NullLogger<ApiMessageHandler>.Instance);
+            // The \r\n in the header value is real CR/LF after JSON decoding — a header-smuggling attempt.
+            var json = "{\"from\":\"a@x.com\",\"to\":[\"b@y.com\"],\"subject\":\"hi\",\"text\":\"body\",\"headers\":{\"X-Evil\":\"a\\r\\nInjected: yes\"}}";
+
+            var result = await handler.HandleAsync(JsonRequest(json), default);
+
+            Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+            Assert.Empty(Directory.GetFiles(new SpoolDirectory(dir).IncomingDir, "*.eml"));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
+    }
+
     private static HttpContext JsonRequest(string json)
     {
         var body = Encoding.UTF8.GetBytes(json);

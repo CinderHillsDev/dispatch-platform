@@ -27,11 +27,12 @@ public static class SelfSignedCert
             catch { /* unreadable / expired — fall through and regenerate */ }
         }
 
-        using var rsa = RSA.Create(2048);
-        var req = new CertificateRequest("CN=Dispatch SMTP Relay", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        // ECDSA P-256 (modern, smaller, faster) instead of RSA-2048; serverAuth only.
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var req = new CertificateRequest("CN=Dispatch SMTP Relay", ecdsa, HashAlgorithmName.SHA256);
         req.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
         req.CertificateExtensions.Add(new X509KeyUsageExtension(
-            X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, critical: false));
+            X509KeyUsageFlags.DigitalSignature, critical: false));   // ECDHE server cert signs the handshake
         req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
             new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, critical: false));   // serverAuth
         var san = new SubjectAlternativeNameBuilder();
@@ -39,7 +40,8 @@ public static class SelfSignedCert
         try { san.AddDnsName(Environment.MachineName); } catch { /* best-effort */ }
         req.CertificateExtensions.Add(san.Build());
 
-        using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(5));
+        // 2-year validity (auto-regenerated within a day of expiry on startup) rather than 5 years.
+        using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(2));
         var pfx = cert.Export(X509ContentType.Pfx);
         try
         {
