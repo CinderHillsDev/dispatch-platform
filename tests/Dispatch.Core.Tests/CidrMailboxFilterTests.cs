@@ -26,8 +26,10 @@ public class CidrMailboxFilterTests
         // MAIL FROM declares a SIZE= larger than the relay's limit; no global ceiling configured.
         Assert.True(await filter.CanAcceptFromAsync(ctx, from, size: 500, CancellationToken.None));
 
-        // RCPT TO runs routing and rejects before DATA.
-        Assert.False(await filter.CanDeliverToAsync(ctx, to, from, CancellationToken.None));
+        // RCPT TO runs routing and rejects before DATA with 552 (size limit exceeded), not a generic 550.
+        var ex = await Assert.ThrowsAsync<SmtpResponseException>(() =>
+            filter.CanDeliverToAsync(ctx, to, from, CancellationToken.None));
+        Assert.Equal(SmtpReplyCode.SizeLimitExceeded, ex.Response.ReplyCode);
     }
 
     [Fact]

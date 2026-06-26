@@ -122,7 +122,9 @@ public sealed class CidrMailboxFilter : IMailboxFilter
                 $"Declared size {size} exceeds global limit {listener.MaxMessageBytes}", cancellationToken);
             _log.LogWarning("Rejecting MAIL FROM {From}: size {Size} exceeds limit {Limit}",
                 from.AsAddress(), size, listener.MaxMessageBytes);
-            return false;
+            // 552 (RFC 5321 §4.2.3): message exceeds the size limit — distinct from a 550 mailbox rejection.
+            throw new SmtpResponseException(new SmtpResponse(SmtpReplyCode.SizeLimitExceeded,
+                $"5.3.4 Message size {size} exceeds the {listener.MaxMessageBytes}-byte limit"));
         }
 
         // Closed model (spec §17.10): only source IPs in the allow-list may connect. An empty list denies
@@ -182,7 +184,8 @@ public sealed class CidrMailboxFilter : IMailboxFilter
             _log.LogWarning(
                 "Rejecting RCPT TO {To}: declared size {Size} exceeds relay \"{Relay}\" limit {Limit}",
                 to.AsAddress(), declaredSize, relay.Name, limit);
-            return false;
+            throw new SmtpResponseException(new SmtpResponse(SmtpReplyCode.SizeLimitExceeded,
+                $"5.3.4 Message size {declaredSize} exceeds relay \"{relay.Name}\" limit {limit}"));
         }
 
         return true;

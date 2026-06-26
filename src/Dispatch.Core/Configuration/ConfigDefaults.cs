@@ -24,7 +24,7 @@ public static class ConfigDefaults
         [ConfigKeys.ListenerPorts] = "[2525]",
         [ConfigKeys.ListenerServerName] = "Dispatch",
         [ConfigKeys.ListenerAllowedCidrs] = PrivateRanges,
-        [ConfigKeys.ListenerMaxMessageBytes] = "0",
+        [ConfigKeys.ListenerMaxMessageBytes] = "26214400",   // 25 MiB default ceiling (0 = no limit)
         [ConfigKeys.ListenerRequireAuth] = "false",
         [ConfigKeys.ListenerConnectionTimeoutSeconds] = "60",
         [ConfigKeys.ListenerMaxConnections] = "100",

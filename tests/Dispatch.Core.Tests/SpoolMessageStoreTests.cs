@@ -1,3 +1,4 @@
+using Dispatch.Core.Configuration;
 using Dispatch.Core.Spool;
 using Microsoft.Extensions.Logging.Abstractions;
 using SmtpServer;
@@ -17,7 +18,7 @@ public class SpoolMessageStoreTests
     public async Task SaveAsync_writes_eml_and_meta_signals_and_returns_ok()
     {
         using var t = new TempSpool();
-        var store = new SpoolMessageStore(t.Spool, NullLogger<SpoolMessageStore>.Instance);
+        var store = new SpoolMessageStore(t.Spool, new ConfigCache(), NullLogger<SpoolMessageStore>.Instance);
 
         var raw = TestData.SampleEml(from: "alice@example.com", to: "bob@example.org", tag: "welcome");
         var buffer = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes(raw));
