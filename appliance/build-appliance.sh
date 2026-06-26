@@ -47,12 +47,13 @@ mkdir -p "$STAGE/debs"
 docker run --rm -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
-  apt-get install -y -qq curl gnupg ca-certificates >/dev/null
-  curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+  apt-get install -y -qq curl ca-certificates >/dev/null
+  # packages-microsoft-prod.deb sets up the Microsoft "prod" repo + signing key (msodbcsql18, mssql-tools18).
+  curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -o /tmp/pmc.deb
+  dpkg -i /tmp/pmc.deb >/dev/null
+  # The SQL Server engine lives in its own per-version feed (references the same key installed above).
   curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2022.list \
-    | sed "s|deb |deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] |" > /etc/apt/sources.list.d/mssql-server.list
-  curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/prod.list \
-    | sed "s|deb |deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] |" > /etc/apt/sources.list.d/microsoft-prod.list
+    -o /etc/apt/sources.list.d/mssql-server.list
   apt-get update -qq
   # Full recursive runtime dependency closure of the target packages (skip virtual/undownloadable entries).
   deps=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances \
