@@ -51,8 +51,8 @@ docker run --rm -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
   # packages-microsoft-prod.deb sets up the Microsoft "prod" repo + signing key (msodbcsql18, mssql-tools18).
   curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -o /tmp/pmc.deb
   dpkg -i /tmp/pmc.deb >/dev/null
-  # The SQL Server engine lives in its own per-version feed (references the same key installed above).
-  curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2022.list \
+  # The SQL Server engine has its own per-version feed; Ubuntu 24.04 ships SQL Server 2025 (2022 is 22.04).
+  curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2025.list \
     -o /etc/apt/sources.list.d/mssql-server.list
   apt-get update -qq
   # Full recursive runtime dependency closure of the target packages (skip virtual/undownloadable entries).
