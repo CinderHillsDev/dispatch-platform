@@ -76,7 +76,9 @@ jobs:
           if (-not (Test-Path src/Dispatch.Web/wwwroot/index.html)) { throw "embedded UI missing index.html" }
 
       - name: Publish the service
-        run: dotnet publish src/Dispatch.Service -c Release -p:Version=${{ steps.ver.outputs.version }} -o installer/windows/publish
+        # Self-contained: bundle the .NET runtime so the service runs on a clean Windows box without a
+        # separately-installed .NET 10 runtime (the bundle does not chain one). Matches the Linux build.
+        run: dotnet publish src/Dispatch.Service -c Release -r win-x64 --self-contained true -p:Version=${{ steps.ver.outputs.version }} -o installer/windows/publish
 
       - name: Install the WiX toolset
         shell: pwsh
