@@ -167,6 +167,19 @@ jobs:
       - name: Publish self-contained (linux-x64)
         run: dotnet publish src/Dispatch.Service -c Release -r linux-x64 --self-contained true -o publish/linux
 
+      # Guard against a framework-dependent regression (the runner has .NET, which would mask it at runtime).
+      - name: Assert publish is self-contained (bundles the .NET runtime)
+        run: |
+          missing=
+          for f in libcoreclr.so libhostfxr.so System.Private.CoreLib.dll; do
+            [ -f "publish/linux/$f" ] || missing="$missing $f"
+          done
+          if [ -n "$missing" ]; then
+            echo "Publish is NOT self-contained (missing:$missing) — would require a separately-installed .NET runtime." >&2
+            exit 1
+          fi
+          echo "OK: self-contained .NET runtime is bundled."
+
       - name: Assemble the tarball
         run: |
           stage="dispatch-ci-linux-x64"
@@ -185,6 +198,36 @@ jobs:
           path: dispatch-ci-linux-x64.tar.gz
           if-no-files-found: error
 
+      # Real end-to-end check (mirrors the Windows full-install smoke): install the just-built self-contained
+      # tarball exactly as a user would — install.sh --prebuilt --install-sql, which installs SQL Server
+      # locally and provisions the DispatchLog DB — then confirm the systemd service starts and serves
+      # /health. Runs on installer-path pushes and manual dispatch so a service that won't start (or a broken
+      # SQL bootstrap) fails CI instead of the customer.
+      - name: Full install + smoke
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        env:
+          SA_PW: "Ci-Smoke-Passw0rd!"
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/extract && tar -xzf dispatch-ci-linux-x64.tar.gz -C /tmp/extract
+          dir=/tmp/extract/dispatch-ci-linux-x64
+          sudo "$dir/install.sh" --prebuilt "$dir/bin" --install-sql \
+            --sa-password "$SA_PW" --admin-password "$SA_PW"
+
+          ok=0
+          for _ in $(seq 1 36); do
+            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 5
+          done
+          if [ "$ok" != 1 ]; then
+            echo "=== dispatch service ==="; sudo systemctl status dispatch --no-pager || true
+            echo "=== journal ==="; sudo journalctl -u dispatch --no-pager -n 80 || true
+            echo "=== app logs ==="; sudo tail -n 60 /var/log/dispatch/*.log 2>/dev/null || true
+            echo "=== sql server ==="; sudo systemctl status mssql-server --no-pager 2>/dev/null || true
+            echo "health check failed"; exit 1
+          fi
+          curl -fsSk https://localhost:8420/health; echo "  <- /health OK"
+
   linux-installer:
     runs-on: ubuntu-latest
     steps:
@@ -199,20 +242,6 @@ jobs:
             echo "shellcheck not installed — syntax check only"
           fi
 
-      - name: Full install + smoke (opt-in)
-        if: ${{ inputs.full_install == true }}
-        run: |
-          sudo ./installer/linux/install.sh --install-sql \
-            --sa-password "${{ secrets.MSSQL_SA_PASSWORD || 'Dispatch_Dev_Pass123' }}" \
-            --admin-password "Ci-Smoke-Passw0rd!" --source "$PWD"
-          ok=0
-          for _ in $(seq 1 24); do
-            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
-            sleep 5
-          done
-          if [ "$ok" != "1" ]; then
-            echo "=== dispatch service ==="; sudo systemctl status dispatch --no-pager || true
-            echo "=== journal ==="; sudo journalctl -u dispatch --no-pager -n 50 || true
-            echo "health check failed after 120s"; exit 1
-          fi
-          curl -fsSk https://localhost:8420/health; echo "  <- /health OK"
+      # The end-to-end install + "service actually runs" smoke lives in the linux-tarball job below — it
+      # installs the real self-contained tarball (install.sh --prebuilt) against a SQL container and checks
+      # /health, mirroring the Windows full-install smoke. This job stays a fast lint of install.sh.
