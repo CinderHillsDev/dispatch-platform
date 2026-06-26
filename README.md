@@ -81,9 +81,10 @@ Download and run `DispatchSetup-{version}-x64.exe` from the [latest release](htt
 DispatchSetup-1.0.0-x64.exe /quiet
 ```
 
-**Against an existing SQL Server** (skip the bundled SQL Express — install the MSI directly and point it at your server):
+**Against an existing SQL Server** (skip the bundled SQL Express): the bundle embeds the bare MSI — extract it with `-layout` and install it directly, pointing at your server:
 ```bat
-msiexec /i Dispatch-1.0.0-x64.msi /qn SQLCONN="Server=YOURHOST;Database=DispatchLog;User Id=sa;Password=***;TrustServerCertificate=True;Encrypt=True"
+DispatchSetup-1.0.0-x64.exe -layout C:\dispatch-msi
+msiexec /i C:\dispatch-msi\Dispatch.msi /qn SQLCONN="Server=YOURHOST;Database=DispatchLog;User Id=sa;Password=***;TrustServerCertificate=True;Encrypt=True"
 ```
 
 ### Linux
@@ -358,7 +359,7 @@ Dispatch-SMTP-Relay/
 
 To upgrade in place:
 
-- **Windows** — run the new `DispatchSetup-{version}-x64.exe` (or `Dispatch-{version}-x64.msi`). The MSI `MajorUpgrade` stops the service, replaces the binaries, and restarts it.
+- **Windows** — run the new `DispatchSetup-{version}-x64.exe`. The embedded MSI's `MajorUpgrade` stops the service, replaces the binaries, and restarts it.
 - **Linux** — download the new tarball and re-run `sudo ./install.sh` (with your existing `--sql-connection`); it republishes `/opt/dispatch` and restarts the service.
 
 Database schema migrations are **additive** and applied automatically on startup, so configuration and all message history are preserved. The spool is durable across the restart.

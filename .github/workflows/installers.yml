@@ -80,13 +80,13 @@ jobs:
 
       # CI installer builds are intentionally unsigned (signing happens only on tagged releases via
       # release.yml + Azure Artifact Signing). This artifact proves the WiX sources + launcher compile.
-      - name: Upload installer artifacts
+      # DispatchSetup.exe is the single distributable file — it embeds Dispatch.msi and chains SQL Express.
+      # (The MSI is still built above to prove the WiX sources compile and to embed in the bundle.)
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: dispatch-windows-installer
-          path: |
-            installer/windows/Dispatch.msi
-            installer/windows/DispatchSetup.exe
+          path: installer/windows/DispatchSetup.exe
           if-no-files-found: error
 
       - name: Full install + smoke (opt-in)

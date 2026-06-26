@@ -5,8 +5,7 @@ name: Release
 #
 # This builds the distributable artifacts, stamps them with the tag version, optionally Authenticode-signs
 # the Windows installer via Azure Artifact Signing, and publishes a GitHub Release with:
-#   - DispatchSetup.exe          the single-file Windows installer (the one users download)
-#   - Dispatch.msi               the bare MSI (advanced / existing-SQL installs)
+#   - DispatchSetup.exe          the single-file Windows installer (embeds the signed MSI + chains SQL Express)
 #   - dispatch-<ver>-linux.tar.gz       universal Linux bundle (x64 + arm64, self-contained)
 #   - SHA256SUMS                 checksums for all of the above
 #
@@ -180,13 +179,12 @@ jobs:
         shell: pwsh
         run: Copy-Item -Force bundlesign/DispatchSetup.exe DispatchSetup.exe
 
-      - name: Upload Windows artifacts
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: |
-            installer/windows/DispatchSetup.exe
-            installer/windows/Dispatch.msi
+          # DispatchSetup.exe is the single distributable — it embeds the (signed) MSI and chains SQL Express.
+          path: installer/windows/DispatchSetup.exe
           if-no-files-found: error
 
   linux:
@@ -320,7 +318,6 @@ jobs:
           # Version the Windows asset names so each release's downloads are distinguishable
           # (the Linux tarball already carries the version). Names match the README.
           cp "dist/windows/DispatchSetup.exe" "release/DispatchSetup-${VER}-x64.exe"
-          cp "dist/windows/Dispatch.msi"      "release/Dispatch-${VER}-x64.msi"
           cp dist/linux/dispatch-*-linux.tar.gz release/
           ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
 
@@ -335,6 +332,5 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release/DispatchSetup-*-x64.exe
-            release/Dispatch-*-x64.msi
             release/dispatch-*-linux.tar.gz
             release/SHA256SUMS
