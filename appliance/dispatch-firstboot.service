@@ -1,0 +1,15 @@
+[Unit]
+Description=Dispatch appliance first-boot setup (SQL Server + per-VM secrets)
+# Run once; the script writes the marker when it succeeds.
+ConditionPathExists=!/var/lib/dispatch/.appliance-firstboot-done
+# Before the relay so SQL is configured and reachable before Dispatch's first start.
+Before=dispatch.service
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/dispatch-appliance/firstboot.sh
+
+[Install]
+WantedBy=multi-user.target

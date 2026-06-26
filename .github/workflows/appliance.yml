@@ -1,0 +1,98 @@
+name: Appliance
+
+# Builds the downloadable Hyper-V appliance: customizes the Ubuntu 24.04 cloud image with libguestfs (no
+# Hyper-V host / nested virt needed) into a Gen2/UEFI VHDX with SQL Server Express + Dispatch baked in, then
+# boots it under QEMU/UEFI to prove the service comes up on first boot. Artifact: dispatch-hyperv-appliance.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "appliance/**"
+      - "installer/linux/install.sh"
+      - "installer/linux/dispatch.service"
+      - ".github/workflows/appliance.yml"
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  hyperv-appliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        run: |
+          ( cd src/Dispatch.UI && npm ci && npm run build )
+          rm -rf src/Dispatch.Web/wwwroot && mkdir -p src/Dispatch.Web/wwwroot
+          cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
+          test -f src/Dispatch.Web/wwwroot/index.html || { echo "embedded UI missing index.html"; exit 1; }
+
+      - name: Publish self-contained (linux-x64)
+        run: dotnet publish src/Dispatch.Service -c Release -r linux-x64 --self-contained true -o publish/linux
+
+      - name: Install image-build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libguestfs-tools qemu-utils
+          # libguestfs's appliance must be able to read the host kernel image.
+          sudo chmod 0644 /boot/vmlinuz-* || true
+
+      - name: Build the appliance VHDX
+        env:
+          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('ci-{0}', github.run_number) }}
+        run: |
+          sudo env PREBUILT_DIR="$PWD/publish/linux" VERSION="$VERSION" OUT="$PWD/dispatch-appliance.vhdx" \
+            LIBGUESTFS_BACKEND=direct ./appliance/build-appliance.sh
+          sudo chown "$USER" dispatch-appliance.vhdx
+
+      - name: Package + checksum
+        run: |
+          zip -9 dispatch-appliance.vhdx.zip dispatch-appliance.vhdx
+          sha256sum dispatch-appliance.vhdx.zip | tee dispatch-appliance.vhdx.zip.sha256
+
+      # Upload before the boot smoke so the artifact is available even if the smoke fails.
+      - name: Upload appliance artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dispatch-hyperv-appliance
+          path: |
+            dispatch-appliance.vhdx.zip
+            dispatch-appliance.vhdx.zip.sha256
+          if-no-files-found: error
+
+      - name: Boot smoke (UEFI) — service comes up on first boot
+        run: |
+          sudo apt-get install -y qemu-system-x86 ovmf
+          code=$(ls /usr/share/OVMF/OVMF_CODE*.fd | head -1)
+          varsrc=$(ls /usr/share/OVMF/OVMF_VARS*.fd | head -1)
+          cp "$varsrc" vars.fd
+          echo "OVMF: $code / $varsrc"
+          sudo qemu-system-x86_64 \
+            -machine q35 -accel kvm -accel tcg -cpu host -m 4096 -smp 2 \
+            -drive if=pflash,format=raw,readonly=on,file="$code" \
+            -drive if=pflash,format=raw,file=vars.fd \
+            -drive file=dispatch-appliance.vhdx,format=vhdx,if=virtio \
+            -netdev user,id=n0,hostfwd=tcp::8420-:8420 -device virtio-net-pci,netdev=n0 \
+            -display none -serial file:console.log -daemonize
+          ok=0
+          for _ in $(seq 1 96); do          # up to 8 min: cloud-init + SQL setup + DB init + service start
+            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 5
+          done
+          if [ "$ok" != 1 ]; then
+            echo "=== serial console (tail) ==="; tail -n 200 console.log 2>/dev/null || true
+            echo "appliance did not serve /health within the timeout"; exit 1
+          fi
+          echo "appliance /health OK"

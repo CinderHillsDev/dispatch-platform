@@ -30,6 +30,8 @@
 #   --source <path>        Repo source root (default: two levels up from this script). Build-from-source mode.
 #   --prebuilt <dir>       Install pre-published self-contained binaries from <dir> instead of building from
 #                          source. Used by the release tarball; needs neither the .NET SDK nor Node.
+#   --no-start             Stage the install but don't start the service (the unit is enabled, not started).
+#                          Used when baking the appliance image; first boot configures SQL and starts it.
 #
 set -euo pipefail
 
@@ -51,6 +53,7 @@ SA_PASSWORD=""
 GENERATE_CERT="0"
 TLS_CERT_PATH=""
 TLS_CERT_PASSWORD=""
+NO_START="0"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -64,6 +67,9 @@ while [[ $# -gt 0 ]]; do
     --smtp-ports) SMTP_PORTS="$2"; shift 2;;
     --source) SOURCE_DIR="$2"; shift 2;;
     --prebuilt) PREBUILT_DIR="$2"; shift 2;;
+    # Stage the install without starting the service (the unit is enabled, not started). Used when building
+    # the prebuilt appliance image, where SQL is configured and the service is started on first boot.
+    --no-start) NO_START="1"; shift;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -293,7 +299,12 @@ else
 fi
 install -m 644 "$UNIT_SRC" /etc/systemd/system/dispatch.service
 systemctl daemon-reload
-systemctl enable --now dispatch
+if [[ "$NO_START" == "1" ]]; then
+  systemctl enable dispatch                      # appliance build: started on first boot, not now
+  echo "==> Service enabled (not started — --no-start)"
+else
+  systemctl enable --now dispatch
+fi
 
 # Open firewall ports if a supported firewall is active (best-effort).
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
@@ -305,6 +316,11 @@ fi
 
 # The dashboard is always HTTPS (a self-signed cert is generated when no TLS cert is configured).
 SCHEME="https"
+if [[ "$NO_START" == "1" ]]; then
+  echo
+  echo "Dispatch is staged (service enabled, not started) — it will start on first boot."
+  exit 0
+fi
 echo
 echo "Dispatch is installed and running."
 echo "  Dashboard: ${SCHEME}://localhost:$HTTP_PORT  (log in with the admin password you set)"
