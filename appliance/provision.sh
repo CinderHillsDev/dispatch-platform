@@ -1,11 +1,12 @@
-#!/usr/bin/env bash
+#!/bin/sh
 #
 # Dispatch appliance — in-guest provisioning, run by virt-customize during the image build (NOT at runtime).
-# Runs with NO network (libguestfs's passt networking is unreliable on CI runners): the SQL Server Express +
-# tools packages are pre-downloaded on the host into /opt/stage/debs (see build-appliance.sh) and installed
-# offline here. SQL is only unpacked — it's configured per-VM on first boot (appliance/firstboot.sh).
+# virt-customize runs --run scripts with /bin/sh, so this is POSIX sh (no bashisms). Runs with NO network
+# (libguestfs's passt networking is unreliable on CI runners): the SQL Server Express + tools packages are
+# pre-downloaded on the host into /opt/stage/debs (see build-appliance.sh) and installed offline here. SQL is
+# only unpacked — it's configured per-VM on first boot (appliance/firstboot.sh).
 #
-set -euo pipefail
+set -eu
 export DEBIAN_FRONTEND=noninteractive
 STAGE="/opt/stage"
 
