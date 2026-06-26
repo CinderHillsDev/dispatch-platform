@@ -54,6 +54,19 @@ jobs:
         # separately-installed .NET 10 runtime (the bundle does not chain one). Matches the Linux build.
         run: dotnet publish src/Dispatch.Service -c Release -r win-x64 --self-contained true -o installer/windows/publish
 
+      # Guard against a framework-dependent regression: the runner has .NET, so an install+smoke test would
+      # still pass with a broken FDD build — but a clean customer box would fail with "You must install .NET".
+      # Assert the .NET runtime is actually bundled, which a self-contained publish guarantees.
+      - name: Assert publish is self-contained (bundles the .NET runtime)
+        shell: pwsh
+        run: |
+          $missing = @('hostfxr.dll','coreclr.dll','System.Private.CoreLib.dll') |
+            Where-Object { -not (Test-Path "installer/windows/publish/$_") }
+          if ($missing) {
+            throw "Publish is NOT self-contained (missing: $($missing -join ', ')). The service would require a separately-installed .NET runtime and fail to start on a clean machine."
+          }
+          Write-Host "OK: self-contained .NET runtime is bundled."
+
       - name: Install the WiX toolset
         shell: pwsh
         env:
@@ -91,8 +104,11 @@ jobs:
           path: installer/windows/DispatchSetup.exe
           if-no-files-found: error
 
-      - name: Full install + smoke (opt-in)
-        if: ${{ inputs.full_install == true }}
+      # Real end-to-end check: run the bundle (installs SQL Express + the service) and confirm the Windows
+      # service starts and serves /health. Runs on every installer-path push and on manual dispatch, so a
+      # service that won't start (bad config, missing files, crash on boot) fails CI instead of the customer.
+      - name: Full install + smoke
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
         shell: pwsh
         run: |
           $p = Start-Process -Wait -PassThru -FilePath installer/windows/DispatchSetup.exe -ArgumentList '/quiet','/log','install.log'
