@@ -27,6 +27,30 @@ public class ResendProviderTests
     }
 
     [Fact]
+    public async Task Splits_to_cc_and_keeps_bcc_out_of_visible_fields()
+    {
+        var handler = new StubHttpHandler(HttpStatusCode.OK, "{\"id\":\"re-1\"}");
+        await new ResendProvider(Config(), new HttpClient(handler))
+            .SendAsync(ProviderTestSupport.MessageWithCcBcc(), default);
+
+        Assert.Contains("\"to\":[\"to@dest.com\"]", handler.Body);
+        Assert.Contains("\"cc\":[\"cc@dest.com\"]", handler.Body);
+        Assert.Contains("\"bcc\":[\"bcc@hidden.com\"]", handler.Body);   // blind copy is in bcc, never to/cc
+    }
+
+    [Fact]
+    public async Task Forwards_attachments_as_base64()
+    {
+        var handler = new StubHttpHandler(HttpStatusCode.OK, "{\"id\":\"re-123\"}");
+        await new ResendProvider(Config(), new HttpClient(handler))
+            .SendAsync(ProviderTestSupport.MessageWithAttachment(), default);
+
+        Assert.Contains("\"attachments\"", handler.Body);
+        Assert.Contains("\"filename\":\"hello.txt\"", handler.Body);
+        Assert.Contains(ProviderTestSupport.AttachmentBase64, handler.Body);
+    }
+
+    [Fact]
     public async Task Rate_limited_is_transient()
     {
         var http = new HttpClient(new StubHttpHandler(HttpStatusCode.TooManyRequests, "slow down"));

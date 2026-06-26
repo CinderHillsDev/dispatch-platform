@@ -18,16 +18,28 @@ public sealed class Smtp2GoProvider(RelayConfig config, HttpClient http) : IRela
         var html = ProviderHttp.Html(message);
         var text = ProviderHttp.Text(message);
 
+        var rcpt = ProviderHttp.SplitRecipients(message);
         var body = new Dictionary<string, object?>
         {
             ["api_key"] = apiKey,
             ["sender"] = ProviderHttp.From(message),
-            ["to"] = ProviderHttp.Recipients(message),
+            ["to"] = rcpt.To,
             ["subject"] = ProviderHttp.Subject(message),
         };
+        if (rcpt.Cc.Count > 0) body["cc"] = rcpt.Cc;
+        if (rcpt.Bcc.Count > 0) body["bcc"] = rcpt.Bcc;
         if (html is not null) body["html_body"] = html;
         if (text is not null) body["text_body"] = text;
         if (html is null && text is null) body["text_body"] = "";
+
+        var attachments = ProviderHttp.Attachments(message);
+        if (attachments.Count > 0)
+            body["attachments"] = attachments.Select(a => new Dictionary<string, object?>
+            {
+                ["filename"] = a.FileName,
+                ["fileblob"] = a.Base64,
+                ["mimetype"] = a.ContentType,
+            }).ToList();
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.smtp2go.com/v3/email/send") { Content = ProviderHttp.Json(body) };
 

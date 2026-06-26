@@ -45,17 +45,29 @@ public sealed class AzureProvider(RelayConfig config, IEmailClientFactory client
             throw new InvalidOperationException(
                 $"Sender '{from}' is not a configured MailFrom for this Azure relay — message rejected and not sent to ACS. Configured: {string.Join(", ", mailFroms)}.");
 
-        var recipients = message.ToAddresses.Count > 0
-            ? message.ToAddresses
-            : mime.To.Mailboxes.Select(m => m.Address).ToArray();
+        var rcpt = ProviderHttp.SplitRecipients(message);
 
         var content = new EmailContent(mime.Subject ?? "")
         {
             PlainText = mime.TextBody,
             Html = mime.HtmlBody,
         };
-        var emailRecipients = new EmailRecipients(recipients.Select(r => new EmailAddress(r)).ToList());
+        var emailRecipients = new EmailRecipients(
+            rcpt.To.Select(r => new EmailAddress(r)).ToList(),
+            rcpt.Cc.Select(r => new EmailAddress(r)).ToList(),
+            rcpt.Bcc.Select(r => new EmailAddress(r)).ToList());
         var emailMessage = new EmailMessage(sender, emailRecipients, content);
+
+        foreach (var att in mime.Attachments)
+        {
+            if (att is not MimePart part || part.Content is null) continue;
+            using var ms = new MemoryStream();
+            part.Content.DecodeTo(ms);
+            emailMessage.Attachments.Add(new EmailAttachment(
+                part.FileName ?? "attachment",
+                part.ContentType?.MimeType ?? "application/octet-stream",
+                BinaryData.FromBytes(ms.ToArray())));
+        }
 
         var client = clientFactory.Create(connectionString);
         try

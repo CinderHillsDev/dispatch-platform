@@ -19,15 +19,27 @@ public sealed class ResendProvider(RelayConfig config, HttpClient http) : IRelay
         var html = ProviderHttp.Html(message);
         var text = ProviderHttp.Text(message);
 
+        var rcpt = ProviderHttp.SplitRecipients(message);
         var body = new Dictionary<string, object?>
         {
             ["from"] = ProviderHttp.From(message),
-            ["to"] = ProviderHttp.Recipients(message),
+            ["to"] = rcpt.To,
             ["subject"] = ProviderHttp.Subject(message),
         };
+        if (rcpt.Cc.Count > 0) body["cc"] = rcpt.Cc;
+        if (rcpt.Bcc.Count > 0) body["bcc"] = rcpt.Bcc;
         if (html is not null) body["html"] = html;
         if (text is not null) body["text"] = text;
         if (html is null && text is null) body["text"] = "";
+
+        var attachments = ProviderHttp.Attachments(message);
+        if (attachments.Count > 0)
+            body["attachments"] = attachments.Select(a => new Dictionary<string, object?>
+            {
+                ["filename"] = a.FileName,
+                ["content"] = a.Base64,          // Resend accepts base64-encoded content
+                ["content_type"] = a.ContentType,
+            }).ToList();
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails") { Content = ProviderHttp.Json(body) };
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);

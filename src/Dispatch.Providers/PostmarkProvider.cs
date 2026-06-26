@@ -20,16 +20,28 @@ public sealed class PostmarkProvider(RelayConfig config, HttpClient http) : IRel
         var html = ProviderHttp.Html(message);
         var text = ProviderHttp.Text(message);
 
+        var rcpt = ProviderHttp.SplitRecipients(message);
         var body = new Dictionary<string, object?>
         {
             ["From"] = ProviderHttp.From(message),
-            ["To"] = string.Join(",", ProviderHttp.Recipients(message)),
+            ["To"] = string.Join(",", rcpt.To),
             ["Subject"] = ProviderHttp.Subject(message),
             ["MessageStream"] = ProviderHttp.Setting(config, "MessageStream") ?? "outbound",
         };
+        if (rcpt.Cc.Count > 0) body["Cc"] = string.Join(",", rcpt.Cc);
+        if (rcpt.Bcc.Count > 0) body["Bcc"] = string.Join(",", rcpt.Bcc);
         if (html is not null) body["HtmlBody"] = html;
         if (text is not null) body["TextBody"] = text;
         if (html is null && text is null) body["TextBody"] = "";
+
+        var attachments = ProviderHttp.Attachments(message);
+        if (attachments.Count > 0)
+            body["Attachments"] = attachments.Select(a => new Dictionary<string, object?>
+            {
+                ["Name"] = a.FileName,
+                ["Content"] = a.Base64,
+                ["ContentType"] = a.ContentType,
+            }).ToList();
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.postmarkapp.com/email") { Content = ProviderHttp.Json(body) };
         req.Headers.Add("X-Postmark-Server-Token", token);

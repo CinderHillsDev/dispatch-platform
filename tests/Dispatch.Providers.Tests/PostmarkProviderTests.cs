@@ -27,6 +27,18 @@ public class PostmarkProviderTests
     }
 
     [Fact]
+    public async Task Forwards_attachments_as_base64()
+    {
+        var handler = new StubHttpHandler(HttpStatusCode.OK, "{\"MessageID\":\"pm-1\",\"ErrorCode\":0}");
+        await new PostmarkProvider(Config(), new HttpClient(handler))
+            .SendAsync(ProviderTestSupport.MessageWithAttachment(), default);
+
+        Assert.Contains("\"Attachments\"", handler.Body);
+        Assert.Contains("\"Name\":\"hello.txt\"", handler.Body);
+        Assert.Contains(ProviderTestSupport.AttachmentBase64, handler.Body);
+    }
+
+    [Fact]
     public async Task Nonzero_error_code_on_http_200_is_permanent()
     {
         // Postmark returns HTTP 200 with a non-zero ErrorCode for permanent failures (e.g. inactive recipient).

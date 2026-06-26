@@ -21,13 +21,16 @@ public sealed class MailerooProvider(RelayConfig config, HttpClient http) : IRel
         var html = ProviderHttp.Html(message);
         var text = ProviderHttp.Text(message);
 
+        var rcpt = ProviderHttp.SplitRecipients(message);
         var fromMb = message.Message.From.Mailboxes.FirstOrDefault();
         var body = new Dictionary<string, object?>
         {
             ["from"] = Address(fromMb?.Address ?? message.FromAddress, fromMb?.Name),
-            ["to"] = Recipients(message),
+            ["to"] = AddressList(rcpt.To),
             ["subject"] = ProviderHttp.Subject(message),
         };
+        if (rcpt.Cc.Count > 0) body["cc"] = AddressList(rcpt.Cc);
+        if (rcpt.Bcc.Count > 0) body["bcc"] = AddressList(rcpt.Bcc);
         if (html is not null) body["html"] = html;
         if (text is not null) body["plain"] = text;
         if (html is null && text is null) body["plain"] = "";
@@ -61,12 +64,8 @@ public sealed class MailerooProvider(RelayConfig config, HttpClient http) : IRel
             ? new Dictionary<string, object?> { ["address"] = addr }
             : new Dictionary<string, object?> { ["address"] = addr, ["display_name"] = name };
 
-    private static List<object> Recipients(RelayMessage m)
-    {
-        var mboxes = m.Message.To.Mailboxes.ToList();
-        if (mboxes.Count > 0) return mboxes.Select(x => (object)Address(x.Address, x.Name)).ToList();
-        return m.ToAddresses.Select(a => (object)Address(a, null)).ToList();
-    }
+    private static List<object> AddressList(IReadOnlyList<string> addrs) =>
+        addrs.Select(a => (object)Address(a, null)).ToList();
 
     private static List<object> Attachments(RelayMessage m)
     {

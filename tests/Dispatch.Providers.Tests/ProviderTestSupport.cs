@@ -16,6 +16,38 @@ internal static class ProviderTestSupport
         mime.Body = new TextPart("plain") { Text = "body" };
         return new RelayMessage { Message = mime, FromAddress = "sender@example.com", ToAddresses = ["rcpt@dest.com"] };
     }
+
+    // A message with To + Cc headers and an extra envelope recipient (the true Bcc — present in the envelope
+    // but in no visible header). Used to verify providers split To/Cc/Bcc and never expose the blind copy.
+    public static RelayMessage MessageWithCcBcc()
+    {
+        var mime = new MimeMessage();
+        mime.From.Add(MailboxAddress.Parse("sender@example.com"));
+        mime.To.Add(MailboxAddress.Parse("to@dest.com"));
+        mime.Cc.Add(MailboxAddress.Parse("cc@dest.com"));
+        mime.Subject = "Hi";
+        mime.Body = new TextPart("plain") { Text = "body" };
+        return new RelayMessage
+        {
+            Message = mime,
+            FromAddress = "sender@example.com",
+            ToAddresses = ["to@dest.com", "cc@dest.com", "bcc@hidden.com"],
+        };
+    }
+
+    // A message carrying one attachment "hello.txt" with bytes "file-data" (base64: ZmlsZS1kYXRh).
+    public const string AttachmentBase64 = "ZmlsZS1kYXRh";
+    public static RelayMessage MessageWithAttachment()
+    {
+        var mime = new MimeMessage();
+        mime.From.Add(MailboxAddress.Parse("sender@example.com"));
+        mime.To.Add(MailboxAddress.Parse("rcpt@dest.com"));
+        mime.Subject = "Hi";
+        var builder = new BodyBuilder { TextBody = "body" };
+        builder.Attachments.Add("hello.txt", "file-data"u8.ToArray(), ContentType.Parse("text/plain"));
+        mime.Body = builder.ToMessageBody();
+        return new RelayMessage { Message = mime, FromAddress = "sender@example.com", ToAddresses = ["rcpt@dest.com"] };
+    }
 }
 
 /// <summary>Captures the outgoing request and returns a canned response, so providers can be exercised

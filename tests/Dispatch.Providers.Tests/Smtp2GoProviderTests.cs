@@ -26,6 +26,30 @@ public class Smtp2GoProviderTests
     }
 
     [Fact]
+    public async Task Splits_to_cc_and_keeps_bcc_out_of_visible_fields()
+    {
+        var handler = new StubHttpHandler(HttpStatusCode.OK, "{\"data\":{\"succeeded\":1,\"email_id\":\"sg-1\"}}");
+        await new Smtp2GoProvider(Config(), new HttpClient(handler))
+            .SendAsync(ProviderTestSupport.MessageWithCcBcc(), default);
+
+        Assert.Contains("\"to\":[\"to@dest.com\"]", handler.Body);
+        Assert.Contains("\"cc\":[\"cc@dest.com\"]", handler.Body);
+        Assert.Contains("\"bcc\":[\"bcc@hidden.com\"]", handler.Body);
+    }
+
+    [Fact]
+    public async Task Forwards_attachments_as_fileblob()
+    {
+        var handler = new StubHttpHandler(HttpStatusCode.OK, "{\"data\":{\"succeeded\":1,\"failed\":0,\"email_id\":\"sg-1\"}}");
+        await new Smtp2GoProvider(Config(), new HttpClient(handler))
+            .SendAsync(ProviderTestSupport.MessageWithAttachment(), default);
+
+        Assert.Contains("\"attachments\"", handler.Body);
+        Assert.Contains("\"filename\":\"hello.txt\"", handler.Body);
+        Assert.Contains("\"fileblob\":\"" + ProviderTestSupport.AttachmentBase64 + "\"", handler.Body);
+    }
+
+    [Fact]
     public async Task Http_200_with_error_in_body_is_permanent_failure()
     {
         // SMTP2GO returns 200 even when it rejects the message — the error lives in data.error.

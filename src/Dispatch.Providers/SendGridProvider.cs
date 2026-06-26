@@ -27,11 +27,10 @@ public sealed class SendGridProvider(RelayConfig config, ISendGridClientFactory 
         msg.SetFrom(new EmailAddress(fromMailbox.Address, fromMailbox.Name));
         msg.SetSubject(mime.Subject ?? "");
 
-        var recipients = message.ToAddresses.Count > 0
-            ? message.ToAddresses
-            : mime.To.Mailboxes.Select(m => m.Address).ToArray();
-        foreach (var to in recipients)
-            msg.AddTo(new EmailAddress(to));
+        var rcpt = ProviderHttp.SplitRecipients(message);
+        foreach (var to in rcpt.To) msg.AddTo(new EmailAddress(to));
+        foreach (var cc in rcpt.Cc) msg.AddCc(new EmailAddress(cc));
+        foreach (var bcc in rcpt.Bcc) msg.AddBcc(new EmailAddress(bcc));
 
         if (!string.IsNullOrEmpty(mime.TextBody)) msg.AddContent(MimeType.Text, mime.TextBody);
         if (!string.IsNullOrEmpty(mime.HtmlBody)) msg.AddContent(MimeType.Html, mime.HtmlBody);
