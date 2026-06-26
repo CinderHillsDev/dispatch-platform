@@ -45,7 +45,8 @@ jobs:
       - name: Install image-build tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y libguestfs-tools qemu-utils
+          # passt provides the libguestfs appliance's user-mode networking (needed for the in-guest apt install).
+          sudo apt-get install -y libguestfs-tools qemu-utils passt
           # libguestfs's appliance must be able to read the host kernel image.
           sudo chmod 0644 /boot/vmlinuz-* || true
 
