@@ -65,6 +65,7 @@ public sealed class ConfigCache
         AllowedCidrs = GetStringArray(ConfigKeys.ListenerAllowedCidrs, []),
         MaxMessageBytes = GetLong(ConfigKeys.ListenerMaxMessageBytes, 0),
         RequireAuth = GetBool(ConfigKeys.ListenerRequireAuth, false),
+        AllowUnsecureAuth = GetBool(ConfigKeys.ListenerAllowUnsecureAuth, false),
         // STARTTLS uses the shared TLS certificate (same cert as the HTTPS ingestion API).
         TlsCertPath = GetString(ConfigKeys.TlsCertPath, ""),
         TlsCertPassword = GetString(ConfigKeys.TlsCertPassword, ""),

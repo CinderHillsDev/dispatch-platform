@@ -263,11 +263,14 @@ function SmtpListenerPanel({ initial }: { initial: SystemConfig["listener"] }) {
       onSave={() => api.settings.putListener({
         ports: csvNums(portsText), serverName: listener.serverName,
         maxMessageBytes: listener.maxMessageBytes, requireAuth: listener.requireAuth,
+        allowUnsecureAuth: listener.allowUnsecureAuth,
       })}>
       <Txt label="Ports — comma-separated, e.g. 25, 587, 2525" value={portsText} onChange={setPortsText} />
       <Txt label="Server name" value={listener.serverName} onChange={(v) => setListener({ ...listener, serverName: v })} />
       <NumMb label="Max message size (MB, 0 = no limit)" bytes={listener.maxMessageBytes} onChange={(b) => setListener({ ...listener, maxMessageBytes: b })} />
       <Chk label="Require SMTP AUTH" checked={listener.requireAuth} onChange={(v) => setListener({ ...listener, requireAuth: v })} />
+      <Chk label="Allow AUTH without TLS (insecure — sends credentials in the clear; leave off unless internal/dev)"
+        checked={listener.allowUnsecureAuth} onChange={(v) => setListener({ ...listener, allowUnsecureAuth: v })} />
     </SavePanel>
   );
 }

@@ -12,6 +12,7 @@ public static class ConfigKeys
     public const string ListenerAllowedCidrs = "listener.allowed_cidrs";        // JSON string[]
     public const string ListenerMaxMessageBytes = "listener.max_message_bytes";
     public const string ListenerRequireAuth = "listener.require_auth";
+    public const string ListenerAllowUnsecureAuth = "listener.allow_unsecure_auth"; // AUTH over plaintext (no STARTTLS)
     public const string ListenerTlsCertPath = "listener.tls_cert_path";         // deprecated — see Tls* (shared cert)
     public const string ListenerTlsCertPassword = "listener.tls_cert_password"; // deprecated
     public const string ListenerTlsCertSource = "listener.tls_cert_source";     // deprecated

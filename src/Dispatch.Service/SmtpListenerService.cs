@@ -49,7 +49,9 @@ public sealed class SmtpListenerService : BackgroundService
             optionsBuilder.Endpoint(e =>
             {
                 e.Port(port, isSecure: false);
-                e.AllowUnsecureAuthentication(true);   // permit AUTH without TLS (internal/dev use)
+                // Secure default: AUTH is only offered after STARTTLS so credentials never cross the wire in
+                // the clear. Operators can re-enable plaintext AUTH (internal/dev) via listener.allow_unsecure_auth.
+                e.AllowUnsecureAuthentication(_options.AllowUnsecureAuth);
                 if (_options.RequireAuth) e.AuthenticationRequired();
                 if (certificate is not null) e.Certificate(certificate);
             });

@@ -40,8 +40,9 @@ public static class SettingsEndpoints
                     allowedCidrs = l.EffectiveAllowedCidrs,
                     maxMessageBytes = l.MaxMessageBytes,
                     requireAuth = l.RequireAuth,
+                    allowUnsecureAuth = l.AllowUnsecureAuth,
                     tlsEnabled = !string.IsNullOrWhiteSpace(l.TlsCertPath),
-                    appliesOnRestart = new[] { "ports", "serverName", "requireAuth", "tls" },
+                    appliesOnRestart = new[] { "ports", "serverName", "requireAuth", "allowUnsecureAuth", "tls" },
                 },
                 // Shared TLS certificate (SMTP STARTTLS + HTTPS API).
                 tls = new { source = cache.GetString(ConfigKeys.TlsCertSource, "") },
@@ -71,6 +72,7 @@ public static class SettingsEndpoints
             if (d.AllowedCidrs is { } c) await config.SetAsync(ConfigKeys.ListenerAllowedCidrs, JsonSerializer.Serialize(c), false, ct);
             if (d.MaxMessageBytes is { } m) await config.SetAsync(ConfigKeys.ListenerMaxMessageBytes, m.ToString(CultureInfo.InvariantCulture), false, ct);
             if (d.RequireAuth is { } ra) await config.SetAsync(ConfigKeys.ListenerRequireAuth, ra ? "true" : "false", false, ct);
+            if (d.AllowUnsecureAuth is { } ua) await config.SetAsync(ConfigKeys.ListenerAllowUnsecureAuth, ua ? "true" : "false", false, ct);
             if (d.TlsCertPath is { } tp) await config.SetAsync(ConfigKeys.ListenerTlsCertPath, tp, false, ct);
             if (d.TlsCertPassword is { } tpw) await config.SetAsync(ConfigKeys.ListenerTlsCertPassword, tpw, encrypted: true, ct);
             await cache.LoadAsync(config, ct);
@@ -283,7 +285,7 @@ public static class SettingsEndpoints
 
     private sealed record ListenerConfigDto(
         int[]? Ports, string? ServerName, string[]? AllowedCidrs, long? MaxMessageBytes,
-        bool? RequireAuth, string? TlsCertPath, string? TlsCertPassword);
+        bool? RequireAuth, bool? AllowUnsecureAuth, string? TlsCertPath, string? TlsCertPassword);
     private sealed record ApiConfigDto(
         int? Port, bool? HttpEnabled, bool? TlsEnabled, int? TlsPort,
         string[]? AllowedCidrs, long? MaxMessageBytes, int? RateLimitPerKey);

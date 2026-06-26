@@ -170,7 +170,7 @@ export interface AppSettings {
 export interface SystemConfig {
   listener: {
     ports: number[]; serverName: string; allowedCidrs: string[];
-    maxMessageBytes: number; requireAuth: boolean;
+    maxMessageBytes: number; requireAuth: boolean; allowUnsecureAuth: boolean;
     tlsEnabled: boolean; appliesOnRestart: string[];
   };
   // Shared TLS certificate (SMTP STARTTLS + HTTPS API). source: "generated" | "uploaded" | "".
@@ -301,7 +301,7 @@ export const api = {
   settings: {
     get: () => getJson<AppSettings>("/api/settings"),
     config: () => getJson<SystemConfig>("/api/config"),
-    putListener: (d: Partial<{ ports: number[]; serverName: string; allowedCidrs: string[]; maxMessageBytes: number; requireAuth: boolean; tlsCertPath: string; tlsCertPassword: string }>) =>
+    putListener: (d: Partial<{ ports: number[]; serverName: string; allowedCidrs: string[]; maxMessageBytes: number; requireAuth: boolean; allowUnsecureAuth: boolean; tlsCertPath: string; tlsCertPassword: string }>) =>
       sendJson<{ ok: boolean }>("/api/config/listener", "PUT", d),
     putApi: (d: Partial<{ port: number; httpEnabled: boolean; tlsEnabled: boolean; tlsPort: number; allowedCidrs: string[]; maxMessageBytes: number; rateLimitPerKey: number }>) =>
       sendJson<{ ok: boolean }>("/api/config/api", "PUT", d),

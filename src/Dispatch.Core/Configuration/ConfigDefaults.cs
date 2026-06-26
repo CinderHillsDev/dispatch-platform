@@ -26,6 +26,7 @@ public static class ConfigDefaults
         [ConfigKeys.ListenerAllowedCidrs] = PrivateRanges,
         [ConfigKeys.ListenerMaxMessageBytes] = "26214400",   // 25 MiB default ceiling (0 = no limit)
         [ConfigKeys.ListenerRequireAuth] = "false",
+        [ConfigKeys.ListenerAllowUnsecureAuth] = "false",   // AUTH only after STARTTLS by default (no plaintext creds)
         [ConfigKeys.ListenerConnectionTimeoutSeconds] = "60",
         [ConfigKeys.ListenerMaxConnections] = "100",
 

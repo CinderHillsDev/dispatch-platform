@@ -27,6 +27,10 @@ public sealed class ListenerOptions
     /// <summary>Require SMTP AUTH against the configured credential allow-list (spec §5.3).</summary>
     public bool RequireAuth { get; set; } = false;
 
+    /// <summary>Allow SMTP AUTH over a plaintext (non-TLS) connection. Secure default is <c>false</c> — AUTH is
+    /// only offered after STARTTLS so credentials are never sent in the clear. Enable for internal/dev use.</summary>
+    public bool AllowUnsecureAuth { get; set; } = false;
+
     /// <summary>Path to a PFX certificate enabling STARTTLS (empty = plain text only).</summary>
     public string TlsCertPath { get; set; } = "";
     public string TlsCertPassword { get; set; } = "";
