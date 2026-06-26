@@ -40,12 +40,38 @@ cp "$REPO/appliance/firstboot.sh"                "$STAGE/firstboot.sh"
 cp "$REPO/appliance/dispatch-firstboot.service"  "$STAGE/dispatch-firstboot.service"
 chmod +x "$STAGE/install.sh" "$STAGE/firstboot.sh" "$STAGE/bin/Dispatch.Service"
 
+echo "==> Pre-downloading SQL Server Express + tools (.debs) for an offline in-guest install"
+# Done on the host in a clean Ubuntu 24.04 container so the dependency closure matches the cloud image and
+# the image build itself needs no in-guest network (libguestfs passt networking is unreliable on CI).
+mkdir -p "$STAGE/debs"
+docker run --rm -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq curl gnupg ca-certificates >/dev/null
+  curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+  curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2022.list \
+    | sed "s|deb |deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] |" > /etc/apt/sources.list.d/mssql-server.list
+  curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/prod.list \
+    | sed "s|deb |deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] |" > /etc/apt/sources.list.d/microsoft-prod.list
+  apt-get update -qq
+  # Full recursive runtime dependency closure of the target packages (skip virtual/undownloadable entries).
+  deps=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances \
+           mssql-server mssql-tools18 unixodbc-dev | grep "^\w" | sort -u)
+  cd /debs
+  for d in $deps; do apt-get download "$d" 2>/dev/null || true; done
+  echo "downloaded $(ls -1 /debs/*.deb | wc -l) packages"
+  ls /debs/mssql-server_*.deb >/dev/null   # fail the build if the core package is missing
+'
+
 echo "==> Expanding the root partition into a ${DISK_SIZE} working image"
 qemu-img create -f qcow2 "$WORK/disk.qcow2" "$DISK_SIZE"
 virt-resize --expand /dev/sda1 "$WORK/base.img" "$WORK/disk.qcow2"
 
 echo "==> Customizing the image (SQL Server Express + Dispatch + first-boot)"
+# --no-network: provisioning installs pre-downloaded .debs offline, so the appliance needs no in-guest
+# network (and we avoid libguestfs's passt networking, which fails on CI runners).
 virt-customize -a "$WORK/disk.qcow2" \
+  --no-network \
   --hostname dispatch \
   --copy-in "$STAGE:/opt" \
   --run "$REPO/appliance/provision.sh"

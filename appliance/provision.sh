@@ -1,37 +1,23 @@
 #!/usr/bin/env bash
 #
 # Dispatch appliance — in-guest provisioning, run by virt-customize during the image build (NOT at runtime).
-# It installs SQL Server Express's package (binaries only; configured per-VM on first boot), stages Dispatch
-# via install.sh --no-start, and installs the first-boot unit. The staging dir (/opt/stage) is copied in by
-# build-appliance.sh and removed at the end.
+# Runs with NO network (libguestfs's passt networking is unreliable on CI runners): the SQL Server Express +
+# tools packages are pre-downloaded on the host into /opt/stage/debs (see build-appliance.sh) and installed
+# offline here. SQL is only unpacked — it's configured per-VM on first boot (appliance/firstboot.sh).
 #
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 STAGE="/opt/stage"
-UBUNTU_REL="24.04"
 
-echo "==> base tooling"
-apt-get update
-apt-get install -y curl gnupg apt-transport-https ca-certificates
+echo "==> Accept Microsoft EULAs (debconf) for SQL Server tools"
+echo "msodbcsql18 msodbcsql/ACCEPT_EULA boolean true" | debconf-set-selections
+echo "mssql-tools18 mssql-tools/accept_eula boolean true" | debconf-set-selections
 
-echo "==> Microsoft package repositories (SQL Server 2022 + tools)"
-curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-curl -fsSL "https://packages.microsoft.com/config/ubuntu/${UBUNTU_REL}/mssql-server-2022.list" \
-  | sed 's|deb |deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] |' > /etc/apt/sources.list.d/mssql-server-2022.list
-curl -fsSL "https://packages.microsoft.com/config/ubuntu/${UBUNTU_REL}/prod.list" \
-  | sed 's|deb |deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] |' > /etc/apt/sources.list.d/microsoft-prod.list
-apt-get update
-
-echo "==> SQL Server Express (package only — configured on first boot) + sqlcmd"
-# The mssql-server postinst installs binaries but does not run setup; mssql-conf setup runs on first boot
-# (appliance/firstboot.sh) so each VM gets a unique SA password.
-ACCEPT_EULA=Y apt-get install -y mssql-server
-ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
-
-echo "==> Hyper-V guest integration daemons (best-effort)"
-apt-get install -y linux-cloud-tools-virtual hyperv-daemons 2>/dev/null \
-  || apt-get install -y linux-cloud-tools-virtual 2>/dev/null \
-  || echo "   (Hyper-V daemons unavailable; the in-kernel hv_* drivers still provide net/disk/console)"
+echo "==> Install SQL Server Express + tools (offline from pre-downloaded .debs)"
+dpkg -i "$STAGE"/debs/*.deb || true   # may report ordering warnings; configure resolves them
+dpkg --configure -a
+test -x /opt/mssql/bin/mssql-conf || { echo "ERROR: mssql-server did not install" >&2; exit 1; }
+test -x /opt/mssql-tools18/bin/sqlcmd || { echo "ERROR: mssql-tools18 did not install" >&2; exit 1; }
 
 echo "==> Stage Dispatch (enabled, not started; SA password finalized on first boot)"
 bash "$STAGE/install.sh" --prebuilt "$STAGE/bin" --no-start \
@@ -52,8 +38,6 @@ printf 'datasource_list: [ NoCloud, None ]\n' > /etc/cloud/cloud.cfg.d/99-dispat
 
 echo "==> Cleanup"
 rm -rf "$STAGE"
-apt-get clean
-rm -rf /var/lib/apt/lists/*
 # Empty machine-id so each VM generates a unique one on first boot.
 : > /etc/machine-id
 echo "==> provisioning complete"
