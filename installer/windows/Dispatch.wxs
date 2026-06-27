@@ -76,8 +76,8 @@
 
       <!-- Service environment: logs live under the ProgramData data dir (the Windows-conventional location;
            the service CWD is system32). The at-rest key (.dispatch-key) defaults to the content root, which is
-           this same data dir (--contentRoot). The whole data dir is ACL-locked by WriteAppSettings.js so the
-           connection string, spool, key, and logs aren't readable by other users. -->
+           this same data dir (set via the contentRoot switch). The whole data dir is ACL-locked by
+           WriteAppSettings.js so the connection string, spool, key, and logs aren't readable by other users. -->
       <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\Dispatch" Name="Environment"
                      Type="multiString" Value="DISPATCH_LOG_DIR=[CommonAppDataFolder]Dispatch\logs[~]DOTNET_ENVIRONMENT=Production" />
 
