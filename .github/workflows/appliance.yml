@@ -20,13 +20,13 @@ jobs:
   hyperv-appliance:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -87,7 +87,7 @@ jobs:
 
       # Upload before the boot smoke so the artifacts are available even if the smoke fails.
       - name: Upload appliance artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dispatch-appliance
           path: |
@@ -147,7 +147,7 @@ jobs:
 
       - name: Upload boot diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: appliance-boot-diagnostics
           path: |
