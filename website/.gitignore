@@ -1,0 +1,9 @@
+# Astro / Node build artifacts
+node_modules/
+dist/
+.astro/
+
+# Logs / env
+*.log
+.env
+.env.production

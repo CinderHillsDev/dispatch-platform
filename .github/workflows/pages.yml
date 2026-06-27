@@ -1,16 +1,14 @@
 name: Pages
 
-# Publishes the static landing page (index.html, Tailwind via CDN) to GitHub Pages — no Jekyll/theme.
+# Builds the Astro + Starlight documentation site (website/) and publishes it to GitHub Pages.
+# The site includes the marketing landing page (website/src/pages/index.astro) and the docs.
 # Enable once in repo Settings → Pages → Source = "GitHub Actions".
 on:
   push:
     # TODO(after merge): drop the feature branch — main is the canonical Pages source.
     branches: [main, feat/relay-engine-web-providers]
     paths:
-      - index.html
-      - deploy.html
-      - appliance.html
-      - docs/images/**
+      - website/**
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -26,18 +24,21 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
     steps:
       - uses: actions/checkout@v4
-      - name: Assemble static site
-        run: |
-          mkdir -p _site/docs/images
-          cp index.html _site/index.html
-          cp deploy.html _site/deploy.html
-          cp appliance.html _site/appliance.html
-          cp docs/images/dashboard.png _site/docs/images/dashboard.png
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: ./_site
+          path: website/dist
 
   deploy:
     needs: build
