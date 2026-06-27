@@ -121,7 +121,7 @@ jobs:
             -drive if=pflash,format=raw,file=vars.fd \
             -drive file=boot.qcow2,format=qcow2,if=none,id=hd0 \
             -device virtio-blk-pci,drive=hd0,bootindex=0 \
-            -netdev user,id=n0,hostfwd=tcp::8420-:8420 -device virtio-net-pci,netdev=n0 \
+            -netdev user,id=n0,hostfwd=tcp::8420-:8420,hostfwd=tcp::2526-:25 -device virtio-net-pci,netdev=n0 \
             -vga std -display none -serial file:console.log -qmp unix:qmp.sock,server,nowait -daemonize 2>qemu.err \
             || { echo "=== qemu failed to launch ==="; cat qemu.err; exit 1; }
           screenshot() {  # capture the VGA framebuffer via QMP -> $1 (png)
@@ -144,6 +144,22 @@ jobs:
             echo "appliance did not serve /health within the timeout"; exit 1
           fi
           echo "appliance /health OK"
+
+          # Prove the appliance bound the privileged SMTP port (25, via CAP_NET_BIND_SERVICE on the systemd
+          # unit) and that STARTTLS negotiates with the self-signed fallback cert. Guest 25 is forwarded to
+          # host 2526; openssl completes a real TLS handshake (BEGIN CERTIFICATE) on success.
+          tls_ok=0
+          for _ in $(seq 1 12); do
+            if echo QUIT | openssl s_client -starttls smtp -connect localhost:2526 -crlf 2>/dev/null | grep -q 'BEGIN CERTIFICATE'; then
+              tls_ok=1; break
+            fi
+            sleep 5
+          done
+          if [ "$tls_ok" != 1 ]; then
+            echo "=== serial console ==="; sudo chmod -f a+r console.log 2>/dev/null || true; cat console.log 2>/dev/null || true
+            echo "appliance SMTP STARTTLS check failed on port 25 (forwarded to 2526)"; exit 1
+          fi
+          echo "appliance SMTP STARTTLS on port 25 OK"
 
       - name: Upload boot diagnostics
         if: failure()
