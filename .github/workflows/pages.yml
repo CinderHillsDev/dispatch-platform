@@ -9,6 +9,7 @@ on:
     paths:
       - index.html
       - deploy.html
+      - appliance.html
       - docs/images/**
       - .github/workflows/pages.yml
   workflow_dispatch:
@@ -32,6 +33,7 @@ jobs:
           mkdir -p _site/docs/images
           cp index.html _site/index.html
           cp deploy.html _site/deploy.html
+          cp appliance.html _site/appliance.html
           cp docs/images/dashboard.png _site/docs/images/dashboard.png
       - uses: actions/upload-pages-artifact@v3
         with:
