@@ -41,5 +41,7 @@ proceed.
 
 ## After install
 
-Logs are written to `C:\ProgramData\Dispatch\logs`. Open the dashboard at **https://localhost:8420**
+Logs are written to `C:\Program Files\Dispatch\logs`, and the at-rest encryption key lives there too
+(`C:\Program Files\Dispatch\.dispatch-key`, ACL-locked). The connection string (`appsettings.json`)
+and the spool stay under `C:\ProgramData\Dispatch`. Open the dashboard at **https://localhost:8420**
 (accept the self-signed certificate warning).

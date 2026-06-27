@@ -41,8 +41,9 @@ try
     if (args.Contains("reset-admin-password", StringComparer.OrdinalIgnoreCase))
         return await ResetAdminPasswordAsync(builder.Configuration);
 
-    // Durable location for the at-rest encryption key (non-Windows): DISPATCH_KEY_DIR or the content root.
-    // Must be set before any encrypted config is read/written.
+    // Durable location for the at-rest encryption key (all platforms): DISPATCH_KEY_DIR or the content root.
+    // The Windows installer points DISPATCH_KEY_DIR at the Program Files install dir; Linux/Docker use the
+    // content root / spool dir. Must be set before any encrypted config is read/written.
     SecureConfig.UseKeyDirectory(
         Environment.GetEnvironmentVariable("DISPATCH_KEY_DIR") ?? builder.Environment.ContentRootPath);
 

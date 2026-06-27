@@ -1,15 +1,23 @@
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 
 namespace Dispatch.Data;
 
 /// <summary>
-/// Transparent encryption for <c>config</c> rows flagged encrypted (spec §17.5, §19.5). On Windows it uses
-/// DPAPI (<see cref="ProtectedData"/>, LocalMachine scope) so no key material is stored. On Linux/macOS it
-/// uses AES-256-GCM with a random 256-bit key persisted as <c>.dispatch-key</c> (mode 600) in the directory
-/// set via <see cref="UseKeyDirectory"/> — so an exfiltrated <c>config</c> table can't be decrypted without
-/// also obtaining that host-local key file. If no key directory is set (or it's unwritable) it falls back to
-/// a machine-derived key. A given machine uses one scheme. AES blob: base64( nonce[12] | tag[16] | ct ).
+/// Transparent encryption for <c>config</c> rows flagged encrypted (spec §17.5, §19.5). On every platform it
+/// uses AES-256-GCM with a random 256-bit key persisted as <c>.dispatch-key</c> in the directory set via
+/// <see cref="UseKeyDirectory"/> (mode 600 on Unix; an inheritance-stripped ACL granting only SYSTEM,
+/// Administrators, and the service account on Windows). Because the key lives in a portable file rather than a
+/// machine-bound store, a database backup can be restored on a different host by also restoring the key file —
+/// so disaster recovery and migration work the same on Windows, Linux, and macOS. An exfiltrated <c>config</c>
+/// table still can't be decrypted without that host-local key file. If no key directory is set (or it's
+/// unwritable) it falls back to a machine-derived key (weaker; surfaced via <see cref="UsedMachineKeyFallback"/>).
+/// AES blob: base64( nonce[12] | tag[16] | ct ).
+///
+/// Backward compatibility: earlier Windows builds encrypted with DPAPI (LocalMachine). <see cref="Decrypt"/>
+/// reads those legacy blobs on Windows when AES decryption fails, and they migrate to AES on the next save.
 /// </summary>
 public static class SecureConfig
 {
@@ -30,10 +38,6 @@ public static class SecureConfig
 
     public static string Encrypt(string plaintext)
     {
-        if (OperatingSystem.IsWindows())
-            return Convert.ToBase64String(
-                ProtectedData.Protect(Encoding.UTF8.GetBytes(plaintext), AppSalt, DataProtectionScope.LocalMachine));
-
         var nonce = RandomNumberGenerator.GetBytes(NonceSize);
         var pt = Encoding.UTF8.GetBytes(plaintext);
         var ct = new byte[pt.Length];
@@ -51,19 +55,33 @@ public static class SecureConfig
 
     public static string Decrypt(string ciphertext)
     {
+        var blob = Convert.FromBase64String(ciphertext);
+
+        // Current format (all platforms): AES-256-GCM with the portable key file.
+        if (blob.Length >= NonceSize + TagSize)
+        {
+            try
+            {
+                var nonce = blob.AsSpan(0, NonceSize);
+                var tag = blob.AsSpan(NonceSize, TagSize);
+                var ct = blob.AsSpan(NonceSize + TagSize);
+                var pt = new byte[ct.Length];
+                using var aes = new AesGcm(Key.Value, TagSize);
+                aes.Decrypt(nonce, ct, tag, pt);
+                return Encoding.UTF8.GetString(pt);
+            }
+            catch (CryptographicException) when (OperatingSystem.IsWindows())
+            {
+                // Not an AES blob we can open — likely a legacy DPAPI value. Fall through to the legacy path.
+            }
+        }
+
+        // Legacy (older Windows builds): DPAPI, LocalMachine scope. Re-encrypts to AES on the next save.
         if (OperatingSystem.IsWindows())
             return Encoding.UTF8.GetString(
-                ProtectedData.Unprotect(Convert.FromBase64String(ciphertext), AppSalt, DataProtectionScope.LocalMachine));
+                ProtectedData.Unprotect(blob, AppSalt, DataProtectionScope.LocalMachine));
 
-        var blob = Convert.FromBase64String(ciphertext);
-        var nonce = blob.AsSpan(0, NonceSize);
-        var tag = blob.AsSpan(NonceSize, TagSize);
-        var ct = blob.AsSpan(NonceSize + TagSize);
-        var pt = new byte[ct.Length];
-
-        using var aes = new AesGcm(Key.Value, TagSize);
-        aes.Decrypt(nonce, ct, tag, pt);
-        return Encoding.UTF8.GetString(pt);
+        throw new CryptographicException("Unable to decrypt config value — wrong or missing .dispatch-key?");
     }
 
     private static byte[] DeriveKey()
@@ -97,10 +115,17 @@ public static class SecureConfig
             }
             Directory.CreateDirectory(dir);
             var key = RandomNumberGenerator.GetBytes(32);
-            // Create restricted, then write — keep the private key off other users.
-            if (!OperatingSystem.IsWindows())
+            // Create restricted, then write — keep the private key off other users. ProgramData is readable by
+            // all users by default on Windows, so an explicit ACL matters there as much as mode 600 on Unix.
+            using (File.Create(path)) { }
+            if (OperatingSystem.IsWindows())
             {
-                using (File.Create(path)) { }
+                // Best-effort: an un-ACL'd key file still works (and Program Files is admin-write-only), so a
+                // failure here must not abort key creation and trigger the weaker machine-key fallback.
+                try { RestrictWindowsAcl(path); } catch { /* keep going with default ACLs */ }
+            }
+            else
+            {
                 File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // 600
             }
             File.WriteAllText(path, Convert.ToBase64String(key));
@@ -110,6 +135,22 @@ public static class SecureConfig
         {
             return null;   // fall back to the machine-derived key
         }
+    }
+
+    /// <summary>Lock the key file down to SYSTEM, Administrators, and the running service account, with
+    /// inheritance disabled — so other local users on a Windows box can't read it out of ProgramData.</summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void RestrictWindowsAcl(string path)
+    {
+        var fi = new FileInfo(path);
+        var sec = new FileSecurity();
+        sec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);   // drop inherited ACEs
+        void Grant(IdentityReference id) =>
+            sec.AddAccessRule(new FileSystemAccessRule(id, FileSystemRights.FullControl, AccessControlType.Allow));
+        Grant(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
+        Grant(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+        if (WindowsIdentity.GetCurrent().User is { } me) Grant(me);   // the service account, so it keeps access
+        fi.SetAccessControl(sec);
     }
 
     private static string? TryReadMachineId()

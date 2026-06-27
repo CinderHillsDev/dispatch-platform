@@ -44,7 +44,10 @@ Write-Host "==> Publishing the service to $InstallDir"
 dotnet publish "$Source\src\Dispatch.Service" -c Release -o $InstallDir
 
 Write-Host "==> Writing config to $DataDir"
-New-Item -ItemType Directory -Force "$DataDir\spool", "$DataDir\logs" | Out-Null
+# Logs and the at-rest encryption key (.dispatch-key) live under Program Files (admin-write-only), not the
+# broadly-readable ProgramData. The service runs as LocalSystem so it can write there. The DB connection
+# string (appsettings.json) and the spool stay under the content root in ProgramData.
+New-Item -ItemType Directory -Force "$DataDir\spool", "$InstallDir\logs" | Out-Null
 $smtpJson = ($SmtpPorts -split ',' | ForEach-Object { $_.Trim() }) -join ', '
 $config = @{
   ConnectionStrings = @{ DispatchLog = $SqlConnection }
@@ -61,8 +64,9 @@ $bin = "`"$InstallDir\Dispatch.Service.exe`" --contentRoot `"$DataDir`""
 sc.exe stop Dispatch 2>$null | Out-Null
 sc.exe delete Dispatch 2>$null | Out-Null
 New-Service -Name Dispatch -BinaryPathName $bin -DisplayName "Dispatch SMTP Relay" -StartupType Automatic | Out-Null
-# Point the log directory at ProgramData (the service's CWD is system32).
-$envBlock = [string[]]@("DISPATCH_LOG_DIR=$DataDir\logs", "DOTNET_ENVIRONMENT=Production")
+# Logs and the encryption key live under Program Files (admin-write-only); the service runs as LocalSystem
+# so it can write there. DISPATCH_KEY_DIR overrides the default key location (the content root in ProgramData).
+$envBlock = [string[]]@("DISPATCH_LOG_DIR=$InstallDir\logs", "DISPATCH_KEY_DIR=$InstallDir", "DOTNET_ENVIRONMENT=Production")
 New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\Dispatch" -Name Environment -PropertyType MultiString -Value $envBlock -Force | Out-Null
 
 Write-Host "==> Opening firewall ports"

@@ -12,10 +12,14 @@ the bootstrap config file. Get all three and you can restore to a fresh host.
 
 1. **The SQL `DispatchLog` database** — all config, message history, API keys, routing rules, and the
    audit log. Use SQL Server backup or Azure SQL automated backups.
-2. **The encryption key file** `.dispatch-key` (Linux/macOS) — mode `600`, in the key/app directory.
-   **Without it, encrypted secrets cannot be decrypted after a restore** — provider keys, SMTP
-   passwords, and the TLS certificate password. On **Windows**, secrets are protected with DPAPI
-   (LocalMachine), which ties them to the machine rather than to a key file.
+2. **The encryption key file** `.dispatch-key`. **Without it, encrypted secrets cannot be decrypted
+   after a restore** — provider keys, SMTP passwords, and the TLS certificate password. It's a portable
+   file on every platform, so restoring it alongside the database lets you move to a **different
+   machine**:
+   - **Linux/macOS** — mode `600`, in the key/app directory (or `DISPATCH_KEY_DIR`).
+   - **Windows** — in the Program Files install dir (`C:\Program Files\Dispatch\.dispatch-key`), locked
+     down with an ACL. (Older builds used DPAPI, which was machine-bound; those values migrate to the
+     portable key on the next save.)
 3. **`appsettings.json`** — the connection string and the dashboard TLS certificate.
 
 The **spool directory** holds only in-flight and captured mail; drain it before planned maintenance
