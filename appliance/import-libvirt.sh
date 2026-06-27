@@ -23,6 +23,9 @@ while [ $# -gt 0 ]; do
 done
 
 [ -f "$QCOW2" ] || { echo "qcow2 not found: $QCOW2" >&2; exit 1; }
+# Needs root: copies into the system libvirt images pool (/var/lib/libvirt/images), chowns it, and defines a
+# system VM (qemu:///system). Re-run with sudo. (libvirt-group users still can't write the system pool.)
+[ "$(id -u)" = 0 ] || { echo "Run with sudo: $0 writes to /var/lib/libvirt/images and defines a system VM." >&2; exit 1; }
 command -v virt-install >/dev/null || { echo "virt-install not found (install virtinst/virt-install)." >&2; exit 1; }
 
 # Copy into the default libvirt images pool so libvirt owns/labels it (SELinux/AppArmor friendly).
