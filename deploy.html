@@ -165,23 +165,16 @@ virsh domifaddr dispatch        # find its IP</code></pre>
       </div>
 
       <h3 class="mt-7 font-semibold text-white">Set a static IP</h3>
-      <p class="mt-1 text-sm text-gray-400">Ubuntu uses <b class="text-gray-200">netplan</b>. Log in (console or SSH), find your NIC name with <code class="text-sky-300">ip a</code> (e.g. <code>eth0</code>, <code>ens160</code>), then create the file below and apply:</p>
-      <pre class="mt-2 overflow-x-auto rounded-lg border border-gray-800 bg-gray-900 p-4 text-sm text-gray-200"><code>sudo tee /etc/netplan/99-static.yaml >/dev/null &lt;&lt;'YAML'
-network:
-  version: 2
-  ethernets:
-    eth0:                         # &larr; replace with your NIC (from `ip a`)
-      dhcp4: false
-      addresses: [192.168.1.50/24]
-      routes:
-        - to: default
-          via: 192.168.1.1
-      nameservers:
-        addresses: [1.1.1.1, 8.8.8.8]
-YAML
-sudo chmod 600 /etc/netplan/99-static.yaml
-sudo netplan apply</code></pre>
-      <p class="mt-2 text-sm text-gray-500">The dashboard is then at <code class="text-sky-300">https://192.168.1.50:8420</code>. (Hyper-V/VMware/Proxmox all hand out DHCP by default, so a static IP is optional.)</p>
+      <p class="mt-1 text-sm text-gray-400">DHCP is the default. The appliance ships a helper that auto-detects the NIC, writes netplan, and applies it — log in (console or SSH) and run:</p>
+      <pre class="mt-2 overflow-x-auto rounded-lg border border-gray-800 bg-gray-900 p-4 text-sm text-gray-200"><code># interactive — just answer the prompts:
+sudo dispatch-set-ip
+
+# or in one line:
+sudo dispatch-set-ip -a 192.168.1.50/24 -g 192.168.1.1 -d 1.1.1.1,8.8.8.8
+
+# revert to automatic:
+sudo dispatch-set-ip --dhcp</code></pre>
+      <p class="mt-2 text-sm text-gray-500">It prints the new address; the dashboard is then at <code class="text-sky-300">https://192.168.1.50:8420</code>. (Hyper-V/VMware/KVM/Proxmox all hand out DHCP by default, so a static IP is optional.) Prefer to do it by hand? Edit <code>/etc/netplan/*.yaml</code> and run <code>sudo netplan apply</code>.</p>
     </section>
 
     <!-- AFTER -->

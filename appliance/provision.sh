@@ -24,6 +24,9 @@ echo "==> Stage Dispatch (enabled, not started; SA password finalized on first b
 bash "$STAGE/install.sh" --prebuilt "$STAGE/bin" --no-start \
   --sql-connection "Server=localhost;Database=DispatchLog;User Id=sa;Password=__SA_PASSWORD__;TrustServerCertificate=True;Encrypt=True"
 
+echo "==> Install the dispatch-set-ip helper"
+install -m 755 "$STAGE/dispatch-set-ip" /usr/local/sbin/dispatch-set-ip
+
 echo "==> First-boot unit + start ordering"
 install -m 755 -D "$STAGE/firstboot.sh" /opt/dispatch-appliance/firstboot.sh
 install -m 644 "$STAGE/dispatch-firstboot.service" /etc/systemd/system/dispatch-firstboot.service

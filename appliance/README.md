@@ -66,22 +66,20 @@ SSH is enabled with password auth (`ssh ubuntu@<vm-ip>`). The dashboard password
 
 ## Static IP
 
-DHCP is the default. To pin an address, log in and create a netplan file (find your NIC with `ip a`):
+DHCP is the default. A baked-in helper, **`dispatch-set-ip`**, pins an address for you — it auto-detects the NIC, writes the netplan file (mode 600), applies it, and prints the new dashboard URL:
 
 ```bash
-sudo tee /etc/netplan/99-static.yaml >/dev/null <<'YAML'
-network:
-  version: 2
-  ethernets:
-    eth0:                         # replace with your NIC (from `ip a`)
-      dhcp4: false
-      addresses: [192.168.1.50/24]
-      routes: [{ to: default, via: 192.168.1.1 }]
-      nameservers: { addresses: [1.1.1.1, 8.8.8.8] }
-YAML
-sudo chmod 600 /etc/netplan/99-static.yaml
-sudo netplan apply
+# interactive — just answer the prompts:
+sudo dispatch-set-ip
+
+# or in one line (DNS defaults to 1.1.1.1,8.8.8.8):
+sudo dispatch-set-ip -a 192.168.1.50/24 -g 192.168.1.1 -d 1.1.1.1,8.8.8.8
+
+# revert to automatic:
+sudo dispatch-set-ip --dhcp
 ```
+
+Pass `-i <nic>` to target a specific interface (see `ip a`); run `dispatch-set-ip -h` for all options.
 
 ## Maintenance (console)
 

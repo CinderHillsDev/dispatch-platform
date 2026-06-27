@@ -38,7 +38,8 @@ cp "$REPO/installer/linux/install.sh"            "$STAGE/install.sh"
 cp "$REPO/installer/linux/dispatch.service"      "$STAGE/dispatch.service"
 cp "$REPO/appliance/firstboot.sh"                "$STAGE/firstboot.sh"
 cp "$REPO/appliance/dispatch-firstboot.service"  "$STAGE/dispatch-firstboot.service"
-chmod +x "$STAGE/install.sh" "$STAGE/firstboot.sh" "$STAGE/bin/Dispatch.Service"
+cp "$REPO/appliance/dispatch-set-ip"             "$STAGE/dispatch-set-ip"
+chmod +x "$STAGE/install.sh" "$STAGE/firstboot.sh" "$STAGE/dispatch-set-ip" "$STAGE/bin/Dispatch.Service"
 
 echo "==> Pre-downloading SQL Server Express + tools (.debs) for an offline in-guest install"
 # Done on the host in a clean Ubuntu 24.04 container so the dependency closure matches the cloud image and
