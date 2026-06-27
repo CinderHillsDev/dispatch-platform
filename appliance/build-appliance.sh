@@ -83,6 +83,9 @@ echo "ESP /EFI/ubuntu:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/ubuntu 2>/d
 virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null | grep -qi '^BOOTX64.EFI$' \
   || { echo "ERROR: UEFI fallback bootloader \EFI\BOOT\BOOTX64.EFI missing — image would not boot on empty-NVRAM firmware" >&2; exit 1; }
 
+echo "--- /opt ---"; virt-ls -a "$WORK/disk.qcow2" /opt 2>/dev/null || echo "(none)"
+echo "--- /opt/dispatch (install dir) ---"; virt-ls -a "$WORK/disk.qcow2" /opt/dispatch 2>/dev/null | head -5 || echo "(none)"
+echo "--- install.sh captured output (/tmp/install.log) ---"; virt-cat -a "$WORK/disk.qcow2" /tmp/install.log 2>/dev/null | tail -40 || echo "(no install.log)"
 echo "--- /etc/systemd/system (dispatch unit files) ---"; virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system | grep -i dispatch || echo "(no dispatch unit files!)"
 echo "--- /etc/systemd/system/multi-user.target.wants ---"; virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants || echo "(listing failed)"
 for unit in dispatch.service dispatch-firstboot.service; do
