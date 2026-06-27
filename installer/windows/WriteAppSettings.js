@@ -33,4 +33,15 @@ if (parts.length >= 2) {
         stream.Write(json);
         stream.Close();
     }
+
+    // Lock down the data directory so the connection string, spool (message bodies), the .dispatch-key
+    // encryption key, and logs aren't readable by other local users (ProgramData is world-readable by
+    // default). Remove inherited ACEs and grant only SYSTEM (S-1-5-18) and Administrators (S-1-5-32-544),
+    // inheritable so runtime-created files (spool, key) are covered too. Best-effort: never fail the install.
+    try {
+        var shell = new ActiveXObject("WScript.Shell");
+        var icacls = 'icacls "' + dataDir + '" /inheritance:r '
+            + '/grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C';
+        shell.Run('cmd /c ' + icacls, 0, true);   // 0 = hidden window, true = wait for completion
+    } catch (e) { /* ignore — the per-file key ACL still applies */ }
 }

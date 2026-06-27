@@ -2007,7 +2007,7 @@ CREATE TABLE config (
 );
 ```
 
-Values marked `encrypted = 1` are stored AES-256-GCM encrypted using a random 256-bit key persisted in a portable `.dispatch-key` file (access-restricted: mode 600 on Unix; ACL-locked under the Program Files install dir on Windows). The key is portable, so a DB backup restores on a different machine when the key file is restored too. If no writable key directory is available it falls back to a PBKDF2 machine-derived key (weaker). Earlier Windows builds used DPAPI (LocalMachine); those legacy values are still readable and migrate to AES on the next save. The encryption/decryption is transparent — the `ConfigRepository` handles it on read/write.
+Values marked `encrypted = 1` are stored AES-256-GCM encrypted using a random 256-bit key persisted in a portable `.dispatch-key` file (access-restricted: mode 600 on Unix; ACL-locked on Windows, in the ProgramData data dir whose folder ACL the installer also restricts). The key is portable, so a DB backup restores on a different machine when the key file is restored too. If no writable key directory is available it falls back to a PBKDF2 machine-derived key (weaker). Earlier Windows builds used DPAPI (LocalMachine); those legacy values are still readable and migrate to AES on the next save. The encryption/decryption is transparent — the `ConfigRepository` handles it on read/write.
 
 **Config keys:**
 
@@ -2199,7 +2199,7 @@ Every relay lifecycle event written to `relay_log` carries these properties:
 
 | OS | Default path |
 |---|---|\
-| Windows | `C:\Program Files\Dispatch\logs\dispatch-.log` |
+| Windows | `C:\ProgramData\Dispatch\logs\dispatch-.log` |
 | Linux | `/var/log/dispatch/dispatch-.log` |
 
 ### 13.5 Retention and Purge
@@ -3324,7 +3324,7 @@ public async Task<ApiKey?> VerifyAsync(string rawKey)
 | API keys | `api_keys.key_hash` | bcrypt, cost factor 12 |
 | SQL connection string | `appsettings.json` | OS file permissions only (see 17.6) |
 
-**Encryption key (all platforms):** a random 256-bit key in a `.dispatch-key` file → AES-256-GCM. The key file is access-restricted (mode 600 on Unix; an inheritance-stripped ACL granting only SYSTEM, Administrators, and the service account on Windows, where it lives in the Program Files install dir via `DISPATCH_KEY_DIR`). Being a portable file (not a machine-bound store), it makes DB backup/restore portable across hosts — restore the key file alongside the database. If no writable key directory is available, it falls back to a PBKDF2-SHA256 key derived from `/etc/machine-id` + a fixed app salt (100,000 iterations) — weaker, surfaced to the operator.
+**Encryption key (all platforms):** a random 256-bit key in a `.dispatch-key` file → AES-256-GCM. The key file is access-restricted (mode 600 on Unix; an inheritance-stripped ACL granting only SYSTEM, Administrators, and the service account on Windows). On Windows it lives in the ProgramData data dir (the content root), whose folder ACL the installer also locks down. Being a portable file (not a machine-bound store), it makes DB backup/restore portable across hosts — restore the key file alongside the database. If no writable key directory is available, it falls back to a PBKDF2-SHA256 key derived from `/etc/machine-id` + a fixed app salt (100,000 iterations) — weaker, surfaced to the operator.
 - **Legacy (older Windows builds):** `System.Security.Cryptography.ProtectedData` (DPAPI, `LocalMachine` scope). Such values are still decrypted on Windows and re-encrypted to AES on the next save.
 
 **Secrets never appear in:** log files, HTTP responses, error messages, exception stack traces, or the Serilog structured output. `ConfigRepository` redacts encrypted values in `GET /api/config` responses.

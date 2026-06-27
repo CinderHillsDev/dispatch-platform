@@ -17,9 +17,9 @@ the bootstrap config file. Get all three and you can restore to a fresh host.
    file on every platform, so restoring it alongside the database lets you move to a **different
    machine**:
    - **Linux/macOS** — mode `600`, in the key/app directory (or `DISPATCH_KEY_DIR`).
-   - **Windows** — in the Program Files install dir (`C:\Program Files\Dispatch\.dispatch-key`), locked
-     down with an ACL. (Older builds used DPAPI, which was machine-bound; those values migrate to the
-     portable key on the next save.)
+   - **Windows** — in the data dir (`C:\ProgramData\Dispatch\.dispatch-key`); the installer ACL-locks that
+     folder to SYSTEM + Administrators. (Older builds used DPAPI, which was machine-bound; those values
+     migrate to the portable key on the next save.)
 3. **`appsettings.json`** — the connection string and the dashboard TLS certificate.
 
 The **spool directory** holds only in-flight and captured mail; drain it before planned maintenance

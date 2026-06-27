@@ -18,7 +18,7 @@ Serilog writes to the console and to rolling daily files at `logs/dispatch-*.log
 Per-platform locations:
 
 - **Linux:** follow the journal with `sudo journalctl -u dispatch -f`.
-- **Windows:** files live under `C:\Program Files\Dispatch\logs`.
+- **Windows:** files live under `C:\ProgramData\Dispatch\logs`.
 
 ## Audit log
 

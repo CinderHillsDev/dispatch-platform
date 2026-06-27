@@ -41,7 +41,7 @@ proceed.
 
 ## After install
 
-Logs are written to `C:\Program Files\Dispatch\logs`, and the at-rest encryption key lives there too
-(`C:\Program Files\Dispatch\.dispatch-key`, ACL-locked). The connection string (`appsettings.json`)
-and the spool stay under `C:\ProgramData\Dispatch`. Open the dashboard at **https://localhost:8420**
-(accept the self-signed certificate warning).
+Everything lives under `C:\ProgramData\Dispatch` — the connection string (`appsettings.json`), the
+spool, logs, and the `.dispatch-key` encryption key. The installer locks that folder down (inheritance
+disabled; SYSTEM + Administrators only) so other local users can't read it. Open the dashboard at
+**https://localhost:8420** (accept the self-signed certificate warning).

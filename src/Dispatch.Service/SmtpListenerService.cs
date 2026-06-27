@@ -22,6 +22,7 @@ public sealed class SmtpListenerService : BackgroundService
     private readonly ConfiguredUserAuthenticator _authenticator;
     private readonly ConnectionTracker _connections;
     private readonly ListenerOptions _options;
+    private readonly IHostEnvironment _env;
     private readonly ILogger<SmtpListenerService> _log;
 
     public SmtpListenerService(
@@ -30,6 +31,7 @@ public sealed class SmtpListenerService : BackgroundService
         ConfiguredUserAuthenticator authenticator,
         ConnectionTracker connections,
         IOptions<ListenerOptions> options,
+        IHostEnvironment env,
         ILogger<SmtpListenerService> log)
     {
         _messageStore = messageStore;
@@ -37,6 +39,7 @@ public sealed class SmtpListenerService : BackgroundService
         _authenticator = authenticator;
         _connections = connections;
         _options = options.Value;
+        _env = env;
         _log = log;
     }
 
@@ -166,14 +169,31 @@ public sealed class SmtpListenerService : BackgroundService
 
     private X509Certificate2? LoadCertificate()
     {
-        if (string.IsNullOrWhiteSpace(_options.TlsCertPath)) return null;
+        // Prefer the operator's shared TLS certificate (also secures the HTTPS API) when configured.
+        if (!string.IsNullOrWhiteSpace(_options.TlsCertPath))
+        {
+            try
+            {
+                return X509CertificateLoader.LoadPkcs12FromFile(_options.TlsCertPath, _options.TlsCertPassword);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex,
+                    "Failed to load the shared TLS certificate from {Path}; falling back to a self-signed cert for STARTTLS",
+                    _options.TlsCertPath);
+            }
+        }
+
+        // No shared cert configured (or it failed to load): use the same auto-generated, persisted self-signed
+        // cert the dashboard and HTTPS API use, so STARTTLS is available out of the box. Operators can replace
+        // it with a CA-trusted shared cert in the dashboard (Settings -> TLS certificate).
         try
         {
-            return X509CertificateLoader.LoadPkcs12FromFile(_options.TlsCertPath, _options.TlsCertPassword);
+            return SelfSignedCert.GetOrCreate(_env.ContentRootPath);
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Failed to load TLS certificate from {Path}; STARTTLS disabled", _options.TlsCertPath);
+            _log.LogError(ex, "Could not obtain a self-signed certificate; STARTTLS disabled");
             return null;
         }
     }

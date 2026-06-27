@@ -74,12 +74,12 @@
                       Name="Dispatch"
                       Start="install" Stop="both" Remove="uninstall" Wait="yes" />
 
-      <!-- Service environment: logs and the at-rest encryption key (.dispatch-key) live under Program Files
-           (INSTALLFOLDER, admin-write-only) rather than the broadly-readable ProgramData. The service runs as
-           LocalSystem so it can write there. The connection string + spool stay under the ProgramData content
-           root. [INSTALLFOLDER] resolves with a trailing backslash. -->
+      <!-- Service environment: logs live under the ProgramData data dir (the Windows-conventional location;
+           the service CWD is system32). The at-rest key (.dispatch-key) defaults to the content root, which is
+           this same data dir (--contentRoot). The whole data dir is ACL-locked by WriteAppSettings.js so the
+           connection string, spool, key, and logs aren't readable by other users. -->
       <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\Dispatch" Name="Environment"
-                     Type="multiString" Value="DISPATCH_LOG_DIR=[INSTALLFOLDER]logs[~]DISPATCH_KEY_DIR=[INSTALLFOLDER][~]DOTNET_ENVIRONMENT=Production" />
+                     Type="multiString" Value="DISPATCH_LOG_DIR=[CommonAppDataFolder]Dispatch\logs[~]DOTNET_ENVIRONMENT=Production" />
 
       <fw:FirewallException Id="FwSmtp25" Name="Dispatch SMTP 25" Port="25" Protocol="tcp" Scope="any" />
       <fw:FirewallException Id="FwSmtp587" Name="Dispatch SMTP 587" Port="587" Protocol="tcp" Scope="any" />

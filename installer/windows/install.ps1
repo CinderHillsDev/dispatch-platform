@@ -44,10 +44,11 @@ Write-Host "==> Publishing the service to $InstallDir"
 dotnet publish "$Source\src\Dispatch.Service" -c Release -o $InstallDir
 
 Write-Host "==> Writing config to $DataDir"
-# Logs and the at-rest encryption key (.dispatch-key) live under Program Files (admin-write-only), not the
-# broadly-readable ProgramData. The service runs as LocalSystem so it can write there. The DB connection
-# string (appsettings.json) and the spool stay under the content root in ProgramData.
-New-Item -ItemType Directory -Force "$DataDir\spool", "$InstallDir\logs" | Out-Null
+New-Item -ItemType Directory -Force "$DataDir\spool", "$DataDir\logs" | Out-Null
+# Lock the data dir down: ProgramData is world-readable by default, so strip inherited ACEs and grant only
+# SYSTEM + Administrators (inheritable). This protects the connection string, spool (message bodies), the
+# .dispatch-key encryption key, and logs together. The service runs as LocalSystem (SYSTEM), so it keeps access.
+& icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C | Out-Null
 $smtpJson = ($SmtpPorts -split ',' | ForEach-Object { $_.Trim() }) -join ', '
 $config = @{
   ConnectionStrings = @{ DispatchLog = $SqlConnection }
@@ -64,9 +65,9 @@ $bin = "`"$InstallDir\Dispatch.Service.exe`" --contentRoot `"$DataDir`""
 sc.exe stop Dispatch 2>$null | Out-Null
 sc.exe delete Dispatch 2>$null | Out-Null
 New-Service -Name Dispatch -BinaryPathName $bin -DisplayName "Dispatch SMTP Relay" -StartupType Automatic | Out-Null
-# Logs and the encryption key live under Program Files (admin-write-only); the service runs as LocalSystem
-# so it can write there. DISPATCH_KEY_DIR overrides the default key location (the content root in ProgramData).
-$envBlock = [string[]]@("DISPATCH_LOG_DIR=$InstallDir\logs", "DISPATCH_KEY_DIR=$InstallDir", "DOTNET_ENVIRONMENT=Production")
+# Logs live under the ProgramData data dir (the service CWD is system32). The encryption key defaults to the
+# content root, which is this same data dir. The dir is ACL-locked above so neither is readable by other users.
+$envBlock = [string[]]@("DISPATCH_LOG_DIR=$DataDir\logs", "DOTNET_ENVIRONMENT=Production")
 New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\Dispatch" -Name Environment -PropertyType MultiString -Value $envBlock -Force | Out-Null
 
 Write-Host "==> Opening firewall ports"

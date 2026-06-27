@@ -46,6 +46,7 @@ Status values: `queued` → `processing` → `delivered` | `retrying` | `failed`
 ## HTTPS
 
 Enable the HTTPS listener under **Settings → HTTP API** (port 8026). It uses the shared
-[TLS certificate](/configuration/tls-certificate/) that also secures SMTP STARTTLS. Once clients are
-migrated you can turn the plain-HTTP listener off entirely. The API is gated by API keys and a
+[TLS certificate](/configuration/tls-certificate/) that also secures SMTP STARTTLS — and if you
+haven't configured one, it falls back to an auto-generated self-signed cert, so HTTPS works as soon as
+you flip the toggle. Once clients are migrated you can turn the plain-HTTP listener off entirely. The API is gated by API keys and a
 source-IP allow-list (closed to private ranges by default) — see [Security](/security/).

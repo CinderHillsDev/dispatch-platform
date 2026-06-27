@@ -30,12 +30,14 @@ Denied connections are logged with their source IP.
 
 - **Secrets at rest** — provider API keys, SMTP credentials, and the TLS cert password are encrypted
   with **AES-256-GCM** using a random 256-bit key in a `.dispatch-key` file (mode 600 on Linux/macOS;
-  an inheritance-stripped ACL granting only SYSTEM, Administrators, and the service account on Windows,
-  where it lives in the Program Files install dir). The key is **portable** — a database backup can be
-  restored on a different host by also restoring the key file. See [Backup & restore](/operations/backup-restore/).
+  on Windows it sits in the data dir under `C:\ProgramData\Dispatch`, which the installer ACL-locks to
+  SYSTEM + Administrators only — covering the connection string, spool, key, and logs together). The key
+  is **portable** — a database backup can be restored on a different host by also restoring the key file.
+  See [Backup & restore](/operations/backup-restore/).
 - **Shared TLS certificate** — one generated or uploaded cert secures both SMTP STARTTLS and the
-  HTTPS API (TLS 1.2+). The dashboard uses its own cert (configured or auto self-signed). See
-  [TLS certificate](/configuration/tls-certificate/).
+  HTTPS API (TLS 1.2+). If none is configured, both fall back to an auto-generated self-signed cert, so
+  TLS is available out of the box (the dashboard self-signs the same way). Configure a CA-issued cert to
+  remove untrusted-cert warnings. See [TLS certificate](/configuration/tls-certificate/).
 
 ## Health & metrics
 

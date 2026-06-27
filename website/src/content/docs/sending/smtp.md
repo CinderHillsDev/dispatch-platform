@@ -31,9 +31,11 @@ and 587 are free. Otherwise Dispatch can't take them and falls back to 2525.
 
 ## STARTTLS
 
-The listener upgrades to TLS via **STARTTLS** when a [TLS certificate](/configuration/tls-certificate/)
-is configured — the same shared certificate also secures the HTTPS API. Until a cert is set, the
-listener accepts plaintext (and, by default, refuses AUTH over an unencrypted connection).
+The listener offers **STARTTLS** out of the box: if you haven't configured a
+[shared TLS certificate](/configuration/tls-certificate/), it uses an auto-generated self-signed one
+(the same cert the HTTPS API and dashboard use). Configure or upload a CA-issued shared cert to replace
+it so senders trust it. By default AUTH is only offered after STARTTLS, so credentials are never sent
+in the clear.
 
 ## Access control
 
