@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Dispatch SMTP Relay</title>
-  <meta name="description" content="Self-hosted .NET SMTP relay — forward mail from your apps to any provider, with a durable spool and a live dashboard." />
+  <meta name="description" content="Self-hosted .NET SMTP relay — forward mail from your apps to a dozen providers, capture mail locally for testing, with a durable spool and a live dashboard." />
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-950 text-gray-300 antialiased selection:bg-sky-500/30">
@@ -52,28 +52,36 @@
       <h2 class="text-center text-sm font-semibold uppercase tracking-widest text-sky-400">What it does</h2>
       <div class="mt-8 grid gap-5 sm:grid-cols-2">
         <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
-          <h3 class="font-semibold text-white">Any provider</h3>
-          <p class="mt-2 text-sm leading-relaxed text-gray-400">Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Azure, or any SMTP smart host.</p>
+          <h3 class="font-semibold text-white">A dozen providers</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure — or any SMTP smart host. CC/BCC, attachments, and custom headers everywhere.</p>
         </div>
         <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
           <h3 class="font-semibold text-white">Two ways in</h3>
-          <p class="mt-2 text-sm leading-relaxed text-gray-400">Accept mail over SMTP (25 / 587 / 2525) or a Mailgun-compatible HTTP API.</p>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Accept mail over SMTP (25 / 587 / 2525, with STARTTLS) or a Mailgun-compatible HTTP/HTTPS API with per-key tokens.</p>
+        </div>
+        <div class="rounded-xl border border-sky-800/60 bg-sky-950/20 p-6">
+          <h3 class="font-semibold text-white">📥 Local Inbox <span class="text-xs font-normal text-sky-400">— for developers</span></h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Test what your app actually sends without delivering anything. Point it at Dispatch, set the relay to <b class="text-gray-200">Local</b>, and inspect every message — subject, headers, To/Cc/Bcc, rendered HTML &amp; text, and attachments — right in the dashboard. A built-in mail trap, no third-party service.</p>
         </div>
         <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
           <h3 class="font-semibold text-white">Durable spool</h3>
-          <p class="mt-2 text-sm leading-relaxed text-gray-400">Instant <code class="text-sky-300">250 OK</code> to a local queue — mail keeps flowing even if the database is down.</p>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Instant <code class="text-sky-300">250 OK</code> to a local queue — mail keeps flowing even if the database is down. Auto-retry with back-off; retry failures from the UI.</p>
+        </div>
+        <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
+          <h3 class="font-semibold text-white">Smart routing</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Route by sender/recipient domain to different providers, with a catch-all default relay and a simulate tool to test rules before they go live.</p>
         </div>
         <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
           <h3 class="font-semibold text-white">Live dashboard</h3>
-          <p class="mt-2 text-sm leading-relaxed text-gray-400">Counters, throughput, a searchable message log, and one-click provider testing.</p>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Real-time counters and throughput, a searchable/filterable message log with sandboxed HTML preview, daily reports, and one-click provider testing.</p>
         </div>
         <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
-          <h3 class="font-semibold text-white">Credentials in one place</h3>
-          <p class="mt-2 text-sm leading-relaxed text-gray-400">Rotate a key once, not in every app — and watch every message in one log.</p>
+          <h3 class="font-semibold text-white">Secure by default</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">HTTPS-only dashboard, a shared TLS cert for SMTP + the API, bcrypt-hashed passwords &amp; API keys, encrypted secrets at rest, and CIDR allow-lists so it's never an open relay.</p>
         </div>
         <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-6">
-          <h3 class="font-semibold text-white">Self-hosted</h3>
-          <p class="mt-2 text-sm leading-relaxed text-gray-400">Windows &amp; Linux installers, or a multi-arch Docker image. Your servers, your data.</p>
+          <h3 class="font-semibold text-white">Deploy anywhere</h3>
+          <p class="mt-2 text-sm leading-relaxed text-gray-400">Windows &amp; Linux installers (bundled SQL), a multi-arch Docker image, or a ready-to-import <a href="appliance.html" class="text-sky-400 hover:text-sky-300">virtual appliance</a> for Hyper-V, VMware, KVM &amp; Proxmox. Plus <code class="text-sky-300">/health</code> and Prometheus <code class="text-sky-300">/metrics</code>.</p>
         </div>
       </div>
     </section>

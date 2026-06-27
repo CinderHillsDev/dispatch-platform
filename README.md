@@ -9,7 +9,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/chrismuench/Dispatch-SMTP-Relay)](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](#installation)
 
-Point your applications and devices at Dispatch over SMTP (port 2525 by default; 25/587 for production). Dispatch queues every message durably and forwards it to Mailgun, SendGrid, Amazon SES, Postmark, Azure Communication Services, or any SMTP smart host — with a live web dashboard to monitor, configure, and troubleshoot everything.
+Point your applications and devices at Dispatch over SMTP (port 2525 by default; 25/587 for production) or a Mailgun-compatible HTTP API. Dispatch queues every message durably and forwards it to any of a dozen providers — Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services — or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
 
 ![Dispatch Dashboard Screenshot](docs/images/dashboard.png)
 
@@ -49,19 +49,24 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 | | |
 |---|---|
 | 📨 **SMTP listener** | Configurable ports (2525 by default; set 25/587 for production); STARTTLS, AUTH; app-layer CIDR allow-list; denied connections logged |
-| 🌐 **HTTP ingestion API** | `POST /api/v1/messages` on port 8025; multipart or JSON; API key auth; Mailgun-compatible |
+| 🌐 **HTTP ingestion API** | `POST /api/v1/messages` on port 8025 (plain HTTP) with optional HTTPS on 8026; multipart or JSON; per-key API tokens with rate limiting; Mailgun-compatible |
+| 📥 **Local Inbox** | Capture-and-inspect mailbox for developers — point an app at Dispatch, set the relay to **Local**, and view every message (subject, headers, To/Cc/Bcc, HTML/text body, attachments) in the dashboard without sending anything externally |
 | ⚡ **Instant 250 OK** | Message written to spool directory before acknowledging sender — no DB or network on the hot path |
 | 📁 **Spool queue** | Local `.eml` files are the durable queue; survive crashes, restarts, and SQL outages |
-| 🔀 **Relay routing** | Named relay configs; recipient/sender routing rules; default relay catch-all; simulate tool |
-| ☁️ **Provider support** | Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Azure Communication Services, generic SMTP, plus Local (developer capture) mode |
+| 🔀 **Relay routing** | Named relay configs; sender/recipient domain routing rules (priority + specificity); default relay catch-all; simulate tool |
+| ☁️ **Provider support** | 11 providers — Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services, generic SMTP — plus Local (developer capture) mode; all support CC/BCC, multiple recipients, custom headers, and attachments |
 | 🔄 **Auto-retry** | Exponential back-off (30 s → 5 min → 30 min); failed messages in `spool/failed/` with retry-from-UI |
-| 🖥️ **Web UI** | Embedded React dashboard; no separate web server needed |
-| 📊 **Message log** | After-the-fact history in SQL Server; searchable and filterable |
+| 🖥️ **Web UI** | Embedded React dashboard with live (SignalR) updates; no separate web server needed |
+| 📊 **Message log & reports** | After-the-fact history in SQL Server — searchable/filterable by status, date, relay, rule, domain, subject, tag, API key; daily aggregate reports with per-relay breakdown; sandboxed HTML body preview |
 | 🧪 **Provider testing** | Send a real test email from the settings page; watch the relay log live |
-| 🗑️ **Auto-purge** | Time-based retention + size-based pressure purge (triggers at 9.5 GB, target 9.0 GB) |
-| 🔒 **Security** | Encrypted credential storage; required admin password (set at install); dashboard/API gated by auth, SMTP limited to private ranges by default |
+| 🔐 **Shared TLS certificate** | One generated or uploaded cert secures both SMTP STARTTLS and the HTTPS API; managed in **Settings → TLS certificate** |
+| 📈 **Health & metrics** | `GET /health` (JSON: DB reachability, disk, spool state) and a Prometheus `GET /metrics` — both served only on the dashboard port and gated by its IP allow-list; no login token, and metrics expose only operational counters (no secrets or message content) |
+| 🗑️ **Auto-purge** | Time-based retention + size-based pressure purge (triggers at 9.5 GB, target 9.0 GB); disk-pressure intake throttling |
+| 🔒 **Security** | Encrypted credential storage (AES-256-GCM / Windows DPAPI); bcrypt-hashed admin password + API keys; per-IP login throttle; audit log; dashboard/API gated by auth, SMTP limited to private ranges by default |
 | 🪟 **Windows** | Installs as a Windows Service; MSI + bundled SQL Express bootstrapper with firewall rules |
-| 🐧 **Linux** | Runs as a systemd unit; interactive bash installer |
+| 🐧 **Linux** | Runs as a systemd unit; interactive bash installer (bundled or external SQL) |
+| 🐳 **Docker** | Multi-arch image (amd64 + arm64); `docker compose up` brings up Dispatch + SQL |
+| 📦 **Virtual appliance** | Ready-to-import Ubuntu 24.04 VM for Hyper-V (VHDX), VMware (OVA), and KVM/Proxmox (qcow2) — SQL + Dispatch preinstalled |
 | ⬆️ **Upgrades** | In-place MSI/major upgrade with additive schema migrations; config + history preserved (manual queue drain available) |
 
 ---
@@ -140,6 +145,18 @@ is created/migrated automatically on first start. The default source-IP allow-li
 (dashboard + API allow all and are gated by the password / API keys; the SMTP listener accepts loopback
 and private/RFC1918 ranges so it isn't an open relay) — tighten them in **Settings**.
 
+### Virtual appliance
+
+Prefer not to install anything? Download a ready-to-run **Ubuntu 24.04 + SQL Server + Dispatch** VM and import it — power on, and the dashboard comes up. Each release ships the same image for every hypervisor:
+
+| Hypervisor | File | Import helper |
+|---|---|---|
+| **Hyper-V** | `dispatch-appliance-<ver>-x64.vhdx.zip` | `Import-DispatchAppliance.ps1` |
+| **VMware** (vSphere/ESXi/Workstation/Fusion) | `dispatch-appliance-<ver>-x64.ova` | native OVF import |
+| **KVM/libvirt & Proxmox** | `dispatch-appliance-<ver>-x64.qcow2` | `import-libvirt.sh` / `import-proxmox.sh` |
+
+On first boot it generates a unique SQL SA password, TLS cert, and encryption key. See the [appliance guide](https://chrismuench.github.io/Dispatch-SMTP-Relay/appliance.html) for one-command import, logins, and setting a static IP with the baked-in `dispatch-set-ip` helper.
+
 ---
 
 ## Quick Start
@@ -169,6 +186,10 @@ curl -X POST http://localhost:8025/api/v1/messages \
 ```
 
 Supports `multipart/form-data` (with file attachments) and `application/json`. The API is intentionally similar to Mailgun's `/messages` endpoint.
+
+### Testing app email with the Local Inbox
+
+Building an app and want to see what it actually sends — without spamming real inboxes? Create a relay with the **Local** provider (or route a test domain to it), point your app at Dispatch, and every message is **captured, not delivered**. Open **Local Inbox** in the dashboard to inspect the subject, headers, To/Cc/Bcc, the rendered HTML and plain-text bodies (HTML shown in a sandboxed iframe), and download any attachments. It's a built-in mail trap for development and CI — no third-party service to wire up.
 
 ---
 
@@ -202,7 +223,7 @@ It prompts for a new password (enforcing the same policy) and exits — no servi
 | Allowed IPs / CIDRs | loopback + private ranges | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` (so it isn't an open relay); add your subnet, clear to allow all; denied connections are logged |
 | Require AUTH | false | Enable to require username/password from senders |
 | Max message size | 0 (no limit) | Effective limit is auto-capped to the active provider's maximum |
-| TLS certificate | — | Path to PFX file for STARTTLS support |
+| TLS certificate | — | Shared cert for STARTTLS (and the HTTPS API) — generate or upload one under **Settings → TLS certificate** |
 
 ### Relay Providers
 
@@ -215,9 +236,11 @@ It prompts for a new password (enforcing the same policy) and exits — no servi
 | **Resend** | API Key |
 | **SparkPost** | API Key (Region optional) |
 | **SMTP2GO** | API Key |
+| **Maileroo** | Sending Key |
+| **Bird** | API credentials |
 | **Azure Communication Services** | Connection String, Sender Address |
 | **SMTP (generic)** | Host, Port, Username, Password, TLS mode |
-| **Local (developer mode)** | — captures mail to the spool; never delivers externally |
+| **Local (developer mode)** | — captures mail to the **Local Inbox**; never delivers externally |
 
 ### Retention & storage safety
 
@@ -243,6 +266,8 @@ These retention periods and the size thresholds are editable under **Settings �
 | [Resend](https://resend.com) | REST API |
 | [SparkPost](https://www.sparkpost.com) | REST API |
 | [SMTP2GO](https://www.smtp2go.com) | REST API |
+| [Maileroo](https://maileroo.com) | REST API |
+| [Bird](https://bird.com) | REST API |
 | [Azure Communication Services](https://azure.microsoft.com/en-us/products/communication-services) | SDK |
 | Any SMTP smart host | SMTP via MailKit (Office 365, Postfix, …) |
 
@@ -335,7 +360,7 @@ Dispatch-SMTP-Relay/
   src/
     Dispatch.Core/         # SMTP listener store, spool pipeline, worker pool, routing, purge, models
     Dispatch.Providers/    # Local, generic SMTP, Mailgun, SendGrid, Amazon SES, Postmark, Resend,
-                           #   SparkPost, SMTP2GO, Azure provider implementations
+                           #   SparkPost, SMTP2GO, Maileroo, Bird, Azure provider implementations
     Dispatch.Data/         # SQL schema/migrations, Dapper repositories, encryption
     Dispatch.Web/          # REST API, SignalR hub, ingestion API, auth, embedded React UI
     Dispatch.UI/           # React + Vite SPA (built, then embedded into Dispatch.Web)
@@ -380,7 +405,7 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 ## Security
 
-The admin web UI is **HTTPS-only** — it uses your configured TLS certificate (`WebUi:TlsCertPath` in `appsettings.json`) or, if none is set, an auto-generated self-signed certificate persisted across restarts. It never serves plain HTTP. For production, configure a trusted cert (and ideally a reverse proxy). The ingestion API stays HTTP (gated by API keys) for devices that can't do TLS. All listeners enforce access via configurable IP/CIDR allow-lists at the application layer (dashboard and API allow all by default — gated by the admin password and API keys respectively; the SMTP listener is limited to loopback + private ranges so it isn't an open relay); denied connections are logged with the source IP. At rest: API keys and the admin password are **bcrypt-hashed**; provider secrets and SMTP credentials are **encrypted** (AES-256-GCM on Linux/macOS, Windows DPAPI). If you find a security issue please report it privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new) rather than a public issue.
+The admin web UI is **HTTPS-only** — it uses your configured TLS certificate (`WebUi:TlsCertPath` in `appsettings.json`) or, if none is set, an auto-generated self-signed certificate persisted across restarts. It never serves plain HTTP. For production, configure a trusted cert (and ideally a reverse proxy). The ingestion API listens on plain HTTP (port 8025) for devices that can't do TLS, and can **additionally** serve HTTPS (port 8026) using a shared TLS certificate that also secures SMTP STARTTLS — plain HTTP can be turned off entirely once clients are migrated (**Settings → HTTP API**). All listeners enforce access via configurable IP/CIDR allow-lists at the application layer (dashboard and API allow all by default — gated by the admin password and API keys respectively; the SMTP listener is limited to loopback + private ranges so it isn't an open relay); denied connections are logged with the source IP, and repeated failed dashboard logins trigger a per-IP throttle. At rest: API keys and the admin password are **bcrypt-hashed** (cost 12); provider secrets, SMTP credentials, and TLS cert passwords are **encrypted** (AES-256-GCM on Linux/macOS, Windows DPAPI). If you find a security issue please report it privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new) rather than a public issue.
 
 ---
 
