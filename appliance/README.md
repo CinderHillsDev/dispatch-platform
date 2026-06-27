@@ -10,7 +10,7 @@ Each release ships the same image in three formats (plus one-command import help
 | **VMware** (vSphere/ESXi/Workstation/Fusion) | `dispatch-appliance-<ver>-x64.ova` | native OVF import |
 | **KVM/libvirt & Proxmox** | `dispatch-appliance-<ver>-x64.qcow2` | `import-libvirt.sh` / `import-proxmox.sh` |
 
-All are **Gen2/UEFI**, ~4 GB RAM recommended (SQL Server needs ~2 GB), DHCP networking.
+All are **Gen2/UEFI**, ~4 GB RAM recommended (SQL Server needs ~2 GB). They boot on DHCP, but a relay your apps point at should have a **static IP** — set one after first boot (see [Static IP](#static-ip)).
 
 ## Hyper-V
 
@@ -66,7 +66,7 @@ SSH is enabled with password auth (`ssh ubuntu@<vm-ip>`). The dashboard password
 
 ## Static IP
 
-DHCP is the default. A baked-in helper, **`dispatch-set-ip`**, pins an address for you — it auto-detects the NIC, writes the netplan file (mode 600), applies it, and prints the new dashboard URL:
+It boots on DHCP, but a relay your apps point at should have a fixed address — set one early. A baked-in helper, **`dispatch-set-ip`**, pins an address for you — it auto-detects the NIC, writes the netplan file (mode 600), applies it, and prints the new dashboard URL:
 
 ```bash
 # interactive — just answer the prompts:

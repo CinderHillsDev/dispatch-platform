@@ -105,7 +105,7 @@ cd dispatch-*-linux</code></pre>
       <p class="mt-2 text-gray-400">
         A prebuilt <b class="text-gray-200">Ubuntu 24.04 + SQL Server + Dispatch</b> VM. Nothing to install — import the
         image for your hypervisor, power on, and on first boot it configures SQL and starts Dispatch with unique
-        per-VM secrets. Recommended: <b class="text-gray-200">2 vCPU / 4 GB RAM</b>, a DHCP network. All images are Gen2/UEFI.
+        per-VM secrets. Recommended: <b class="text-gray-200">2 vCPU / 4 GB RAM</b>, and a <b class="text-gray-200">static IP</b> (it boots on DHCP, but a relay your apps point at wants a fixed address). All images are Gen2/UEFI.
       </p>
       <div class="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-sm">
         <div class="rounded-lg border border-gray-800 bg-gray-900/40 p-3"><div class="font-semibold text-white">Hyper-V</div><div class="text-xs text-gray-500">.vhdx</div></div>
