@@ -136,6 +136,50 @@ jobs:
           }
           Write-Host "Dispatch /health OK"
 
+      # Assert the installer locked down the data dir (the WriteAppSettings.js CA runs icacls): inheritance
+      # disabled and no non-admin principals, so the connection string, spool (message bodies), the
+      # .dispatch-key encryption key, and logs aren't readable by other local users.
+      - name: Verify the data dir is locked down (ACL)
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        shell: pwsh
+        run: |
+          $dir = "$env:ProgramData\Dispatch"
+          $acl = Get-Acl $dir
+          if (-not $acl.AreAccessRulesProtected) { throw "ACL inheritance is NOT disabled on $dir" }
+          $bad = $acl.Access | Where-Object {
+            $_.AccessControlType -eq 'Allow' -and ($_.IdentityReference.Value -match '\\Users$|Everyone|Authenticated Users')
+          }
+          if ($bad) { throw "$dir is accessible to non-admins: $(($bad.IdentityReference.Value) -join ', ')" }
+          if (-not (Test-Path "$dir\.dispatch-key")) { throw ".dispatch-key was not created in $dir" }
+          Write-Host "OK: $dir locked to SYSTEM + Administrators; .dispatch-key present"
+          icacls $dir
+
+      # Assert SMTP STARTTLS is offered out of the box (the self-signed fallback). Probe the standard ports
+      # and the 2525 fallback; at least one is bound. EHLO must advertise STARTTLS.
+      - name: Verify SMTP STARTTLS is offered
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        shell: pwsh
+        run: |
+          $ok = $false
+          foreach ($port in 25,587,2525) {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            try { $tcp.Connect('127.0.0.1', $port) } catch { $tcp.Dispose(); continue }
+            try {
+              $stream = $tcp.GetStream(); $stream.ReadTimeout = 5000
+              $reader = New-Object System.IO.StreamReader($stream)
+              $writer = New-Object System.IO.StreamWriter($stream); $writer.NewLine = "`r`n"; $writer.AutoFlush = $true
+              $banner = $reader.ReadLine()
+              $writer.WriteLine("EHLO ci.test")
+              $caps = @()
+              while ($true) { $line = $reader.ReadLine(); if ($null -eq $line) { break }; $caps += $line; if ($line -notmatch '^250-') { break } }
+              Write-Host "port ${port}: $banner :: $($caps -join ' | ')"
+              if ($caps -match 'STARTTLS') { try { $writer.WriteLine('QUIT') } catch {}; $ok = $true }
+            } catch { Write-Host "port ${port}: $($_.Exception.Message)" } finally { $tcp.Dispose() }
+            if ($ok) { break }
+          }
+          if (-not $ok) { throw "No SMTP port advertised STARTTLS (the self-signed fallback should enable it)" }
+          Write-Host "OK: STARTTLS advertised"
+
   # Builds the self-contained Linux tarball and uploads it as a workflow artifact (downloadable from
   # the Actions run page). This needs NO tag and creates NO release — releases are only for permanent
   # public download links. Grab "dispatch-linux-tarball" from the run to test install.sh --prebuilt.
@@ -227,6 +271,18 @@ jobs:
             echo "health check failed"; exit 1
           fi
           curl -fsSk https://localhost:8420/health; echo "  <- /health OK"
+
+          # Validate the SMTP listener bound a privileged port (CAP_NET_BIND_SERVICE) and that STARTTLS
+          # negotiates end-to-end using the self-signed fallback cert. openssl actually completes the TLS
+          # handshake, so a missing/broken cert fails here. Probe 25/587 then the 2525 fallback.
+          echo "=== STARTTLS check ==="
+          tls_ok=0
+          for p in 25 587 2525; do
+            if echo QUIT | openssl s_client -starttls smtp -connect 127.0.0.1:$p -crlf 2>/dev/null | grep -q 'BEGIN CERTIFICATE'; then
+              echo "STARTTLS negotiated on port $p"; tls_ok=1; break
+            fi
+          done
+          [ "$tls_ok" = 1 ] || { echo "STARTTLS negotiation failed on all SMTP ports"; exit 1; }
 
   linux-installer:
     runs-on: ubuntu-latest
