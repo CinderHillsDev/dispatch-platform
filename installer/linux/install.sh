@@ -193,7 +193,10 @@ generate_cert() {
 [[ "$INSTALL_SQL" == "1" ]] && install_sql_server
 [[ -n "$SQL_CONNECTION" ]] || { echo "Provide --sql-connection, or use --install-sql." >&2; exit 1; }
 
-if [[ -z "$ADMIN_PASSWORD" ]]; then
+# Prompt for the admin password only when omitted AND running interactively. In a non-interactive run
+# (e.g. baking the appliance image) leave it unset — the dashboard requires the admin password to be set on
+# first login, so an empty seed is safe and avoids a hang/failure on a missing TTY.
+if [[ -z "$ADMIN_PASSWORD" && -t 0 ]]; then
   read -rsp "Set the dashboard admin password: " ADMIN_PASSWORD; echo
   [[ -n "$ADMIN_PASSWORD" ]] || { echo "Admin password is required." >&2; exit 1; }
 fi

@@ -25,9 +25,7 @@ test -x /opt/mssql/bin/mssql-conf || { echo "ERROR: mssql-server did not install
 test -x /opt/mssql-tools18/bin/sqlcmd || { echo "ERROR: mssql-tools18 did not install" >&2; exit 1; }
 
 echo "==> Stage Dispatch (enabled, not started; SA password finalized on first boot)"
-# Run with bash -x so every install.sh line is traced into our stderr log (provision's set -e propagates a
-# real failure to virt-customize, and build-appliance.sh dumps this trace).
-bash -x "$STAGE/install.sh" --prebuilt "$STAGE/bin" --no-start \
+bash "$STAGE/install.sh" --prebuilt "$STAGE/bin" --no-start \
   --sql-connection "Server=localhost;Database=DispatchLog;User Id=sa;Password=__SA_PASSWORD__;TrustServerCertificate=True;Encrypt=True"
 
 echo "==> First-boot unit + start ordering"
