@@ -82,7 +82,8 @@ jobs:
           # -cpu host requires KVM; under the TCG fallback use a TCG-compatible CPU model.
           if [ -e /dev/kvm ]; then echo "KVM available"; ACCEL="-enable-kvm -cpu host"; else echo "KVM NOT available — TCG (slow)"; ACCEL="-accel tcg -cpu max"; fi
           # shellcheck disable=SC2086
-          sudo qemu-system-x86_64 -machine q35 $ACCEL -m 4096 -smp 2 \
+          sudo qemu-system-x86_64 -machine q35 $ACCEL -m 4096 -smp 2 -no-reboot \
+            -global isa-debugcon.iobase=0x402 -debugcon file:ovmf-debug.log \
             -drive if=pflash,format=raw,readonly=on,file="$code" \
             -drive if=pflash,format=raw,file=vars.fd \
             -drive file=dispatch-appliance.vhdx,format=vhdx,if=virtio \
@@ -90,13 +91,15 @@ jobs:
             -display none -serial file:console.log -daemonize 2>qemu.err \
             || { echo "=== qemu failed to launch ==="; cat qemu.err; exit 1; }
           ok=0
-          for _ in $(seq 1 120); do         # up to 10 min: boot + SQL setup + DB init + service start
-            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+          for _ in $(seq 1 90); do          # up to ~8 min (KVM boot is fast; this is mostly SQL first-run)
+            if curl -fsSk -m 3 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
             sleep 5
           done
           if [ "$ok" != 1 ]; then
             echo "=== qemu.err ==="; cat qemu.err 2>/dev/null || true
-            echo "=== serial console ==="; cat console.log 2>/dev/null || true
+            echo "=== OVMF firmware debug (boot device selection) ==="; tail -n 120 ovmf-debug.log 2>/dev/null || echo "(no OVMF debug output)"
+            echo "=== serial console ==="; cat console.log 2>/dev/null || echo "(serial console empty)"
+            echo "=== qemu still running? ==="; pgrep -a qemu-system-x86_64 || echo "(qemu not running)"
             echo "appliance did not serve /health within the timeout"; exit 1
           fi
           echo "appliance /health OK"

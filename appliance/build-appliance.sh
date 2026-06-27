@@ -77,6 +77,12 @@ virt-customize -a "$WORK/disk.qcow2" \
   --copy-in "$STAGE:/opt" \
   --run "$REPO/appliance/provision.sh"
 
+echo "==> Verifying the image (bootloader + key files present)"
+echo "ESP /EFI/BOOT:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null || echo "  (none!)"
+echo "ESP /EFI/ubuntu:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/ubuntu 2>/dev/null || echo "  (none!)"
+virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null | grep -qi '^BOOTX64.EFI$' \
+  || { echo "ERROR: UEFI fallback bootloader \EFI\BOOT\BOOTX64.EFI missing — image would not boot on empty-NVRAM firmware" >&2; exit 1; }
+
 echo "==> Converting to a Gen2/UEFI dynamic VHDX"
 qemu-img convert -p -f qcow2 -O vhdx -o subformat=dynamic "$WORK/disk.qcow2" "$OUT"
 
