@@ -18,7 +18,7 @@ before you ever send for real.
 1. Go to **Relays** and create a relay (or edit one) with the provider set to **Local**. Either make
    it the default relay, or add a [routing rule](/routing/) that sends a test domain (e.g.
    `*@test.local`) to it.
-2. Point your app at Dispatch over [SMTP](/sending/smtp/) (`2525`) or the
+2. Point your app at Dispatch over [SMTP](/sending/smtp/) (`25`/`587`) or the
    [HTTP API](/sending/http-api/) (`8025`), exactly as you would in production.
 3. Send mail. Each message is written to the capture spool instead of going to a provider.
 

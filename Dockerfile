@@ -41,8 +41,10 @@ COPY --from=build /app ./
 ENV DISPATCH_LOG_DIR=/var/log/dispatch
 ENV DISPATCH_KEY_DIR=/app/.dispatch-spool
 RUN mkdir -p /var/log/dispatch /app/.dispatch-spool
-# Dashboard (8420), ingestion API (8025), SMTP (2525) — all configurable in the dashboard afterwards.
-EXPOSE 8420 8025 2525
+# Dashboard (8420), ingestion API (8025), SMTP (25 & 587) — all configurable in the dashboard afterwards.
+# The container runs as root so it can bind the privileged SMTP ports; the listener falls back to 2525 only
+# if 25 is unavailable.
+EXPOSE 8420 8025 25 587
 # Report container health from the unauthenticated /health endpoint. The dashboard is HTTPS-only with a
 # self-signed cert by default, so use https + -k. start-period covers first-run schema init + SQL connect.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=4 \

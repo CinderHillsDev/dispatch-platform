@@ -22,4 +22,10 @@ SQL schema is created and migrated automatically on first start.
 - The **virtual appliance** is a prebuilt Ubuntu VM with SQL + Dispatch already installed — import,
   power on, done.
 
+:::tip[Recommended]
+Dispatch listens on the standard SMTP ports **25** and **587**. Install it on a host with **no other
+SMTP software** (Postfix, Sendmail, Exim, …) so those ports are free — otherwise it falls back to
+**2525**. See [SMTP listener](/sending/smtp/).
+:::
+
 Already running? See [Upgrading](/deployment/upgrading/) for in-place upgrades.

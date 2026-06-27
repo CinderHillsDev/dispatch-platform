@@ -21,7 +21,7 @@ public static class ConfigDefaults
     /// <summary>The default key/value pairs, all non-encrypted. Values are stored verbatim (JSON for arrays).</summary>
     public static readonly IReadOnlyDictionary<string, string> Defaults = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
-        [ConfigKeys.ListenerPorts] = "[2525]",
+        [ConfigKeys.ListenerPorts] = "[25, 587]",   // standard SMTP ports; listener falls back to 2525 if 25 is taken/unprivileged
         [ConfigKeys.ListenerServerName] = "Dispatch",
         [ConfigKeys.ListenerAllowedCidrs] = PrivateRanges,
         [ConfigKeys.ListenerMaxMessageBytes] = "26214400",   // 25 MiB default ceiling (0 = no limit)

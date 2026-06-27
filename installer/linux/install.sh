@@ -5,7 +5,10 @@
 # Publishes the service, lays out config/data directories, and installs a systemd unit. Per spec §12.1 the
 # only things written to appsettings.json are the SQL connection string, the install-time admin-password
 # seed, and (optionally) the Web UI TLS cert — everything else lives in the SQL config table and is managed
-# from the dashboard after first run (default ports: SMTP 2525, dashboard 8420, API 8025).
+# from the dashboard after first run (default ports: SMTP 25 & 587, dashboard 8420, API 8025). The service
+# runs as the unprivileged 'dispatch' user but the systemd unit grants CAP_NET_BIND_SERVICE so it can bind
+# 25/587; if 25 is already taken the listener falls back to 2525 automatically.
+# Recommendation: install on a host with no other SMTP software (Postfix, Sendmail, Exim, …) so 25/587 are free.
 #
 # Usage:
 #   # Use an existing SQL Server / Azure SQL:
@@ -26,7 +29,7 @@
 #   --generate-cert        Generate a self-signed PFX and serve the dashboard over HTTPS (spec §17.2).
 #   --http-port <n>        Firewall/URL dashboard port (default 8420; change in the dashboard to differ).
 #   --api-port <n>         Firewall ingestion API port (default 8025).
-#   --smtp-ports <a,b>     Firewall SMTP ports (default 2525; set 25,587 in the dashboard for production).
+#   --smtp-ports <a,b>     Firewall SMTP ports (default 25,587; the listener falls back to 2525 if 25 is taken).
 #   --source <path>        Repo source root (default: two levels up from this script). Build-from-source mode.
 #   --prebuilt <dir>       Install pre-published self-contained binaries from <dir> instead of building from
 #                          source. Used by the release tarball; needs neither the .NET SDK nor Node.
@@ -43,7 +46,7 @@ CONFIG_DIR="$DATA_DIR"
 LOG_DIR="/var/log/dispatch"
 HTTP_PORT="8420"
 API_PORT="8025"
-SMTP_PORTS="2525"
+SMTP_PORTS="25,587"
 SQL_CONNECTION=""
 ADMIN_PASSWORD=""
 SOURCE_DIR=""

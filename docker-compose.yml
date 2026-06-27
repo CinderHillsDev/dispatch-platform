@@ -40,7 +40,8 @@ services:
     ports:
       - "8420:8420"   # dashboard
       - "8025:8025"   # ingestion API
-      - "2525:2525"   # SMTP
+      - "25:25"       # SMTP  (if host port 25 is busy, remap e.g. "2525:25")
+      - "587:587"     # SMTP submission
     volumes:
       - dispatch-spool:/app/.dispatch-spool
       - dispatch-logs:/var/log/dispatch

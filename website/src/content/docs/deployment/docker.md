@@ -27,7 +27,7 @@ Point the published image at your own SQL Server or Azure SQL:
 
 ```bash
 docker run -d --name dispatch \
-  -p 8420:8420 -p 8025:8025 -p 2525:2525 \
+  -p 8420:8420 -p 8025:8025 -p 25:25 -p 587:587 \
   -e ConnectionStrings__DispatchLog="Server=<host>,1433;Database=DispatchLog;User Id=sa;Password=<pw>;TrustServerCertificate=True;Encrypt=True" \
   -e AdminPassword="<DashboardPassword!>" \
   -v dispatch-spool:/app/.dispatch-spool \
@@ -45,7 +45,7 @@ automatically on first start.
 |---|---|
 | 8420 | Dashboard (HTTPS) |
 | 8025 | HTTP API |
-| 2525 | SMTP listener |
+| 25, 587 | SMTP listener (the container runs as root, so it binds the standard ports; if host 25 is busy, remap e.g. `-p 2525:25`) |
 
 ## Volumes
 

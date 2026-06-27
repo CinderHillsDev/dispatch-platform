@@ -7,7 +7,7 @@ sidebar:
 
 | Service | Default port | Protocol | Notes |
 |---|---|---|---|
-| SMTP listener | `2525` | SMTP (plaintext / STARTTLS) | Set `25`/`587` for production |
+| SMTP listener | `25`, `587` | SMTP (plaintext / STARTTLS) | Falls back to `2525` if 25 is in use or unprivileged |
 | HTTP ingestion API | `8025` | HTTP | API-key gated; can be disabled once on HTTPS |
 | HTTPS ingestion API | `8026` | HTTPS | Off by default; uses the shared TLS cert |
 | Dashboard | `8420` | HTTPS | Self-signed by default; HTTPS-only |

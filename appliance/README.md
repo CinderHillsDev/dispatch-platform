@@ -53,7 +53,7 @@ https://<vm-ip>:8420
 
 (The VM gets its IP via DHCP — see it in Hyper-V Manager or with `ip a` on the console.) It's a self-signed certificate, so accept the browser warning. **Set the admin password on the first login.**
 
-Default ports: SMTP **2525**, ingestion API **8025**, dashboard **8420** — change them in the dashboard (e.g. SMTP 25/587 for production).
+Default ports: SMTP **25** and **587**, ingestion API **8025**, dashboard **8420** — change them in the dashboard. (The appliance binds the standard SMTP ports out of the box; it falls back to **2525** only if 25 is somehow already in use.)
 
 ## Logins (there are two)
 

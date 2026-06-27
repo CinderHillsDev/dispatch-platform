@@ -16,7 +16,7 @@ cd Dispatch-SMTP-Relay
 docker compose up -d --build
 ```
 
-This starts Dispatch (dashboard `8420`, HTTP API `8025`, SMTP `2525`) plus a local SQL database. The
+This starts Dispatch (dashboard `8420`, HTTP API `8025`, SMTP `25` & `587`) plus a local SQL database. The
 schema is created automatically on first start.
 
 ## 2. Open the dashboard
@@ -33,7 +33,7 @@ Go to **Settings → Relay Provider**, pick your provider, and enter its credent
 
 ## 4. Send mail
 
-Point your application at `localhost:2525` over SMTP, or use the HTTP API:
+Point your application at `localhost:25` over SMTP, or use the HTTP API:
 
 ```bash
 # Create an API key first (Settings → API Keys), then:

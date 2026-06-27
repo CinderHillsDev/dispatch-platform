@@ -9,7 +9,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/chrismuench/Dispatch-SMTP-Relay)](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)](https://chrismuench.github.io/Dispatch-SMTP-Relay/deployment/overview/)
 
-Point your applications and devices at Dispatch over **SMTP** (port 2525 by default; 25/587 for production) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers — Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services — or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
+Point your applications and devices at Dispatch over **SMTP** (the standard ports **25** and **587** by default — it falls back to **2525** only if 25 is already taken) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers — Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services — or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
 
 ### 📚 **[Read the documentation →](https://chrismuench.github.io/Dispatch-SMTP-Relay/)**
 
@@ -66,7 +66,9 @@ docker compose up -d --build
 # dashboard → https://localhost:8420  (self-signed cert; default login password in docker-compose.yml)
 ```
 
-Then open **https://localhost:8420**, set the admin password, add a relay, and point your apps at `localhost:2525` (SMTP) or `localhost:8025` (HTTP API).
+Then open **https://localhost:8420**, set the admin password, add a relay, and point your apps at `localhost:25` (SMTP) or `localhost:8025` (HTTP API).
+
+> **Tip:** Dispatch listens on the standard SMTP ports **25** and **587**. Install it on a host with **no other SMTP software** (Postfix, Sendmail, Exim, …) so those ports are free — otherwise Dispatch falls back to **2525**.
 
 ➡️ Full guide: **[Quickstart](https://chrismuench.github.io/Dispatch-SMTP-Relay/start/quickstart/)** · **[How it works](https://chrismuench.github.io/Dispatch-SMTP-Relay/start/how-it-works/)**
 

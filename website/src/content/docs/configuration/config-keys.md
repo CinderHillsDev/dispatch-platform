@@ -13,7 +13,7 @@ In the **Restart?** column, "Yes" means changing the key requires a service rest
 
 | Key | Default | Restart? | Notes |
 | --- | --- | --- | --- |
-| `listener.ports` | `[2525]` | Yes | JSON int array; set `[25,587]` for production |
+| `listener.ports` | `[25, 587]` | Yes | JSON int array; listener falls back to 2525 if 25 can't be bound (in use / no privilege) |
 | `listener.server_name` | `"Dispatch"` | Yes | SMTP banner / HELO name |
 | `listener.allowed_cidrs` | loopback + RFC1918 | No | JSON string array; closed by default (not an open relay) |
 | `listener.max_message_bytes` | `26214400` (25 MiB) | No | per-message ceiling |

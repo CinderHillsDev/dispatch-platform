@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Spool;
@@ -40,7 +42,13 @@ public sealed class SmtpListenerService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var ports = _options.EffectivePorts;
+        var ports = ResolveBindablePorts(_options.EffectivePorts);
+        if (ports.Length == 0)
+        {
+            // Nothing bindable (already logged). Return without starting the SMTP server so the rest of the
+            // host (dashboard + ingestion API) keeps running — a missing SMTP port must never take it down.
+            return;
+        }
         var certificate = LoadCertificate();
 
         var optionsBuilder = new SmtpServerOptionsBuilder().ServerName(_options.ServerName);
@@ -95,8 +103,65 @@ public sealed class SmtpListenerService : BackgroundService
         {
             // normal shutdown
         }
+        catch (Exception ex)
+        {
+            // A bind failure here (e.g. a port was taken in the race between our probe and the actual bind)
+            // must NOT crash the host — by default an unhandled exception in a BackgroundService stops the
+            // whole app. Log and return so the dashboard + ingestion API stay up.
+            _log.LogError(ex, "SMTP listener failed to start — the dashboard and ingestion API are unaffected");
+            return;
+        }
 
         _log.LogInformation("SMTP listener stopped");
+    }
+
+    /// <summary>
+    /// Resolve the ports we can actually bind. We prefer the configured ports (25 + 587 by default), but
+    /// binding the privileged ports needs root / CAP_NET_BIND_SERVICE, and a port may already be taken by
+    /// another MTA. Each port is probed; unbindable ones are dropped with a warning. If port 25 was requested
+    /// but can't be bound (in use or no privilege), we fall back to the unprivileged 2525 so mail still flows.
+    /// </summary>
+    private int[] ResolveBindablePorts(int[] requested)
+    {
+        var result = new List<int>();
+        var dropped = new List<int>();
+        foreach (var p in requested)
+            (CanBind(p) ? result : dropped).Add(p);
+
+        foreach (var p in dropped)
+            _log.LogWarning("SMTP port {Port} is unavailable (already in use or insufficient privilege) — skipping", p);
+
+        // Fall back to 2525 only when port 25 was wanted but couldn't be bound, or nothing bound at all.
+        if ((dropped.Contains(25) || result.Count == 0)
+            && !result.Contains(ListenerOptions.FallbackPort)
+            && CanBind(ListenerOptions.FallbackPort))
+        {
+            _log.LogWarning("Falling back to SMTP port {Fallback} (port 25 unavailable)", ListenerOptions.FallbackPort);
+            result.Add(ListenerOptions.FallbackPort);
+        }
+
+        if (result.Count == 0)
+            _log.LogError("No SMTP port could be bound from [{Requested}] — the listener will not accept mail",
+                string.Join(", ", requested));
+
+        return [.. result];
+    }
+
+    /// <summary>Probe whether a TCP port can be bound. EACCES (privilege) and EADDRINUSE (in use) both surface
+    /// as <see cref="SocketException"/>, which is exactly what we treat as "unavailable".</summary>
+    private static bool CanBind(int port)
+    {
+        try
+        {
+            var probe = new TcpListener(IPAddress.Any, port);
+            probe.Start();
+            probe.Stop();
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
     }
 
     private X509Certificate2? LoadCertificate()

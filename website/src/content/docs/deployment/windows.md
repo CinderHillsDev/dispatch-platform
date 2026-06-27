@@ -13,7 +13,8 @@ bundled installer that:
    that instance already exists.
 2. Installs the Dispatch MSI.
 3. Installs and starts Dispatch as a **Windows Service**.
-4. Opens the firewall ports it needs (**2525**, **8025**, **8420**).
+4. Opens the firewall ports it needs (**25**, **587**, **8025**, **8420**). The service runs with enough
+   privilege to bind the standard SMTP ports; it falls back to **2525** only if 25 is already in use.
 
 The `DispatchLog` database and schema are created on first service start.
 

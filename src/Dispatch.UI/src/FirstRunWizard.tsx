@@ -327,8 +327,9 @@ function Done({ onFinish }: { onFinish: () => void }) {
     <>
       <h2 style={h2}>You're all set 🎉</h2>
       <p style={p}>
-        Dispatch is ready. Point your apps at the SMTP listener (port 2525 by default) or the HTTP API,
-        and watch messages flow on the dashboard. You can change anything later under Relays, Routing, and Settings.
+        Dispatch is ready. Point your apps at the SMTP listener (ports 25 and 587 by default, or 2525 if 25
+        is already in use) or the HTTP API, and watch messages flow on the dashboard. You can change anything
+        later under Relays, Routing, and Settings.
       </p>
       <Nav right={<button onClick={onFinish}>Go to dashboard →</button>} />
     </>

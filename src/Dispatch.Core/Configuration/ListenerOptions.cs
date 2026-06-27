@@ -5,8 +5,10 @@ public sealed class ListenerOptions
 {
     public const string SectionName = "Listener";
 
-    /// <summary>Ports to listen on. Empty falls back to <see cref="DefaultPorts"/> (2525; 25/587 need elevation).
-    /// Left empty by default so configuration values replace rather than append (array-binding quirk).</summary>
+    /// <summary>Ports to listen on. Empty falls back to <see cref="DefaultPorts"/> (the standard 25 + 587).
+    /// Left empty by default so configuration values replace rather than append (array-binding quirk).
+    /// The listener probes each port at startup and falls back to 2525 only when 25 can't be bound — i.e.
+    /// it's already in use or the process lacks privilege (see SmtpListenerService).</summary>
     public int[] Ports { get; set; } = [];
 
     public string ServerName { get; set; } = "Dispatch";
@@ -16,7 +18,13 @@ public sealed class ListenerOptions
     /// code-level fallback, so an operator who clears the list in the dashboard is opting in to allow-all.</summary>
     public string[] AllowedCidrs { get; set; } = [];
 
-    public static readonly int[] DefaultPorts = [2525];
+    /// <summary>Default SMTP ports: the standard submission/relay ports 25 and 587. Binding these needs
+    /// elevation (root, or CAP_NET_BIND_SERVICE on the systemd unit) — the installers and appliance run with
+    /// it. The listener falls back to <see cref="FallbackPort"/> when 25 isn't bindable.</summary>
+    public static readonly int[] DefaultPorts = [25, 587];
+
+    /// <summary>Unprivileged fallback used only when port 25 can't be bound (already in use or no privilege).</summary>
+    public const int FallbackPort = 2525;
 
     public int[] EffectivePorts => Ports is { Length: > 0 } ? Ports : DefaultPorts;
     public string[] EffectiveAllowedCidrs => AllowedCidrs;
