@@ -8,6 +8,7 @@ on:
     branches: [main, feat/relay-engine-web-providers]
     paths:
       - index.html
+      - deploy.html
       - docs/images/**
       - .github/workflows/pages.yml
   workflow_dispatch:
@@ -30,6 +31,7 @@ jobs:
         run: |
           mkdir -p _site/docs/images
           cp index.html _site/index.html
+          cp deploy.html _site/deploy.html
           cp docs/images/dashboard.png _site/docs/images/dashboard.png
       - uses: actions/upload-pages-artifact@v3
         with:
