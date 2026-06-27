@@ -32,4 +32,29 @@ public class SecureConfigTests
 
         Assert.ThrowsAny<System.Security.Cryptography.CryptographicException>(() => SecureConfig.Decrypt(tampered));
     }
+
+    [Fact]
+    public void Key_is_portable_across_hosts()
+    {
+        // The disaster-recovery guarantee: a value encrypted with the .dispatch-key on one host decrypts on a
+        // different host when the key file is restored. Simulate by decrypting with a separate byte[] holding
+        // the same key bytes (a "restored" copy) — proving decryption is key-based, not machine-bound.
+        var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        var cipher = SecureConfig.EncryptWith(key, "provider-secret");
+
+        var restoredKey = (byte[])key.Clone();
+        Assert.Equal("provider-secret", SecureConfig.DecryptWith(restoredKey, cipher));
+    }
+
+    [Fact]
+    public void Wrong_key_fails_to_decrypt()
+    {
+        var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        var cipher = SecureConfig.EncryptWith(key, "provider-secret");
+
+        var wrongKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        // GCM authentication must reject a wrong key — never return wrong plaintext.
+        Assert.ThrowsAny<System.Security.Cryptography.CryptographicException>(
+            () => SecureConfig.DecryptWith(wrongKey, cipher));
+    }
 }

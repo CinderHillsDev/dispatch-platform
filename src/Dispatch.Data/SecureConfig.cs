@@ -36,14 +36,36 @@ public static class SecureConfig
     /// writable key directory was available — a weaker posture the host should surface to the operator.</summary>
     public static bool UsedMachineKeyFallback { get; private set; }
 
-    public static string Encrypt(string plaintext)
+    public static string Encrypt(string plaintext) => EncryptWith(Key.Value, plaintext);
+
+    public static string Decrypt(string ciphertext)
+    {
+        // Current format (all platforms): AES-256-GCM with the portable key file.
+        try
+        {
+            return DecryptWith(Key.Value, ciphertext);
+        }
+        catch (Exception ex) when (OperatingSystem.IsWindows()
+                                   && ex is CryptographicException or FormatException or ArgumentException)
+        {
+            // Not an AES blob we can open — likely a legacy DPAPI value from an older Windows build.
+            // Re-encrypts to AES on the next save.
+            return Encoding.UTF8.GetString(
+                ProtectedData.Unprotect(Convert.FromBase64String(ciphertext), AppSalt, DataProtectionScope.LocalMachine));
+        }
+    }
+
+    /// <summary>AES-256-GCM encrypt with an explicit key. Blob = base64( nonce[12] | tag[16] | ct ). The key
+    /// is portable: anything <see cref="EncryptWith"/> produced can be decrypted on any host with the same key
+    /// (the backup/restore-to-another-machine guarantee). Used internally and by tests.</summary>
+    internal static string EncryptWith(byte[] key, string plaintext)
     {
         var nonce = RandomNumberGenerator.GetBytes(NonceSize);
         var pt = Encoding.UTF8.GetBytes(plaintext);
         var ct = new byte[pt.Length];
         var tag = new byte[TagSize];
 
-        using var aes = new AesGcm(Key.Value, TagSize);
+        using var aes = new AesGcm(key, TagSize);
         aes.Encrypt(nonce, pt, ct, tag);
 
         var blob = new byte[NonceSize + TagSize + ct.Length];
@@ -53,35 +75,21 @@ public static class SecureConfig
         return Convert.ToBase64String(blob);
     }
 
-    public static string Decrypt(string ciphertext)
+    /// <summary>AES-256-GCM decrypt with an explicit key. Throws <see cref="CryptographicException"/> if the
+    /// key is wrong or the blob is tampered/too short (GCM authentication) — never returns wrong plaintext.</summary>
+    internal static string DecryptWith(byte[] key, string ciphertext)
     {
         var blob = Convert.FromBase64String(ciphertext);
+        if (blob.Length < NonceSize + TagSize)
+            throw new CryptographicException("Ciphertext too short to be an AES-GCM blob.");
 
-        // Current format (all platforms): AES-256-GCM with the portable key file.
-        if (blob.Length >= NonceSize + TagSize)
-        {
-            try
-            {
-                var nonce = blob.AsSpan(0, NonceSize);
-                var tag = blob.AsSpan(NonceSize, TagSize);
-                var ct = blob.AsSpan(NonceSize + TagSize);
-                var pt = new byte[ct.Length];
-                using var aes = new AesGcm(Key.Value, TagSize);
-                aes.Decrypt(nonce, ct, tag, pt);
-                return Encoding.UTF8.GetString(pt);
-            }
-            catch (CryptographicException) when (OperatingSystem.IsWindows())
-            {
-                // Not an AES blob we can open — likely a legacy DPAPI value. Fall through to the legacy path.
-            }
-        }
-
-        // Legacy (older Windows builds): DPAPI, LocalMachine scope. Re-encrypts to AES on the next save.
-        if (OperatingSystem.IsWindows())
-            return Encoding.UTF8.GetString(
-                ProtectedData.Unprotect(blob, AppSalt, DataProtectionScope.LocalMachine));
-
-        throw new CryptographicException("Unable to decrypt config value — wrong or missing .dispatch-key?");
+        var nonce = blob.AsSpan(0, NonceSize);
+        var tag = blob.AsSpan(NonceSize, TagSize);
+        var ct = blob.AsSpan(NonceSize + TagSize);
+        var pt = new byte[ct.Length];
+        using var aes = new AesGcm(key, TagSize);
+        aes.Decrypt(nonce, ct, tag, pt);
+        return Encoding.UTF8.GetString(pt);
     }
 
     private static byte[] DeriveKey()

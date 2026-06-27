@@ -136,28 +136,15 @@ public sealed class SmtpListenerService : BackgroundService
     /// </summary>
     private int[] ResolveBindablePorts(int[] requested)
     {
-        var result = new List<int>();
-        var dropped = new List<int>();
-        foreach (var p in requested)
-            (CanBind(p) ? result : dropped).Add(p);
+        // The decision logic lives in SmtpPortResolver (pure + unit-tested); here we supply the real socket
+        // probe and route its warnings to the log.
+        var result = SmtpPortResolver.Resolve(requested, CanBind, msg => _log.LogWarning("{Message}", msg));
 
-        foreach (var p in dropped)
-            _log.LogWarning("SMTP port {Port} is unavailable (already in use or insufficient privilege) — skipping", p);
-
-        // Fall back to 2525 only when port 25 was wanted but couldn't be bound, or nothing bound at all.
-        if ((dropped.Contains(25) || result.Count == 0)
-            && !result.Contains(ListenerOptions.FallbackPort)
-            && CanBind(ListenerOptions.FallbackPort))
-        {
-            _log.LogWarning("Falling back to SMTP port {Fallback} (port 25 unavailable)", ListenerOptions.FallbackPort);
-            result.Add(ListenerOptions.FallbackPort);
-        }
-
-        if (result.Count == 0)
+        if (result.Length == 0)
             _log.LogError("No SMTP port could be bound from [{Requested}] — the listener will not accept mail",
                 string.Join(", ", requested));
 
-        return [.. result];
+        return result;
     }
 
     /// <summary>Probe whether a TCP port can be bound. EACCES (privilege) and EADDRINUSE (in use) both surface
