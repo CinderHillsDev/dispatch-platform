@@ -1,43 +1,43 @@
 ---
 title: Quickstart
-description: Get Dispatch running in a few minutes with Docker, then send your first message.
+description: Install Dispatch, point an app at it, and send your first message — whatever way you deploy.
 sidebar:
   order: 2
 ---
 
-The fastest way to try Dispatch is Docker Compose — it brings up Dispatch **and** its database
-together. (For production installs see [Deployment](/deployment/overview/).)
-
-## 1. Start it
-
-```bash
-git clone https://github.com/chrismuench/Dispatch-SMTP-Relay.git
-cd Dispatch-SMTP-Relay
-docker compose up -d --build
-```
-
-This starts Dispatch (dashboard `8420`, HTTP API `8025`, SMTP `25` & `587`) plus a local SQL database. The
+Three steps to your first relayed message: install Dispatch, connect a provider, send. The database
 schema is created automatically on first start.
+
+## 1. Install Dispatch
+
+Pick whichever fits — full steps in [Deployment](/deployment/overview/):
+
+- **[Virtual appliance](/deployment/appliance/)** — import a prebuilt VM (Hyper-V / VMware / KVM /
+  Proxmox) and power on. Nothing to install; SQL + Dispatch are already inside.
+- **[Linux](/deployment/linux/)** — `install.sh` sets up a systemd service (and SQL Server Express,
+  if you want it).
+- **[Windows](/deployment/windows/)** — a single-file installer (Windows Service + SQL + firewall).
+- **[Docker](/deployment/docker/)** — handy for trying it locally or on container hosts.
 
 ## 2. Open the dashboard
 
-Browse to **https://localhost:8420** and accept the self-signed certificate warning. On first run a
-short setup wizard walks you through setting the admin password, connecting a provider, and sending a
-test. (The default Compose login password is in `docker-compose.yml` — change it after logging in.)
+Browse to `https://<host>:8420` and accept the self-signed certificate warning. On first run a short
+setup wizard walks you through **setting the admin password**, connecting a provider, and sending a
+test.
 
-## 3. Configure a relay
+## 3. Add a relay and test it
 
-Go to **Settings → Relay Provider**, pick your provider, and enter its credentials. Click
+Go to **Settings → Relay Provider**, choose your provider, and enter its credentials. Click
 **Send Test Email** to verify it works — watch the result appear live in the relay log. See
 [Relay providers](/providers/overview/) for per-provider settings.
 
 ## 4. Send mail
 
-Point your application at `localhost:25` over SMTP, or use the HTTP API:
+Point your application at the SMTP listener (ports **25**/**587**) or use the HTTP API:
 
 ```bash
 # Create an API key first (Settings → API Keys), then:
-curl -X POST http://localhost:8025/api/v1/messages \
+curl -X POST http://<host>:8025/api/v1/messages \
   -H "Authorization: Bearer dsp_live_your_key_here" \
   -F from="App <noreply@myapp.com>" \
   -F to="user@example.com" \
