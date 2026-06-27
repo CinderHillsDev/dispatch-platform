@@ -81,12 +81,15 @@ jobs:
           echo "OVMF: $code / $varsrc"
           # -cpu host requires KVM; under the TCG fallback use a TCG-compatible CPU model.
           if [ -e /dev/kvm ]; then echo "KVM available"; ACCEL="-enable-kvm -cpu host"; else echo "KVM NOT available — TCG (slow)"; ACCEL="-accel tcg -cpu max"; fi
+          # Boot the image as qcow2 (rules out QEMU's vhdx driver — Hyper-V reads the vhdx itself) and attach
+          # it as an explicit virtio-blk device with bootindex=0, so OVMF (empty NVRAM) actually boots it.
+          qemu-img convert -O qcow2 dispatch-appliance.vhdx boot.qcow2
           # shellcheck disable=SC2086
           sudo qemu-system-x86_64 -machine q35 $ACCEL -m 4096 -smp 2 -no-reboot \
-            -global isa-debugcon.iobase=0x402 -debugcon file:ovmf-debug.log \
             -drive if=pflash,format=raw,readonly=on,file="$code" \
             -drive if=pflash,format=raw,file=vars.fd \
-            -drive file=dispatch-appliance.vhdx,format=vhdx,if=virtio \
+            -drive file=boot.qcow2,format=qcow2,if=none,id=hd0 \
+            -device virtio-blk-pci,drive=hd0,bootindex=0 \
             -netdev user,id=n0,hostfwd=tcp::8420-:8420 -device virtio-net-pci,netdev=n0 \
             -display none -serial file:console.log -daemonize 2>qemu.err \
             || { echo "=== qemu failed to launch ==="; cat qemu.err; exit 1; }
@@ -97,9 +100,8 @@ jobs:
           done
           if [ "$ok" != 1 ]; then
             echo "=== qemu.err ==="; cat qemu.err 2>/dev/null || true
-            echo "=== OVMF firmware debug (boot device selection) ==="; tail -n 120 ovmf-debug.log 2>/dev/null || echo "(no OVMF debug output)"
             echo "=== serial console ==="; cat console.log 2>/dev/null || echo "(serial console empty)"
-            echo "=== qemu still running? ==="; pgrep -a qemu-system-x86_64 || echo "(qemu not running)"
+            echo "=== qemu still running? ==="; pgrep -f qemu-system >/dev/null && echo "(qemu running)" || echo "(qemu not running)"
             echo "appliance did not serve /health within the timeout"; exit 1
           fi
           echo "appliance /health OK"
