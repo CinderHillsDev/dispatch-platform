@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using Dispatch.Core.Configuration;
+using Dispatch.Core.Maintenance;
 using Dispatch.Core.Spool;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,7 @@ public sealed class SmtpListenerService : BackgroundService
     private readonly ConfiguredUserAuthenticator _authenticator;
     private readonly ConnectionTracker _connections;
     private readonly ListenerOptions _options;
+    private readonly SmtpListenerState _state;
     private readonly IHostEnvironment _env;
     private readonly ILogger<SmtpListenerService> _log;
 
@@ -31,6 +33,7 @@ public sealed class SmtpListenerService : BackgroundService
         ConfiguredUserAuthenticator authenticator,
         ConnectionTracker connections,
         IOptions<ListenerOptions> options,
+        SmtpListenerState state,
         IHostEnvironment env,
         ILogger<SmtpListenerService> log)
     {
@@ -39,6 +42,7 @@ public sealed class SmtpListenerService : BackgroundService
         _authenticator = authenticator;
         _connections = connections;
         _options = options.Value;
+        _state = state;
         _env = env;
         _log = log;
     }
@@ -50,8 +54,12 @@ public sealed class SmtpListenerService : BackgroundService
         {
             // Nothing bindable (already logged). Return without starting the SMTP server so the rest of the
             // host (dashboard + ingestion API) keeps running — a missing SMTP port must never take it down.
+            _state.ListeningPorts = [];
             return;
         }
+        // Publish the resolved set so /health and the dashboard can show what's actually listening (which may
+        // differ from the configured ports when 25 fell back to 2525).
+        _state.ListeningPorts = ports;
         var certificate = LoadCertificate();
 
         var optionsBuilder = new SmtpServerOptionsBuilder().ServerName(_options.ServerName);
@@ -111,10 +119,12 @@ public sealed class SmtpListenerService : BackgroundService
             // A bind failure here (e.g. a port was taken in the race between our probe and the actual bind)
             // must NOT crash the host — by default an unhandled exception in a BackgroundService stops the
             // whole app. Log and return so the dashboard + ingestion API stay up.
+            _state.ListeningPorts = [];
             _log.LogError(ex, "SMTP listener failed to start — the dashboard and ingestion API are unaffected");
             return;
         }
 
+        _state.ListeningPorts = [];
         _log.LogInformation("SMTP listener stopped");
     }
 

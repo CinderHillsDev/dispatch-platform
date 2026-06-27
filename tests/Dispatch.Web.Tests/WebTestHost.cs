@@ -70,6 +70,9 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton(Spool);
         Intake = new Dispatch.Core.Maintenance.IntakeState();
         builder.Services.AddSingleton(Intake);
+        // The SMTP listener isn't started in tests, so this stays at its default (no listening ports);
+        // /health reports configuredPorts (from ListenerOptions) plus an empty listeningPorts.
+        builder.Services.AddSingleton<Dispatch.Core.Maintenance.SmtpListenerState>();
 
         // ConfigCache is the runtime source of truth (spec §12.5). Seed defaults into the fake config repo —
         // overriding the ports the test host actually listens on so ApiKeyMiddleware (which reads api.port

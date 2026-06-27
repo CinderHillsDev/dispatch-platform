@@ -15,6 +15,11 @@ free disk, and spool state (incoming/processing/failed counts). Returns `200` wh
 degraded and `503` when critical (e.g. disk critically low). It's best-effort and non-blocking, so it
 never hangs.
 
+The `smtp` object reports both `configuredPorts` (what's set in `listener.ports`) and `listeningPorts`
+(what actually bound). These differ when port 25 couldn't be bound and the listener
+[fell back to 2525](/sending/smtp/) — so `listeningPorts` is the source of truth for where mail is
+accepted. (`ports` is kept as an alias of the configured set for backward compatibility.)
+
 ```bash
 curl -k https://localhost:8420/health
 ```

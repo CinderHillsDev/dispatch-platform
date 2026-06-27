@@ -99,7 +99,8 @@ public static class WebEndpoints
         //   critical — intake suspended (disk critically low)                -> 503
         app.MapGet("/health", async (
             SpoolDirectory spool, IDatabaseHealth db, ILogMaintenance maintenance, MinuteCounterRing ring,
-            IntakeState intake, IOptions<ListenerOptions> listener, CancellationToken ct) =>
+            IntakeState intake, IOptions<ListenerOptions> listener, SmtpListenerState listenerState,
+            CancellationToken ct) =>
         {
             var connected = await db.IsReachableAsync(ct);
 
@@ -116,7 +117,8 @@ public static class WebEndpoints
             try { diskFreeMb = new DriveInfo(spool.Root).AvailableFreeSpace / (1024 * 1024); }
             catch { /* best-effort — leave null */ }
 
-            var ports = listener.Value.EffectivePorts;
+            var configuredPorts = listener.Value.EffectivePorts;
+            var listeningPorts = listenerState.ListeningPorts;   // what actually bound (may differ: 25 -> 2525 fallback)
             var suspended = intake.Level == IntakeLevel.Suspended;
             var status = suspended ? "critical" : connected ? "healthy" : "degraded";
             var message = suspended
@@ -141,7 +143,9 @@ public static class WebEndpoints
                     diskFreeMb,
                 },
                 sql = new { connected, dbSizeMb },
-                smtp = new { listening = ports.Length > 0, ports },
+                // `ports` (configured) is kept for backward compatibility; `listeningPorts` is what actually
+                // bound — they differ when 25 couldn't be bound and the listener fell back to 2525.
+                smtp = new { listening = configuredPorts.Length > 0, ports = configuredPorts, configuredPorts, listeningPorts },
             };
             return suspended
                 ? Results.Json(payload, statusCode: StatusCodes.Status503ServiceUnavailable)

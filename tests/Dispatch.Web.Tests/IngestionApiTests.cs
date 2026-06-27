@@ -42,6 +42,9 @@ public class IngestionApiTests(WebTestHost host)
         var smtp = doc.GetProperty("smtp");
         Assert.True(smtp.GetProperty("listening").GetBoolean());
         Assert.NotEmpty(smtp.GetProperty("ports").EnumerateArray());
+        Assert.NotEmpty(smtp.GetProperty("configuredPorts").EnumerateArray());
+        // The listener isn't started in tests, so the actually-bound set is reported but empty here.
+        Assert.Equal(JsonValueKind.Array, smtp.GetProperty("listeningPorts").ValueKind);
     }
 
     [Fact]

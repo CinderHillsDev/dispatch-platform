@@ -175,6 +175,7 @@ try
     builder.Services.AddSingleton<RelayConcurrencyTracker>();
     builder.Services.AddSingleton<SpoolMessageStore>();
     builder.Services.AddSingleton<IntakeState>();
+    builder.Services.AddSingleton<SmtpListenerState>();
     builder.Services.AddSingleton<DiskMonitor>();
     builder.Services.AddSingleton<ConnectionTracker>();
     builder.Services.AddSingleton<CidrMailboxFilter>();
