@@ -91,6 +91,35 @@ echo "verified: bootloader fallback + dispatch/firstboot units enabled"
 
 echo "==> Converting to a Gen2/UEFI dynamic VHDX"
 qemu-img convert -p -f qcow2 -O vhdx -o subformat=dynamic "$WORK/disk.qcow2" "$OUT"
+echo "==> Built $OUT"; ls -lh "$OUT"
 
-echo "==> Built $OUT"
-ls -lh "$OUT"
+# Optional: a compressed qcow2 for KVM/libvirt/Proxmox (the native format). Set QCOW2_OUT to enable.
+if [ -n "${QCOW2_OUT:-}" ]; then
+  echo "==> Building the qcow2 (KVM/Proxmox): $QCOW2_OUT"
+  qemu-img convert -p -f qcow2 -O qcow2 -c "$WORK/disk.qcow2" "$QCOW2_OUT"
+  echo "==> Built $QCOW2_OUT"; ls -lh "$QCOW2_OUT"
+fi
+
+# Optional: a VMware (vSphere/ESXi) OVA from the same image. Set OVA_OUT to enable.
+if [ -n "${OVA_OUT:-}" ]; then
+  echo "==> Building the VMware OVA: $OVA_OUT"
+  ova_dir="$WORK/ova"; mkdir -p "$ova_dir"
+  vmdk="dispatch-appliance-disk1.vmdk"; ovf="dispatch-appliance.ovf"; mf="dispatch-appliance.mf"
+
+  # Stream-optimized VMDK (the only VMDK subformat valid inside an OVA).
+  qemu-img convert -p -f qcow2 -O vmdk -o subformat=streamOptimized "$WORK/disk.qcow2" "$ova_dir/$vmdk"
+
+  capacity="$(qemu-img info --output=json "$WORK/disk.qcow2" | sed -n 's/.*"virtual-size": *\([0-9]*\).*/\1/p' | head -1)"
+  vmdk_size="$(stat -c%s "$ova_dir/$vmdk")"
+  sed -e "s|@@VMDK_FILE@@|$vmdk|" -e "s|@@VMDK_FILE_SIZE@@|$vmdk_size|" \
+      -e "s|@@DISK_CAPACITY@@|$capacity|" -e "s|@@VERSION@@|$VERSION|" \
+      "$REPO/appliance/dispatch.ovf.template" > "$ova_dir/$ovf"
+
+  # Manifest: SHA256 of the ovf then the vmdk (OVF spec format).
+  ( cd "$ova_dir" && printf 'SHA256(%s)= %s\n' "$ovf" "$(sha256sum "$ovf" | cut -d' ' -f1)" >  "$mf"
+                     printf 'SHA256(%s)= %s\n' "$vmdk" "$(sha256sum "$vmdk" | cut -d' ' -f1)" >> "$mf" )
+
+  # OVA = tar of ovf, then mf, then disk — in that order (required by the OVF spec / ovftool).
+  ( cd "$ova_dir" && tar -cf "$OVA_OUT" "$ovf" "$mf" "$vmdk" )
+  echo "==> Built $OVA_OUT"; ls -lh "$OVA_OUT"
+fi

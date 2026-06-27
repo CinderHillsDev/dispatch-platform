@@ -53,23 +53,53 @@ jobs:
         env:
           VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('ci-{0}', github.run_number) }}
         run: |
-          sudo env PREBUILT_DIR="$PWD/publish/linux" VERSION="$VERSION" OUT="$PWD/dispatch-appliance.vhdx" \
+          sudo env PREBUILT_DIR="$PWD/publish/linux" VERSION="$VERSION" \
+            OUT="$PWD/dispatch-appliance.vhdx" OVA_OUT="$PWD/dispatch-appliance.ova" \
+            QCOW2_OUT="$PWD/dispatch-appliance.qcow2" \
             LIBGUESTFS_BACKEND=direct ./appliance/build-appliance.sh
-          sudo chown "$USER" dispatch-appliance.vhdx
+          sudo chown "$USER" dispatch-appliance.vhdx dispatch-appliance.ova dispatch-appliance.qcow2
+
+      - name: Validate the OVA (structure, OVF XML, manifest checksums)
+        run: |
+          echo "=== tar contents (must be ovf, then mf, then vmdk) ==="
+          tar -tf dispatch-appliance.ova
+          first=$(tar -tf dispatch-appliance.ova | head -1)
+          case "$first" in *.ovf) ;; *) echo "ERROR: first OVA entry must be the .ovf, got $first"; exit 1;; esac
+          mkdir -p ova-check && tar -xf dispatch-appliance.ova -C ova-check
+          python3 -c "import xml.dom.minidom,glob,sys; xml.dom.minidom.parse(glob.glob('ova-check/*.ovf')[0]); print('OVF XML parses')"
+          ( cd ova-check && while read -r line; do
+              f=$(echo "$line" | sed -n 's/^SHA256(\(.*\))=.*/\1/p'); h=$(echo "$line" | sed -n 's/.*= *//p')
+              [ -n "$f" ] || continue
+              act=$(sha256sum "$f" | cut -d' ' -f1)
+              [ "$act" = "$h" ] && echo "ok: $f" || { echo "ERROR: checksum mismatch for $f"; exit 1; }
+            done < ./*.mf )
+          echo "OVA structure + checksums valid"
 
       - name: Package + checksum
         run: |
           zip -9 dispatch-appliance.vhdx.zip dispatch-appliance.vhdx
           sha256sum dispatch-appliance.vhdx.zip | tee dispatch-appliance.vhdx.zip.sha256
+          # The OVA and compressed qcow2 are already containers; just checksum them.
+          sha256sum dispatch-appliance.ova    | tee dispatch-appliance.ova.sha256
+          sha256sum dispatch-appliance.qcow2  | tee dispatch-appliance.qcow2.sha256
+          # Bundle the one-command import helpers alongside the images.
+          cp appliance/Import-DispatchAppliance.ps1 appliance/import-libvirt.sh appliance/import-proxmox.sh .
 
-      # Upload before the boot smoke so the artifact is available even if the smoke fails.
-      - name: Upload appliance artifact
+      # Upload before the boot smoke so the artifacts are available even if the smoke fails.
+      - name: Upload appliance artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dispatch-hyperv-appliance
+          name: dispatch-appliance
           path: |
             dispatch-appliance.vhdx.zip
             dispatch-appliance.vhdx.zip.sha256
+            dispatch-appliance.ova
+            dispatch-appliance.ova.sha256
+            dispatch-appliance.qcow2
+            dispatch-appliance.qcow2.sha256
+            Import-DispatchAppliance.ps1
+            import-libvirt.sh
+            import-proxmox.sh
           if-no-files-found: error
 
       - name: Boot smoke (UEFI) — service comes up on first boot
