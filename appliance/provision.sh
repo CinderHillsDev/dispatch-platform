@@ -38,7 +38,13 @@ mkdir -p /etc/systemd/system/dispatch.service.d
 # Dispatch must start only after first-boot configures SQL.
 printf '[Unit]\nAfter=dispatch-firstboot.service\nRequires=dispatch-firstboot.service\n' \
   > /etc/systemd/system/dispatch.service.d/10-appliance.conf
-systemctl enable dispatch-firstboot.service
+systemctl enable dispatch-firstboot.service || true
+# Belt-and-suspenders: `systemctl enable` can be a silent no-op in the offline build appliance (no running
+# systemd), so create the WantedBy symlinks explicitly. Without these, neither first-boot nor Dispatch starts
+# at boot (the VM comes up to a login prompt with no service — exactly what the boot smoke caught).
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf /etc/systemd/system/dispatch-firstboot.service /etc/systemd/system/multi-user.target.wants/dispatch-firstboot.service
+ln -sf /etc/systemd/system/dispatch.service /etc/systemd/system/multi-user.target.wants/dispatch.service
 
 echo "==> Ensure the UEFI removable/fallback bootloader path exists"
 # A freshly-created VM (QEMU/OVMF, or a Hyper-V Gen2 VM importing this disk) starts with empty firmware
