@@ -32,6 +32,10 @@ It creates a Gen2 VM, sets the **Microsoft UEFI CA** Secure Boot template (requi
 starts it. Manual route: New VM → Generation 2 → use the existing VHDX → Security → Secure Boot
 template = Microsoft UEFI Certificate Authority.
 
+Run it as an elevated **Administrator**, or as a member of the **Hyper-V Administrators** group (which
+can manage Hyper-V without elevation) — the script checks for one of these and stops with a clear
+message otherwise.
+
 ### VMware (vSphere / ESXi / Workstation / Fusion)
 
 vSphere Client → **Deploy OVF Template** → select the `.ova` (or *File → Open* in
@@ -47,7 +51,8 @@ virsh domifaddr dispatch        # find its IP
 
 ### Proxmox VE
 
-Copy the `.qcow2` + helper to the Proxmox host, pick an unused VM ID (e.g. 9000):
+Copy the `.qcow2` + helper to the Proxmox host and run it **as root** (`qm` requires it — the script
+checks), picking an unused VM ID (e.g. 9000):
 
 ```bash
 ./import-proxmox.sh dispatch-appliance.qcow2 9000 \

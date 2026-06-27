@@ -14,7 +14,7 @@ All are **Gen2/UEFI**, ~4 GB RAM recommended (SQL Server needs ~2 GB). They boot
 
 ## Hyper-V
 
-**One command** (PowerShell as Administrator), after unzipping the `.vhdx`:
+**One command** (elevated **Administrator**, or a member of the **Hyper-V Administrators** group — the script checks for one), after unzipping the `.vhdx`:
 ```powershell
 .\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx -Start
 ```
@@ -35,7 +35,7 @@ Creates a UEFI VM via `virt-install --import` on the `default` network. Find the
 
 ## Proxmox VE
 
-Copy the `.qcow2` to the Proxmox host, then (pick an unused VMID, e.g. 9000):
+Copy the `.qcow2` to the Proxmox host and run **as root** (`qm` requires it), then (pick an unused VMID, e.g. 9000):
 ```bash
 ./import-proxmox.sh dispatch-appliance.qcow2 9000 --storage local-lvm --bridge vmbr0 --start
 ```
