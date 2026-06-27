@@ -16,6 +16,7 @@ SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
 
 [ -e "$MARKER" ] && { echo "dispatch-firstboot: already done"; exit 0; }
 log() { echo "dispatch-firstboot: $*"; }
+set -x   # trace each step to the console so a first-boot failure is diagnosable
 
 # 1. Unique SA password. Alnum + a fixed complexity suffix → meets SQL's policy and contains no characters
 #    that are special to the shell, sed, or JSON, so the substitution below is safe.
@@ -23,7 +24,7 @@ SA_PW="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 28)Aa1!"
 
 # 2. Configure SQL Server Express (EULA accepted) with that password, then enable + start it.
 log "configuring SQL Server Express"
-MSSQL_SA_PASSWORD="$SA_PW" MSSQL_PID="Express" ACCEPT_EULA="Y" /opt/mssql/bin/mssql-conf -n setup >/dev/null
+MSSQL_SA_PASSWORD="$SA_PW" MSSQL_PID="Express" ACCEPT_EULA="Y" /opt/mssql/bin/mssql-conf -n setup
 systemctl enable --now mssql-server
 
 # 3. Wait for SQL to accept logins before pointing Dispatch at it.
