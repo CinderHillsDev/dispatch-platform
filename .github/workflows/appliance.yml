@@ -74,7 +74,7 @@ jobs:
 
       - name: Boot smoke (UEFI) — service comes up on first boot
         run: |
-          sudo apt-get install -y qemu-system-x86 ovmf
+          sudo apt-get install -y qemu-system-x86 ovmf imagemagick
           code=$(ls /usr/share/OVMF/OVMF_CODE*.fd | head -1)
           varsrc=$(ls /usr/share/OVMF/OVMF_VARS*.fd | head -1)
           cp "$varsrc" vars.fd
@@ -83,6 +83,7 @@ jobs:
           if [ -e /dev/kvm ]; then echo "KVM available"; ACCEL="-enable-kvm -cpu host"; else echo "KVM NOT available — TCG (slow)"; ACCEL="-accel tcg -cpu max"; fi
           # Boot the image as qcow2 (rules out QEMU's vhdx driver — Hyper-V reads the vhdx itself) and attach
           # it as an explicit virtio-blk device with bootindex=0, so OVMF (empty NVRAM) actually boots it.
+          # -vga std + a QMP socket let us screenshot the VGA console (firmware/GRUB output goes there, not serial).
           qemu-img convert -O qcow2 dispatch-appliance.vhdx boot.qcow2
           # shellcheck disable=SC2086
           sudo qemu-system-x86_64 -machine q35 $ACCEL -m 4096 -smp 2 -no-reboot \
@@ -91,17 +92,45 @@ jobs:
             -drive file=boot.qcow2,format=qcow2,if=none,id=hd0 \
             -device virtio-blk-pci,drive=hd0,bootindex=0 \
             -netdev user,id=n0,hostfwd=tcp::8420-:8420 -device virtio-net-pci,netdev=n0 \
-            -display none -serial file:console.log -daemonize 2>qemu.err \
+            -vga std -display none -serial file:console.log -qmp unix:qmp.sock,server,nowait -daemonize 2>qemu.err \
             || { echo "=== qemu failed to launch ==="; cat qemu.err; exit 1; }
+          screenshot() {  # capture the VGA framebuffer via QMP -> screen.png
+            sudo python3 - "$1" <<'PY' || true
+import socket,sys,time
+try:
+    s=socket.socket(socket.AF_UNIX); s.connect("qmp.sock"); s.settimeout(5)
+    s.recv(65536)
+    s.sendall(b'{"execute":"qmp_capabilities"}\n'); s.recv(65536)
+    s.sendall(b'{"execute":"screendump","arguments":{"filename":"/tmp/screen.ppm"}}\n'); s.recv(65536)
+    time.sleep(1)
+except Exception as e:
+    print("qmp screenshot failed:",e)
+PY
+            sudo convert /tmp/screen.ppm "$1" 2>/dev/null && echo "captured $1" || echo "no screenshot"
+          }
           ok=0
-          for _ in $(seq 1 90); do          # up to ~8 min (KVM boot is fast; this is mostly SQL first-run)
+          for i in $(seq 1 90); do          # up to ~8 min (KVM boot is fast; this is mostly SQL first-run)
             if curl -fsSk -m 3 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            [ "$i" = 18 ] && screenshot boot-90s.png   # ~90s in: capture whatever's on screen
             sleep 5
           done
           if [ "$ok" != 1 ]; then
+            screenshot boot-final.png
             echo "=== qemu.err ==="; cat qemu.err 2>/dev/null || true
             echo "=== serial console ==="; cat console.log 2>/dev/null || echo "(serial console empty)"
             echo "=== qemu still running? ==="; pgrep -f qemu-system >/dev/null && echo "(qemu running)" || echo "(qemu not running)"
             echo "appliance did not serve /health within the timeout"; exit 1
           fi
           echo "appliance /health OK"
+
+      - name: Upload boot diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appliance-boot-diagnostics
+          path: |
+            boot-90s.png
+            boot-final.png
+            console.log
+            qemu.err
+          if-no-files-found: warn
