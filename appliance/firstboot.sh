@@ -18,9 +18,9 @@ SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
 log() { echo "dispatch-firstboot: $*"; }
 set -x   # trace each step to the console so a first-boot failure is diagnosable
 
-# 1. Unique SA password. Alnum + a fixed complexity suffix → meets SQL's policy and contains no characters
-#    that are special to the shell, sed, or JSON, so the substitution below is safe.
-SA_PW="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 28)Aa1!"
+# 1. Unique SA password. Alnum (from a FINITE source so nothing gets SIGPIPE'd under pipefail) + a fixed
+#    complexity suffix → meets SQL's policy and contains no characters special to the shell, sed, or JSON.
+SA_PW="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | cut -c1-28)Aa1!"
 
 # 2. Configure SQL Server Express (EULA accepted) with that password, then enable + start it.
 log "configuring SQL Server Express"
