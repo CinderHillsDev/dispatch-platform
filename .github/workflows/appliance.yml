@@ -94,18 +94,8 @@ jobs:
             -netdev user,id=n0,hostfwd=tcp::8420-:8420 -device virtio-net-pci,netdev=n0 \
             -vga std -display none -serial file:console.log -qmp unix:qmp.sock,server,nowait -daemonize 2>qemu.err \
             || { echo "=== qemu failed to launch ==="; cat qemu.err; exit 1; }
-          screenshot() {  # capture the VGA framebuffer via QMP -> screen.png
-            sudo python3 - "$1" <<'PY' || true
-import socket,sys,time
-try:
-    s=socket.socket(socket.AF_UNIX); s.connect("qmp.sock"); s.settimeout(5)
-    s.recv(65536)
-    s.sendall(b'{"execute":"qmp_capabilities"}\n'); s.recv(65536)
-    s.sendall(b'{"execute":"screendump","arguments":{"filename":"/tmp/screen.ppm"}}\n'); s.recv(65536)
-    time.sleep(1)
-except Exception as e:
-    print("qmp screenshot failed:",e)
-PY
+          screenshot() {  # capture the VGA framebuffer via QMP -> $1 (png)
+            sudo python3 appliance/qmp-screendump.py qmp.sock /tmp/screen.ppm || true
             sudo convert /tmp/screen.ppm "$1" 2>/dev/null && echo "captured $1" || echo "no screenshot"
           }
           ok=0
