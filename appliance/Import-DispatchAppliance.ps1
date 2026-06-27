@@ -1,4 +1,3 @@
-#requires -RunAsAdministrator
 <#
 .SYNOPSIS
   Import the Dispatch SMTP Relay appliance VHDX as a ready-to-run Hyper-V VM.
@@ -27,6 +26,16 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Managing Hyper-V needs either an elevated Administrator session or membership in the local "Hyper-V
+# Administrators" group (well-known SID S-1-5-32-578) — the latter can run the cmdlets WITHOUT elevation.
+# Accept either, and fail fast with a clear message instead of a confusing cmdlet error.
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$isAdmin     = $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+$isHyperVAdm = $principal.IsInRole([Security.Principal.SecurityIdentifier]::new("S-1-5-32-578"))
+if (-not ($isAdmin -or $isHyperVAdm)) {
+  throw "This needs an elevated Administrator session or membership in the 'Hyper-V Administrators' group. Re-run as administrator, or have an admin add you to that group."
+}
 
 if (-not (Test-Path $VhdxPath)) { throw "VHDX not found: $VhdxPath" }
 $VhdxPath = (Resolve-Path $VhdxPath).Path
