@@ -109,6 +109,8 @@ jobs:
             echo "=== qemu.err ==="; cat qemu.err 2>/dev/null || true
             echo "=== serial console ==="; cat console.log 2>/dev/null || echo "(serial console empty)"
             echo "=== qemu still running? ==="; pgrep -f qemu-system >/dev/null && echo "(qemu running)" || echo "(qemu not running)"
+            # qemu (sudo) owns these root-only; make them readable so upload-artifact can collect them.
+            sudo chmod -f a+r boot-90s.png boot-final.png console.log qemu.err 2>/dev/null || true
             echo "appliance did not serve /health within the timeout"; exit 1
           fi
           echo "appliance /health OK"
