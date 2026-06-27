@@ -142,6 +142,48 @@ virsh domifaddr dispatch        # find its IP</code></pre>
       </div>
     </section>
 
+    <!-- APPLIANCE ADMIN: login, network, passwords -->
+    <section id="appliance-admin" class="scroll-mt-6 mb-14">
+      <h2 class="text-2xl font-bold text-white">🔑 Appliance: login, static IP &amp; passwords</h2>
+      <p class="mt-2 text-gray-400">The appliance has <b class="text-gray-200">two separate logins</b> — don't mix them up:</p>
+
+      <div class="mt-5 grid sm:grid-cols-2 gap-4">
+        <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-5">
+          <h3 class="font-semibold text-white">1. OS login (console / SSH)</h3>
+          <p class="mt-1 text-sm text-gray-400">For maintenance like setting a static IP.</p>
+          <table class="mt-3 text-sm text-gray-300">
+            <tr><td class="pr-4 text-gray-500">user</td><td><code class="text-sky-300">ubuntu</code></td></tr>
+            <tr><td class="pr-4 text-gray-500">password</td><td><code class="text-sky-300">dispatch</code></td></tr>
+          </table>
+          <p class="mt-3 text-sm text-gray-400">You're <b class="text-gray-200">forced to set a new password on first login</b>. SSH is enabled (password auth) — <code>ssh ubuntu@&lt;vm-ip&gt;</code>. Change it any time with <code class="text-sky-300">passwd</code>.</p>
+        </div>
+        <div class="rounded-xl border border-gray-800 bg-gray-900/40 p-5">
+          <h3 class="font-semibold text-white">2. Dashboard admin (web UI)</h3>
+          <p class="mt-1 text-sm text-gray-400">For the relay management UI at <code class="text-sky-300">:8420</code>.</p>
+          <p class="mt-3 text-sm text-gray-400">No username — a single admin. You <b class="text-gray-200">set the password on the first visit</b> to <code class="text-sky-300">https://&lt;vm-ip&gt;:8420</code>. Change it later in the dashboard under <b class="text-gray-200">System → About → Change password</b>. Stored only as a bcrypt hash.</p>
+        </div>
+      </div>
+
+      <h3 class="mt-7 font-semibold text-white">Set a static IP</h3>
+      <p class="mt-1 text-sm text-gray-400">Ubuntu uses <b class="text-gray-200">netplan</b>. Log in (console or SSH), find your NIC name with <code class="text-sky-300">ip a</code> (e.g. <code>eth0</code>, <code>ens160</code>), then create the file below and apply:</p>
+      <pre class="mt-2 overflow-x-auto rounded-lg border border-gray-800 bg-gray-900 p-4 text-sm text-gray-200"><code>sudo tee /etc/netplan/99-static.yaml >/dev/null &lt;&lt;'YAML'
+network:
+  version: 2
+  ethernets:
+    eth0:                         # &larr; replace with your NIC (from `ip a`)
+      dhcp4: false
+      addresses: [192.168.1.50/24]
+      routes:
+        - to: default
+          via: 192.168.1.1
+      nameservers:
+        addresses: [1.1.1.1, 8.8.8.8]
+YAML
+sudo chmod 600 /etc/netplan/99-static.yaml
+sudo netplan apply</code></pre>
+      <p class="mt-2 text-sm text-gray-500">The dashboard is then at <code class="text-sky-300">https://192.168.1.50:8420</code>. (Hyper-V/VMware/Proxmox all hand out DHCP by default, so a static IP is optional.)</p>
+    </section>
+
     <!-- AFTER -->
     <section class="rounded-xl border border-sky-900/50 bg-sky-950/20 p-6">
       <h2 class="text-xl font-bold text-white">After it's running — every method</h2>

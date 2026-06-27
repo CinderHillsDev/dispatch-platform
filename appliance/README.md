@@ -55,6 +55,34 @@ https://<vm-ip>:8420
 
 Default ports: SMTP **2525**, ingestion API **8025**, dashboard **8420** — change them in the dashboard (e.g. SMTP 25/587 for production).
 
+## Logins (there are two)
+
+| | Username | Password | Change it |
+|---|---|---|---|
+| **OS** (console / SSH) | `ubuntu` | `dispatch` | forced on first login; later `passwd` |
+| **Dashboard** (web UI) | — (single admin) | set on first visit to `:8420` | **System → About → Change password** |
+
+SSH is enabled with password auth (`ssh ubuntu@<vm-ip>`). The dashboard password is stored only as a bcrypt hash.
+
+## Static IP
+
+DHCP is the default. To pin an address, log in and create a netplan file (find your NIC with `ip a`):
+
+```bash
+sudo tee /etc/netplan/99-static.yaml >/dev/null <<'YAML'
+network:
+  version: 2
+  ethernets:
+    eth0:                         # replace with your NIC (from `ip a`)
+      dhcp4: false
+      addresses: [192.168.1.50/24]
+      routes: [{ to: default, via: 192.168.1.1 }]
+      nameservers: { addresses: [1.1.1.1, 8.8.8.8] }
+YAML
+sudo chmod 600 /etc/netplan/99-static.yaml
+sudo netplan apply
+```
+
 ## Maintenance (console)
 
 - Service: `systemctl status dispatch` · logs: `journalctl -u dispatch -f` and `/var/log/dispatch/`.
@@ -64,7 +92,8 @@ Default ports: SMTP **2525**, ingestion API **8025**, dashboard **8420** — cha
 ## Security notes
 
 - Every appliance generates its **own** SQL SA password, at-rest encryption key (`.dispatch-key`), dashboard TLS cert, SSH host keys, and machine-id on first boot — nothing secret is shared across downloads.
-- The admin password is set by **you** on first dashboard login and is stored only as a bcrypt hash in the database.
+- The **OS login** (`ubuntu`/`dispatch`) is a known default but **must be changed on first login** — do so immediately, especially before exposing the VM beyond a trusted LAN.
+- The dashboard admin password is set by **you** on first login and is stored only as a bcrypt hash in the database.
 - The appliance bundles **SQL Server Express**, which is free; its use is governed by Microsoft's SQL Server Express license terms.
 
 ## Building it yourself

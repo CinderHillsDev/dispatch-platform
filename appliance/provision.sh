@@ -58,6 +58,22 @@ echo "==> cloud-init: no cloud metadata service on Hyper-V — avoid boot-time p
 mkdir -p /etc/cloud/cloud.cfg.d
 printf 'datasource_list: [ NoCloud, None ]\n' > /etc/cloud/cloud.cfg.d/99-dispatch-datasource.cfg
 
+echo "==> Appliance console/SSH login: ubuntu / dispatch (must be changed on first login)"
+# The cloud image's default user is locked (SSH-key only) and we inject no key, so without this nobody could
+# log in to the console to set networking. cloud-init creates 'ubuntu' on first boot; give it a documented
+# default password, force a change at first login, and enable SSH password auth (it's an on-LAN appliance).
+# cloud-init creates the 'ubuntu' user (with sudo) on first boot; chpasswd then sets+unlocks its password
+# and expires it (forced change at first login). ssh_pwauth enables SSH password auth.
+cat > /etc/cloud/cloud.cfg.d/99-dispatch-login.cfg <<'CICFG'
+ssh_pwauth: true
+chpasswd:
+  expire: true
+  users:
+    - name: ubuntu
+      password: dispatch
+      type: text
+CICFG
+
 echo "==> Cleanup"
 rm -rf "$STAGE"
 # Empty machine-id so each VM generates a unique one on first boot.
