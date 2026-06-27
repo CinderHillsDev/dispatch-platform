@@ -350,7 +350,7 @@ public static class WebEndpoints
         return (fromDate, toDate);
     }
 
-    private static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
+    private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
     internal static string Domain(string address)
     {
