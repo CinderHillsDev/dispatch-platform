@@ -8,6 +8,10 @@
 #
 set -eu
 export DEBIAN_FRONTEND=noninteractive
+# Capture stderr + an execution trace to a file so the host build can virt-cat it (virt-customize suppresses
+# a --run script's output on success, which has been hiding where this stops).
+exec 2>/var/log/dispatch-provision.log
+set -x
 STAGE="/opt/stage"
 
 echo "==> Accept Microsoft EULAs (debconf) for SQL Server tools"

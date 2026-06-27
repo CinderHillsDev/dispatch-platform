@@ -75,7 +75,9 @@ virt-customize -a "$WORK/disk.qcow2" \
   --no-network \
   --hostname dispatch \
   --copy-in "$STAGE:/opt" \
-  --run "$REPO/appliance/provision.sh"
+  --run "$REPO/appliance/provision.sh" \
+  || { echo "=== provision FAILED — trace tail ==="; virt-cat -a "$WORK/disk.qcow2" /var/log/dispatch-provision.log 2>/dev/null | tail -80; exit 1; }
+echo "--- provision trace tail ---"; virt-cat -a "$WORK/disk.qcow2" /var/log/dispatch-provision.log 2>/dev/null | tail -50
 
 echo "==> Verifying the image (bootloader + key files present)"
 echo "ESP /EFI/BOOT:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null || echo "  (none!)"
