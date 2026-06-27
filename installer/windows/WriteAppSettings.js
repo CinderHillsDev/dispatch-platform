@@ -36,12 +36,13 @@ if (parts.length >= 2) {
 
     // Lock down the data directory so the connection string, spool (message bodies), the .dispatch-key
     // encryption key, and logs aren't readable by other local users (ProgramData is world-readable by
-    // default). Remove inherited ACEs and grant only SYSTEM (S-1-5-18) and Administrators (S-1-5-32-544),
-    // inheritable so runtime-created files (spool, key) are covered too. Best-effort: never fail the install.
+    // default). Approach that can NEVER lock out the service: convert inherited ACEs to explicit
+    // (/inheritance:d), then remove ONLY BUILTIN\Users (S-1-5-32-545) and Authenticated Users (S-1-5-11).
+    // SYSTEM + Administrators (the service runs as LocalSystem) are left untouched, so the service keeps
+    // access. Best-effort: never fail the install.
     try {
         var shell = new ActiveXObject("WScript.Shell");
-        var icacls = 'icacls "' + dataDir + '" /inheritance:r '
-            + '/grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C';
-        shell.Run('cmd /c ' + icacls, 0, true);   // 0 = hidden window, true = wait for completion
+        shell.Run('cmd /c icacls "' + dataDir + '" /inheritance:d /T /C', 0, true);
+        shell.Run('cmd /c icacls "' + dataDir + '" /remove:g "*S-1-5-32-545" "*S-1-5-11" /T /C', 0, true);
     } catch (e) { /* ignore — the per-file key ACL still applies */ }
 }

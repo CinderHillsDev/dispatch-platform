@@ -34,6 +34,15 @@ if (-not $AdminPassword) {
 
 if (-not $Source) { $Source = (Resolve-Path "$PSScriptRoot\..\..").Path }
 
+# Require elevation: this installs a Windows service, writes to Program Files, sets ACLs, and opens firewall
+# ports — all of which need Administrator. Fail fast with a clear message instead of a confusing mid-run error.
+# (The DispatchSetup.exe bundle auto-elevates via UAC because its chain is per-machine; this script does not.)
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+  Write-Error "Administrator rights are required. Re-run this from an elevated PowerShell (Run as administrator)."
+  exit 1
+}
+
 Write-Host "==> Building the web UI"
 Push-Location "$Source\src\Dispatch.UI"; npm ci; npm run build; Pop-Location
 Remove-Item -Recurse -Force "$Source\src\Dispatch.Web\wwwroot" -ErrorAction SilentlyContinue
@@ -45,10 +54,12 @@ dotnet publish "$Source\src\Dispatch.Service" -c Release -o $InstallDir
 
 Write-Host "==> Writing config to $DataDir"
 New-Item -ItemType Directory -Force "$DataDir\spool", "$DataDir\logs" | Out-Null
-# Lock the data dir down: ProgramData is world-readable by default, so strip inherited ACEs and grant only
-# SYSTEM + Administrators (inheritable). This protects the connection string, spool (message bodies), the
-# .dispatch-key encryption key, and logs together. The service runs as LocalSystem (SYSTEM), so it keeps access.
-& icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" /T /C | Out-Null
+# Lock the data dir down: ProgramData is world-readable by default. Convert inherited ACEs to explicit, then
+# remove ONLY BUILTIN\Users (S-1-5-32-545) and Authenticated Users (S-1-5-11) — leaving SYSTEM + Administrators
+# (the service runs as LocalSystem) untouched so it can never be locked out. Protects the connection string,
+# spool (message bodies), the .dispatch-key encryption key, and logs together.
+& icacls "$DataDir" /inheritance:d /T /C | Out-Null
+& icacls "$DataDir" /remove:g "*S-1-5-32-545" "*S-1-5-11" /T /C | Out-Null
 $smtpJson = ($SmtpPorts -split ',' | ForEach-Object { $_.Trim() }) -join ', '
 $config = @{
   ConnectionStrings = @{ DispatchLog = $SqlConnection }
