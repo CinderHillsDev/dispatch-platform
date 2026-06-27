@@ -83,9 +83,10 @@ echo "ESP /EFI/ubuntu:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/ubuntu 2>/d
 virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null | grep -qi '^BOOTX64.EFI$' \
   || { echo "ERROR: UEFI fallback bootloader \EFI\BOOT\BOOTX64.EFI missing — image would not boot on empty-NVRAM firmware" >&2; exit 1; }
 
-echo "enabled services (multi-user.target.wants):"; virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants 2>/dev/null
+echo "--- /etc/systemd/system (dispatch unit files) ---"; virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system | grep -i dispatch || echo "(no dispatch unit files!)"
+echo "--- /etc/systemd/system/multi-user.target.wants ---"; virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants || echo "(listing failed)"
 for unit in dispatch.service dispatch-firstboot.service; do
-  virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants 2>/dev/null | grep -qx "$unit" \
+  virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants | grep -qx "$unit" \
     || { echo "ERROR: $unit is not enabled (no WantedBy symlink) — it would not start at boot" >&2; exit 1; }
 done
 
