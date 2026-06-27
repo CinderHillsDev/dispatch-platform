@@ -16,7 +16,6 @@ SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
 
 [ -e "$MARKER" ] && { echo "dispatch-firstboot: already done"; exit 0; }
 log() { echo "dispatch-firstboot: $*"; }
-set -x   # trace each step to the console so a first-boot failure is diagnosable
 
 # 1. Unique SA password. Alnum (from a FINITE source so nothing gets SIGPIPE'd under pipefail) + a fixed
 #    complexity suffix → meets SQL's policy and contains no characters special to the shell, sed, or JSON.

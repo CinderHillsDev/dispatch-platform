@@ -8,10 +8,6 @@
 #
 set -eu
 export DEBIAN_FRONTEND=noninteractive
-# Capture stderr + an execution trace to a file so the host build can virt-cat it (virt-customize suppresses
-# a --run script's output on success, which has been hiding where this stops).
-exec 2>/var/log/dispatch-provision.log
-set -x
 STAGE="/opt/stage"
 
 echo "==> Accept Microsoft EULAs (debconf) for SQL Server tools"
@@ -43,7 +39,6 @@ systemctl --root=/ enable dispatch-firstboot.service dispatch.service 2>&1 || ec
 mkdir -p /etc/systemd/system/multi-user.target.wants
 ln -sf ../dispatch-firstboot.service /etc/systemd/system/multi-user.target.wants/dispatch-firstboot.service
 ln -sf ../dispatch.service /etc/systemd/system/multi-user.target.wants/dispatch.service
-echo "PROVISION wants dir:"; ls -la /etc/systemd/system/multi-user.target.wants/ | grep -i dispatch || echo "  (no dispatch symlinks!)"
 
 echo "==> Ensure the UEFI removable/fallback bootloader path exists"
 # A freshly-created VM (QEMU/OVMF, or a Hyper-V Gen2 VM importing this disk) starts with empty firmware

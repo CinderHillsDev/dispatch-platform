@@ -75,9 +75,7 @@ virt-customize -a "$WORK/disk.qcow2" \
   --no-network \
   --hostname dispatch \
   --copy-in "$STAGE:/opt" \
-  --run "$REPO/appliance/provision.sh" \
-  || { echo "=== provision FAILED — trace tail ==="; virt-cat -a "$WORK/disk.qcow2" /var/log/dispatch-provision.log 2>/dev/null | tail -80; exit 1; }
-echo "--- provision trace tail ---"; virt-cat -a "$WORK/disk.qcow2" /var/log/dispatch-provision.log 2>/dev/null | tail -50
+  --run "$REPO/appliance/provision.sh"
 
 echo "==> Verifying the image (bootloader + key files present)"
 echo "ESP /EFI/BOOT:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null || echo "  (none!)"
@@ -85,15 +83,11 @@ echo "ESP /EFI/ubuntu:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/ubuntu 2>/d
 virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null | grep -qi '^BOOTX64.EFI$' \
   || { echo "ERROR: UEFI fallback bootloader \EFI\BOOT\BOOTX64.EFI missing — image would not boot on empty-NVRAM firmware" >&2; exit 1; }
 
-echo "--- /opt ---"; virt-ls -a "$WORK/disk.qcow2" /opt 2>/dev/null || echo "(none)"
-echo "--- /opt/dispatch (install dir) ---"; virt-ls -a "$WORK/disk.qcow2" /opt/dispatch 2>/dev/null | head -5 || echo "(none)"
-echo "--- install.sh captured output (/tmp/install.log) ---"; virt-cat -a "$WORK/disk.qcow2" /tmp/install.log 2>/dev/null | tail -40 || echo "(no install.log)"
-echo "--- /etc/systemd/system (dispatch unit files) ---"; virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system | grep -i dispatch || echo "(no dispatch unit files!)"
-echo "--- /etc/systemd/system/multi-user.target.wants ---"; virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants || echo "(listing failed)"
 for unit in dispatch.service dispatch-firstboot.service; do
-  virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants | grep -qx "$unit" \
+  virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants 2>/dev/null | grep -qx "$unit" \
     || { echo "ERROR: $unit is not enabled (no WantedBy symlink) — it would not start at boot" >&2; exit 1; }
 done
+echo "verified: bootloader fallback + dispatch/firstboot units enabled"
 
 echo "==> Converting to a Gen2/UEFI dynamic VHDX"
 qemu-img convert -p -f qcow2 -O vhdx -o subformat=dynamic "$WORK/disk.qcow2" "$OUT"
