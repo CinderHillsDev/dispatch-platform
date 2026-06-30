@@ -61,6 +61,7 @@ public static class ConfigKeys
     public const string PurgeLogFailedRetentionDays = "purge.log_failed_retention_days";
     public const string PurgeAuditRetentionDays = "purge.audit_retention_days";
     public const string PurgeAuditSecurityRetentionDays = "purge.audit_security_retention_days";
+    public const string PurgeArchiveRetentionDays = "purge.archive_retention_days";
     public const string PurgeSizeTriggerGb = "purge.size_trigger_gb";
     public const string PurgeSizeTargetGb = "purge.size_target_gb";
 }

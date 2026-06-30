@@ -183,6 +183,7 @@ public static class SettingsEndpoints
                     capturedRetentionDays = await ReadInt(config, SqlPurgeSettings.CapturedRetentionDaysKey, pd.CapturedRetentionDays, ct),
                     auditRetentionDays = await ReadInt(config, SqlPurgeSettings.AuditRetentionDaysKey, pd.AuditRetentionDays, ct),
                     auditSecurityRetentionDays = await ReadInt(config, SqlPurgeSettings.AuditSecurityRetentionDaysKey, pd.AuditSecurityRetentionDays, ct),
+                    archiveRetentionDays = await ReadInt(config, SqlPurgeSettings.ArchiveRetentionDaysKey, pd.ArchiveRetentionDays, ct),
                     sizeTriggerGb = await ReadDouble(config, SqlPurgeSettings.SizeTriggerGbKey, pd.SizePressure.TriggerGb, ct),
                     sizeTargetGb = await ReadDouble(config, SqlPurgeSettings.SizeTargetGbKey, pd.SizePressure.TargetGb, ct),
                 },
@@ -213,6 +214,7 @@ public static class SettingsEndpoints
                 if (re.CapturedRetentionDays is { } v4) await SetInt(config, SqlPurgeSettings.CapturedRetentionDaysKey, v4, ct);
                 if (re.AuditRetentionDays is { } va) await SetInt(config, SqlPurgeSettings.AuditRetentionDaysKey, va, ct);
                 if (re.AuditSecurityRetentionDays is { } vas) await SetInt(config, SqlPurgeSettings.AuditSecurityRetentionDaysKey, vas, ct);
+                if (re.ArchiveRetentionDays is { } var7) await SetInt(config, SqlPurgeSettings.ArchiveRetentionDaysKey, var7, ct);
                 if (re.SizeTriggerGb is { } v5) await SetDouble(config, SqlPurgeSettings.SizeTriggerGbKey, v5, ct);
                 if (re.SizeTargetGb is { } v6) await SetDouble(config, SqlPurgeSettings.SizeTargetGbKey, v6, ct);
             }
@@ -280,6 +282,7 @@ public static class SettingsEndpoints
         int? CapturedRetentionDays,
         int? AuditRetentionDays,
         int? AuditSecurityRetentionDays,
+        int? ArchiveRetentionDays,
         double? SizeTriggerGb,
         double? SizeTargetGb);
 

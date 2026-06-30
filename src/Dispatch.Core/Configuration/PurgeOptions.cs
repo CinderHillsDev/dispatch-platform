@@ -20,6 +20,10 @@ public sealed class PurgeOptions
     /// <summary>Noisier security audit events (allow-list denials, SMTP auth failures) kept this long (0 = forever).</summary>
     public int AuditSecurityRetentionDays { get; set; } = 7;
 
+    /// <summary>Weekly JSONL archive files written by the Express size-pressure purge are deleted after this
+    /// many days (0 = keep forever — the default, since they're emergency exports).</summary>
+    public int ArchiveRetentionDays { get; set; }
+
     public LogRetention Log { get; set; } = new();
     public SizePressureOptions SizePressure { get; set; } = new();
 

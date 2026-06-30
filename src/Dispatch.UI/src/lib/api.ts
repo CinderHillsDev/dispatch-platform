@@ -162,6 +162,7 @@ export interface AppSettings {
     capturedRetentionDays: number;
     auditRetentionDays: number;
     auditSecurityRetentionDays: number;
+    archiveRetentionDays: number;
     sizeTriggerGb: number;
     sizeTargetGb: number;
   };

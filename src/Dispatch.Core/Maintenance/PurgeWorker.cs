@@ -62,8 +62,10 @@ public sealed class PurgeWorker(
 
         var failed = PurgeFiles(spool.FailedDir, o.SpoolFailedRetentionDays, includeMeta: true);
         var captured = PurgeFiles(spool.CapturedDir, o.CapturedRetentionDays, includeMeta: false);
-        if (failed + captured > 0)
-            log.LogInformation("Purged {Failed} failed and {Captured} captured spool files", failed, captured);
+        // Age out old size-pressure JSONL archives (0 = keep forever).
+        var archives = PurgeFiles(spool.ArchiveDir, o.ArchiveRetentionDays, includeMeta: false, pattern: "*.jsonl");
+        if (failed + captured + archives > 0)
+            log.LogInformation("Purged {Failed} failed, {Captured} captured spool files and {Archives} archives", failed, captured, archives);
 
         var logRows = 0;
         logRows += await PurgeLogAsync("Delivered", o.Log.DeliveredRetentionDays, ct);
@@ -153,14 +155,14 @@ public sealed class PurgeWorker(
         return total;
     }
 
-    private static int PurgeFiles(string dir, int retentionDays, bool includeMeta)
+    private static int PurgeFiles(string dir, int retentionDays, bool includeMeta, string pattern = "*.eml")
     {
         // 0 (or negative) means "keep forever" — see PurgeLogAsync. Guard before computing the cutoff,
         // otherwise retention 0 would delete every file older than "now".
         if (retentionDays <= 0 || !Directory.Exists(dir)) return 0;
         var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
         var count = 0;
-        foreach (var eml in Directory.EnumerateFiles(dir, "*.eml").ToList())
+        foreach (var eml in Directory.EnumerateFiles(dir, pattern).ToList())
         {
             try
             {

@@ -130,6 +130,28 @@ public class PurgeWorkerTests
     }
 
     [Fact]
+    public async Task Archive_files_pruned_by_retention()
+    {
+        using var t = new TempSpool();
+        var aged = Path.Combine(t.Spool.ArchiveDir, "relay_log-2020-W01.jsonl");
+        File.WriteAllText(aged, "{}");
+        File.SetLastWriteTimeUtc(aged, DateTime.UtcNow.AddDays(-30));
+        var disk = new DiskMonitor(t.Spool, new IntakeState(), _ => long.MaxValue, NullLogger<DiskMonitor>.Instance);
+
+        // 0 = keep forever.
+        var keep = new PurgeOptions { ArchiveRetentionDays = 0 };
+        await new PurgeWorker(t.Spool, new NoopLogMaintenance(), disk, new OptionsPurgeSettings(keep), new PurgeHistory(), NullLogger<PurgeWorker>.Instance)
+            .RunOnceAsync(keep, default);
+        Assert.True(File.Exists(aged));
+
+        // >0 = prune aged archives.
+        var prune = new PurgeOptions { ArchiveRetentionDays = 7 };
+        await new PurgeWorker(t.Spool, new NoopLogMaintenance(), disk, new OptionsPurgeSettings(prune), new PurgeHistory(), NullLogger<PurgeWorker>.Instance)
+            .RunOnceAsync(prune, default);
+        Assert.False(File.Exists(aged));
+    }
+
+    [Fact]
     public async Task Size_pressure_runs_only_on_express()
     {
         using var t = new TempSpool();

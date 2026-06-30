@@ -30,7 +30,7 @@ Setting any retention to **`0` means "keep forever"** — that data type is neve
 
 In addition to age-based purging, Dispatch watches the database size **on SQL Server Express only** — Express caps each database's data files at **10 GB**. When usage approaches the cap, Dispatch frees a bounded amount of space (down to the target you set) by removing the **oldest** rows — message-log rows first, then audit rows if needed.
 
-Because this is an emergency safety net that runs **even when a retention is set to "keep forever"**, it does **not** silently discard history: before deleting, it **exports the rows to weekly JSON Lines files** (e.g. `relay_log-2026-W26.jsonl`, `audit_log-2026-W26.jsonl`) under the spool's `archive/` directory. The exact counts are written to the System Logs as a "Size-pressure cleanup ran" entry. You can move those archive files off the box or re-ingest them later.
+Because this is an emergency safety net that runs **even when a retention is set to "keep forever"**, it does **not** silently discard history: before deleting, it **exports the rows to weekly JSON Lines files** (e.g. `relay_log-2026-W26.jsonl`, `audit_log-2026-W26.jsonl`) under the spool's `archive/` directory. The exact counts are written to the System Logs as a "Size-pressure cleanup ran" entry. You can move those archive files off the box or re-ingest them later. They're kept indefinitely by default; set **Settings → Retention → Size-pressure archive retention** to age them out automatically (`0` = keep forever).
 
 If you point Dispatch at your **own SQL Server** (Standard/Enterprise/Azure) there is no 10 GB cap, so this size-based purge — and the archiving — never runs; only your age-based retention applies.
 

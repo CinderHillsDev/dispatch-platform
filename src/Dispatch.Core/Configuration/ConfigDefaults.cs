@@ -64,6 +64,7 @@ public static class ConfigDefaults
         [ConfigKeys.PurgeLogFailedRetentionDays] = "7",
         [ConfigKeys.PurgeAuditRetentionDays] = "7",
         [ConfigKeys.PurgeAuditSecurityRetentionDays] = "7",
+        [ConfigKeys.PurgeArchiveRetentionDays] = "0",   // size-pressure JSONL archives: 0 = keep forever
         [ConfigKeys.PurgeSizeTriggerGb] = "9.5",
         [ConfigKeys.PurgeSizeTargetGb] = "9.0",
     };
