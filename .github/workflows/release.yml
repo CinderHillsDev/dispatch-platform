@@ -259,6 +259,48 @@ jobs:
           path: dispatch-*-linux.tar.gz
           if-no-files-found: error
 
+      # Per-arch upgrade bundles for the web-UI self-update: the self-contained payload tarball, a
+      # manifest (version/arch/sha256/minFromVersion), and a detached RSA/SHA-256 signature over the
+      # manifest. The in-app verifier (UpdateBundleVerifier) authenticates the signature with the embedded
+      # public key, then checks the payload's sha256 against the manifest. Signing is gated on the secret;
+      # without it the bundles are unsigned and the updater refuses them.
+      - name: Build + sign upgrade bundles
+        env:
+          SIGNING_KEY: ${{ secrets.DISPATCH_UPDATE_SIGNING_KEY }}
+        run: |
+          ver="${{ steps.ver.outputs.version }}"
+          built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          notes="https://github.com/${{ github.repository }}/releases/tag/v${ver}"
+          keyfile=""
+          if [ -n "$SIGNING_KEY" ]; then
+            keyfile="$(mktemp)"; printf '%s' "$SIGNING_KEY" > "$keyfile"
+          else
+            echo "::warning::DISPATCH_UPDATE_SIGNING_KEY not set — upgrade bundles will be UNSIGNED and the updater will reject them."
+          fi
+          mkdir -p bundles
+          for arch in x64 arm64; do
+            bundle="bundles/dispatch-upgrade-${ver}-linux-${arch}.tar.gz"
+            tar -czf "$bundle" -C "publish/${arch}" .
+            sha="$(sha256sum "$bundle" | awk '{print $1}')"
+            man="bundles/dispatch-upgrade-${ver}-linux-${arch}.manifest.json"
+            printf '{"name":"dispatch","version":"%s","arch":"linux-%s","sha256":"%s","minFromVersion":"0.0.0","builtAt":"%s","notesUrl":"%s"}\n' \
+              "$ver" "$arch" "$sha" "$built" "$notes" > "$man"
+            if [ -n "$keyfile" ]; then
+              openssl dgst -sha256 -sign "$keyfile" -out "${man}.sig" "$man"
+              # Self-check: the signature must verify against the committed public key before we ship it.
+              openssl dgst -sha256 -verify src/Dispatch.Core/Updates/dispatch-update-public.pem -signature "${man}.sig" "$man"
+            fi
+          done
+          [ -n "$keyfile" ] && rm -f "$keyfile" || true
+          ls -lh bundles/
+
+      - name: Upload upgrade bundles
+        uses: actions/upload-artifact@v6
+        with:
+          name: upgrade-bundles
+          path: bundles/*
+          if-no-files-found: error
+
   # Build + push the multi-arch container image (linux/amd64 + linux/arm64) to GHCR. One image tag
   # serves both architectures; `docker pull ghcr.io/<owner>/dispatch-smtp-relay:<ver>` works on any host.
   # Only runs for real tag releases (a dry-run workflow_dispatch skips the push).
@@ -321,6 +363,7 @@ jobs:
           # (the Linux tarball already carries the version). Names match the README.
           cp "dist/windows/DispatchSetup.exe" "release/DispatchSetup-${VER}-x64.exe"
           cp dist/linux/dispatch-*-linux.tar.gz release/
+          cp dist/upgrade-bundles/* release/          # upgrade bundles + manifests + signatures
           ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
 
       - name: Publish GitHub Release
@@ -335,4 +378,5 @@ jobs:
           files: |
             release/DispatchSetup-*-x64.exe
             release/dispatch-*-linux.tar.gz
+            release/dispatch-upgrade-*
             release/SHA256SUMS
