@@ -11,11 +11,11 @@ Dispatch automatically ages out old data so the database and spool disk stay hea
 
 | Data | Retained for |
 | --- | --- |
-| Delivered log rows | 30 days |
-| Failed log rows | 90 days |
-| Spool `failed/` files | 30 days |
+| Delivered log rows | 7 days |
+| Failed log rows | 7 days |
+| Spool `failed/` files | 7 days |
 | Captured (Local Inbox) files | 7 days |
-| Audit log | 90 days |
+| Audit log | 7 days |
 | Security audit entries | 7 days |
 
 All of these are editable under **Settings → Retention**, and map to the `purge.*` keys in the [config key reference](/configuration/config-keys/).

@@ -9,13 +9,13 @@ public sealed class PurgeOptions
     public double ScheduleIntervalHours { get; set; } = 6;
 
     /// <summary>spool/failed/ files older than this are deleted.</summary>
-    public int SpoolFailedRetentionDays { get; set; } = 30;
+    public int SpoolFailedRetentionDays { get; set; } = 7;
 
     /// <summary>spool/captured/ (local dev inbox) files older than this are deleted.</summary>
     public int CapturedRetentionDays { get; set; } = 7;
 
     /// <summary>audit_log entries older than this are deleted (0 = keep forever).</summary>
-    public int AuditRetentionDays { get; set; } = 90;
+    public int AuditRetentionDays { get; set; } = 7;
 
     /// <summary>Noisier security audit events (allow-list denials, SMTP auth failures) kept this long (0 = forever).</summary>
     public int AuditSecurityRetentionDays { get; set; } = 7;
@@ -25,9 +25,9 @@ public sealed class PurgeOptions
 
     public sealed class LogRetention
     {
-        public int DeliveredRetentionDays { get; set; } = 30;
-        public int FailedRetentionDays { get; set; } = 90;
-        public int RetryingRetentionDays { get; set; } = 90;
+        public int DeliveredRetentionDays { get; set; } = 7;
+        public int FailedRetentionDays { get; set; } = 7;
+        public int RetryingRetentionDays { get; set; } = 7;
         public int TestSentRetentionDays { get; set; } = 7;
     }
 
