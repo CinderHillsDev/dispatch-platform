@@ -20,7 +20,8 @@
     10. Config round-trip       — PUT /config/api persists + reloads the cache (live setting)
     11. Settings round-trip     — PUT /settings persists a retention threshold
     12. Audit log               — operations produce audit rows
-    13. Purge                   — a manual purge runs and is recorded in history
+    13. Retention purges        — real data: backdated files are deleted at 1-day retention and KEPT at
+                                  0 (0 = keep forever); log/audit purges honour 0 too; recorded in history
     14. Read-only endpoints     — health/stats/system/spool/metrics all answer
 
   Run after the service is up (serving /health).
@@ -79,6 +80,13 @@ function Send-SmtpMessage($c, [string]$from, [string]$to, [string[]]$dataLines) 
     $c.W.WriteLine('DATA');              $m = $c.R.ReadLine(); if ($m -notmatch '^3')   { throw "DATA: $m" }
     foreach ($line in $dataLines) { $c.W.WriteLine($line) }
     $c.W.WriteLine('.'); $m = $c.R.ReadLine(); if ($m -notmatch '^250') { throw "end-of-DATA: $m" }
+}
+
+# Returns an Invoke-WebRequest body as text whether PowerShell decoded it as a string (text content
+# types, e.g. text/plain) or left it as raw bytes (binary content types, e.g. application/octet-stream).
+function Get-BodyText($resp) {
+    if ($resp.Content -is [byte[]]) { return [Text.Encoding]::ASCII.GetString($resp.Content) }
+    return [string]$resp.Content
 }
 
 # Polls the Local Inbox for a captured message with the given subject and returns its id (.eml name).
@@ -198,8 +206,7 @@ $aid = Find-LocalMessageId $asubj
 $adet = DGet "/api/local/messages/$aid"
 if (@($adet.attachments).Count -lt 1) { throw "attachment was not parsed from the captured message" }
 $dl = Invoke-WebRequest -SkipCertificateCheck -WebSession $sess -Uri "$Dashboard/api/local/messages/$aid/attachments/0"
-$got = [Text.Encoding]::ASCII.GetString($dl.Content)
-if ($got -notmatch [regex]::Escape($attText)) { throw "downloaded attachment content did not match (got: $got)" }
+if ((Get-BodyText $dl) -notmatch [regex]::Escape($attText)) { throw "downloaded attachment content did not match" }
 Write-Host "OK: SMTP attachment parsed by the inbox and downloaded intact"
 
 # === 6b. Attachments over the HTTP API (Mailgun-style multipart 'attachment' field) ==============
@@ -222,7 +229,7 @@ try {
     $apiDet = DGet "/api/local/messages/$apiId"
     if (@($apiDet.attachments).Count -lt 1) { throw "API multipart attachment was not parsed into the message" }
     $apiDl  = Invoke-WebRequest -SkipCertificateCheck -WebSession $sess -Uri "$Dashboard/api/local/messages/$apiId/attachments/0"
-    if ([Text.Encoding]::ASCII.GetString($apiDl.Content) -notmatch [regex]::Escape($apiAttText)) { throw "downloaded API attachment content did not match" }
+    if ((Get-BodyText $apiDl) -notmatch [regex]::Escape($apiAttText)) { throw "downloaded API attachment content did not match" }
     Write-Host "OK: HTTP API accepted a multipart attachment (Mailgun-style) — parsed + downloaded intact"
 }
 finally {
@@ -282,11 +289,69 @@ $cfgAudit = DGet '/api/audit?category=Config'   # config PUTs above audit with c
 if (@($cfgAudit.rows).Count -lt 1) { throw "audit log should contain Config-category rows after config changes" }
 Write-Host "OK: audit log recorded operations ($(@($audit.rows).Count) rows, $(@($cfgAudit.rows).Count) Config)"
 
-# === 13. Purge: run a manual purge and confirm it is recorded in history =========================
-DPost '/api/purge/run' '{}' | Out-Null
-$hist = DGet '/api/purge/history'
-if (@($hist).Count -lt 1) { throw "a manual purge should appear in purge history" }
-Write-Host "OK: manual purge ran and is recorded in history"
+# === 13. Retention purges actually delete — and 0 means "keep forever" (real data, live install) ==
+# Verified against real spooled files on the box: backdate a file so a 1-day retention removes it, and
+# confirm 0 keeps it (the industry "0 = keep forever" convention). The purge worker reads retention via
+# a 10-second cache, so each change waits the TTL out before the dependent purge. Settings are restored
+# afterwards so the install is never left with weakened retention.
+
+# PUT a retention change, wait out the purge-settings cache, then run a manual purge.
+function Invoke-PurgeAfter($retentionJson) {
+    DPut '/api/settings' $retentionJson | Out-Null
+    Start-Sleep -Seconds 12
+    DPost '/api/purge/run' '{}' | Out-Null
+}
+
+# Writes a dummy .eml into $dir and backdates it 10 days so a >=1-day retention will purge it.
+function New-AgedEml([string]$dir, [string]$name) {
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $p = Join-Path $dir $name
+    Set-Content -LiteralPath $p -Value "From: aged@local.test`r`nSubject: aged`r`n`r`nbody" -Encoding ascii
+    (Get-Item -LiteralPath $p).LastWriteTimeUtc = (Get-Date).ToUniversalTime().AddDays(-10)
+    return $p
+}
+
+$origRet  = (DGet '/api/settings').retention
+$spoolDir = (DGet '/api/config').spool.directory
+if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
+    # 13a. Captured / Local Inbox file purge — 0 keeps, 1 deletes the aged file.
+    $capEml = New-AgedEml (Join-Path $spoolDir 'captured') "smoke-purge-cap-$tok.eml"
+    Invoke-PurgeAfter '{"retention":{"capturedRetentionDays":0}}'
+    if (-not (Test-Path -LiteralPath $capEml)) { throw "capturedRetentionDays=0 must KEEP files (0 = keep forever), but the aged file was deleted" }
+    Invoke-PurgeAfter '{"retention":{"capturedRetentionDays":1}}'
+    if (Test-Path -LiteralPath $capEml) { Remove-Item -LiteralPath $capEml -Force -EA SilentlyContinue; throw "capturedRetentionDays=1 should have deleted the 10-day-old captured file" }
+    Write-Host "OK: captured purge — 0 keeps the aged file, 1 deletes it"
+
+    # 13b. Spool failed-file purge — same 0-keeps / 1-deletes proof on real spool files.
+    $failEml = New-AgedEml (Join-Path $spoolDir 'failed') "smoke-purge-fail-$tok.eml"
+    Invoke-PurgeAfter '{"retention":{"spoolFailedRetentionDays":0}}'
+    if (-not (Test-Path -LiteralPath $failEml)) { throw "spoolFailedRetentionDays=0 must KEEP files, but the aged file was deleted" }
+    Invoke-PurgeAfter '{"retention":{"spoolFailedRetentionDays":1}}'
+    if (Test-Path -LiteralPath $failEml) { Remove-Item -LiteralPath $failEml -Force -EA SilentlyContinue; throw "spoolFailedRetentionDays=1 should have deleted the 10-day-old failed file" }
+    Write-Host "OK: spool failed-file purge — 0 keeps the aged file, 1 deletes it"
+}
+else { Write-Host "SKIP: spool dir not locally accessible ($spoolDir) — file-purge deletion not exercised" }
+
+# 13c. Log-row + audit purge honour 0 = keep forever. (A fresh install has no >1-day-old rows to
+#      age-delete, so we prove the guard the user emphasized: retention 0 must NOT delete current data.)
+$delBefore = [int](DGet '/api/messages?event=Delivered&pageSize=1').total
+if ($delBefore -lt 1) { throw "expected Delivered log rows from the deliveries above" }
+Invoke-PurgeAfter '{"retention":{"logDeliveredRetentionDays":0,"auditRetentionDays":0,"auditSecurityRetentionDays":0}}'
+$delAfter = [int](DGet '/api/messages?event=Delivered&pageSize=1').total
+if ($delAfter -lt $delBefore) { throw "logDeliveredRetentionDays=0 must keep all rows (0 = keep forever), but Delivered rows dropped ($delBefore -> $delAfter)" }
+Write-Host "OK: log + audit purge honour 0 = keep forever (Delivered rows held at $delAfter)"
+
+# restore the original retention thresholds so the install isn't left with weakened retention.
+$restore = @{ retention = @{
+    capturedRetentionDays      = [int]$origRet.capturedRetentionDays
+    spoolFailedRetentionDays   = [int]$origRet.spoolFailedRetentionDays
+    logDeliveredRetentionDays  = [int]$origRet.logDeliveredRetentionDays
+    auditRetentionDays         = [int]$origRet.auditRetentionDays
+    auditSecurityRetentionDays = [int]$origRet.auditSecurityRetentionDays
+} } | ConvertTo-Json -Depth 5
+DPut '/api/settings' $restore | Out-Null
+if (@(DGet '/api/purge/history').Count -lt 1) { throw "a manual purge should appear in purge history" }
+Write-Host "OK: purges recorded in history; retention thresholds restored"
 
 # === 14. Read-only / observability endpoints all answer =========================================
 foreach ($p in '/api/stats', '/api/stats/relays', '/api/stats/throughput', '/api/system', '/api/spool', '/health') {
