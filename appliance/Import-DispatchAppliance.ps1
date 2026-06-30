@@ -132,7 +132,9 @@ if ($useMenu) {
 }
 
 # --- create -------------------------------------------------------------------------------------
-# Place the VM's disk under the chosen storage, copying the appliance VHDX so the original stays pristine.
+# Everything for this VM lives under one folder named after it: <chosen storage>\<VM name>\ — holding both
+# the VM config (New-VM -Path) and the copied VHDX. This keeps each VM self-contained (matching the Hyper-V
+# wizard's "store the VM in a different location") and the original appliance VHDX stays pristine.
 $destDir  = Join-Path $VmPath $Name
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 $destVhdx = Join-Path $destDir ([IO.Path]::GetFileName($VhdxPath))
@@ -141,7 +143,7 @@ Copy-Item -Path $VhdxPath -Destination $destVhdx -Force
 
 Write-Host "Creating Generation 2 VM '$Name'"
 $vm = New-VM -Name $Name -Generation 2 -MemoryStartupBytes ($MemoryGB * 1GB) `
-             -VHDPath $destVhdx -SwitchName $SwitchName -Path $VmPath
+             -VHDPath $destVhdx -SwitchName $SwitchName -Path $destDir
 Set-VMProcessor -VM $vm -Count $CpuCount
 
 # Linux on Gen2 needs the Microsoft UEFI CA Secure Boot template (not the default Windows one).
