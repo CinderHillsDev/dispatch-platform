@@ -183,6 +183,31 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     }
 
     [Fact]
+    public async Task Message_log_list_collapses_lifecycle_events_to_one_row_per_message()
+    {
+        if (!sql.Available) return;
+        var log = new SqlLogRepository(sql.Factory);
+        var query = new SqlMessageLogQuery(sql.Factory);
+
+        var dom = $"grp-{Guid.NewGuid():N}.test";   // unique domain so the query is scoped to this test's rows
+        var spool = Guid.NewGuid().ToString("N");
+
+        // One message that retried twice then delivered = 3 relay_log rows sharing one spool id.
+        await log.InsertAsync(new RelayLogEntry { Event = "Retrying", Status = "Error", SpoolId = spool, FromAddress = $"a@{dom}", FromDomain = dom, ToAddresses = ["b@y.com"], ToDomain = "y.com", Provider = "None", Error = "temp" });
+        await log.InsertAsync(new RelayLogEntry { Event = "Retrying", Status = "Error", SpoolId = spool, FromAddress = $"a@{dom}", FromDomain = dom, ToAddresses = ["b@y.com"], ToDomain = "y.com", Provider = "None", Error = "temp" });
+        await log.InsertAsync(new RelayLogEntry { Event = "Delivered", Status = "OK", SpoolId = spool, FromAddress = $"a@{dom}", FromDomain = dom, ToAddresses = ["b@y.com"], ToDomain = "y.com", Provider = "None" });
+        // A connection-level denial has no spool id and is its own message.
+        await log.InsertAsync(new RelayLogEntry { Event = "Denied", Status = "Denied", SpoolId = "", FromAddress = $"c@{dom}", FromDomain = dom, ToAddresses = [], ToDomain = "", IngestSource = "SMTP", Error = "blocked" });
+
+        var page = await query.PageAsync(new MessageLogFilter { FromDomain = dom, Limit = 50 }, offset: 0);
+
+        // The 3 lifecycle rows collapse to ONE row showing the latest event (Delivered); the denial stays its own.
+        Assert.Equal(2, page.Total);
+        Assert.Equal("Delivered", page.Rows.Single(r => r.SpoolId == spool).Event);
+        Assert.Single(page.Rows, r => r.Event == "Denied");
+    }
+
+    [Fact]
     public async Task Log_row_with_api_key_is_returned_by_per_key_query()
     {
         if (!sql.Available) return;

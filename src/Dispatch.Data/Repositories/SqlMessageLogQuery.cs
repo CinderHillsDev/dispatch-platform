@@ -56,11 +56,20 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         p.Add("Offset", offset);
         p.Add("Limit", limit);
 
+        // The list shows ONE row per message. relay_log holds a row per lifecycle event (a Retrying row per
+        // failed attempt, then a terminal Delivered/Failed), so collapse by spool_id and keep only the latest
+        // event as the message's current state. Connection-level rows (denials, pre-DATA failures) have no
+        // spool_id — each stays its own row (grouped by id). The full per-attempt history is in the detail view.
+        const string GroupKey = "CASE WHEN spool_id IS NULL OR spool_id = '' THEN CONCAT('id:', id) ELSE spool_id END";
         var sql = $"""
-            SELECT COUNT(*) FROM relay_log {where};
+            SELECT COUNT(*) FROM (SELECT DISTINCT {GroupKey} AS grp FROM relay_log {where}) g;
             SELECT {RowColumns}
-            FROM relay_log
-            {where}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY {GroupKey} ORDER BY logged_at DESC, id DESC) AS rn
+                FROM relay_log
+                {where}
+            ) t
+            WHERE rn = 1
             ORDER BY logged_at DESC, id DESC
             OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY;
             """;
