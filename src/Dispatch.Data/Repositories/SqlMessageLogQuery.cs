@@ -60,7 +60,6 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         // failed attempt, then a terminal Delivered/Failed), so collapse by spool_id and keep only the latest
         // event as the message's current state. Connection-level rows (denials, pre-DATA failures) have no
         // spool_id — each stays its own row (grouped by id). The full per-attempt history is in the detail view.
-        const string GroupKey = "CASE WHEN spool_id IS NULL OR spool_id = '' THEN CONCAT('id:', id) ELSE spool_id END";
         var sql = $"""
             SELECT COUNT(*) FROM (SELECT DISTINCT {GroupKey} AS grp FROM relay_log {where}) g;
             SELECT {RowColumns}
@@ -88,6 +87,10 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         provider AS Provider, duration_ms AS DurationMs, size_bytes AS SizeBytes,
         ingest_source AS IngestSource, retry_attempt AS RetryAttempt, error AS Error
         """;
+
+    // Collapse a message's lifecycle rows (Retrying×N → terminal Delivered/Failed) into one group keyed by
+    // spool_id. Connection-level rows with no spool_id (denials, pre-DATA failures) each get their own group.
+    private const string GroupKey = "CASE WHEN spool_id IS NULL OR spool_id = '' THEN CONCAT('id:', id) ELSE spool_id END";
 
     // Shared filter clauses (no cursor/paging). Every user value is a parameter — never interpolated.
     private static void AppendFilters(StringBuilder where, DynamicParameters p, MessageLogFilter filter)
@@ -141,13 +144,26 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
     public async Task<IReadOnlyList<MessageLogRow>> RecentByApiKeyAsync(
         int apiKeyId, int limit, string[]? statuses, CancellationToken ct = default)
     {
-        var page = await QueryAsync(new MessageLogFilter
-        {
-            ApiKeyId = apiKeyId,
-            Statuses = statuses is { Length: > 0 } ? statuses : null,
-            Limit = limit,
-        }, ct);
-        return page.Rows;
+        limit = Math.Clamp(limit, 1, 200);
+        var where = new StringBuilder("WHERE api_key_id = @ApiKeyId");
+        var p = new DynamicParameters();
+        p.Add("ApiKeyId", apiKeyId);
+        p.Add("Limit", limit);
+        if (statuses is { Length: > 0 }) { where.Append(" AND status IN @Statuses"); p.Add("Statuses", statuses); }
+
+        // One row per message (latest event), matching the dashboard list — see GroupKey.
+        var sql = $"""
+            SELECT TOP (@Limit) {RowColumns}
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY {GroupKey} ORDER BY logged_at DESC, id DESC) AS rn
+                FROM relay_log
+                {where}
+            ) t
+            WHERE rn = 1
+            ORDER BY logged_at DESC, id DESC;
+            """;
+        await using var cn = await factory.OpenAsync(ct);
+        return (await cn.QueryAsync<MessageLogRow>(new CommandDefinition(sql, p, cancellationToken: ct))).ToList();
     }
 
     public async Task<MessageLogDetail?> GetByIdAsync(long id, CancellationToken ct = default)
