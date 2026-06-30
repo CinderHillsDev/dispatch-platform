@@ -26,7 +26,7 @@ public sealed class MailgunProvider(RelayConfig config, HttpClient http) : IRela
         var apiKey = Require("ApiKey");
         var domain = Require("Domain").Trim();
         // The domain is interpolated into the request path; reject anything that isn't a bare hostname so it
-        // can't alter the URL path (e.g. slashes, "..", query/fragment) — the host itself is already pinned.
+        // can't alter the URL path (e.g. slashes, "..", query/fragment) - the host itself is already pinned.
         if (!DomainPattern.IsMatch(domain))
             throw new InvalidOperationException($"Mailgun relay 'Domain' is not a valid hostname: '{domain}'.");
         var region = (Setting("Region") ?? "US").Trim().ToUpperInvariant();
@@ -84,7 +84,7 @@ public sealed class MailgunProvider(RelayConfig config, HttpClient http) : IRela
         catch { /* id/message are best-effort */ }
 
         // Spec §11.6 detail format.
-        return RelayResult.Success(id, $"HTTP {(int)response.StatusCode} — id: {id}, message: {statusMessage ?? "Queued"}");
+        return RelayResult.Success(id, $"HTTP {(int)response.StatusCode} - id: {id}, message: {statusMessage ?? "Queued"}");
     }
 
     private static bool IsTransient(HttpStatusCode code) =>

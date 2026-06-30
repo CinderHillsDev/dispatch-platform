@@ -5,7 +5,7 @@ namespace Dispatch.Web.Realtime;
 
 /// <summary>
 /// Holds the last N relay events for replay-on-connect and broadcasts each new event to connected
-/// SignalR clients (spec §9.2, §19.6). Singleton — shared by the broadcasting log repository and the hub.
+/// SignalR clients (spec §9.2, §19.6). Singleton - shared by the broadcasting log repository and the hub.
 /// </summary>
 public sealed class RelayEventStream(IHubContext<LogHub> hub)
 {

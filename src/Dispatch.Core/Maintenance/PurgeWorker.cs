@@ -10,7 +10,7 @@ namespace Dispatch.Core.Maintenance;
 /// <summary>
 /// Background retention + auto-purge (spec §6.10): deletes aged spool/failed and spool/captured files,
 /// purges old relay_log rows per event type, and runs a size-pressure purge when the database nears the
-/// SQL Server Express limit. Runs once on startup and then on a fixed interval. All work is best-effort —
+/// SQL Server Express limit. Runs once on startup and then on a fixed interval. All work is best-effort -
 /// a failure in one cycle is logged and never crashes the service.
 /// </summary>
 public sealed class PurgeWorker(
@@ -26,7 +26,7 @@ public sealed class PurgeWorker(
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        // Resolve the (live, SQL-backed) settings once per cycle — retention/threshold edits in the web
+        // Resolve the (live, SQL-backed) settings once per cycle - retention/threshold edits in the web
         // UI take effect on the next cycle without a restart.
         var initial = await settings.GetAsync(ct);
         if (!initial.Enabled)
@@ -95,7 +95,7 @@ public sealed class PurgeWorker(
 
     private async Task<int> PurgeLogAsync(string @event, int retentionDays, CancellationToken ct)
     {
-        // 0 (or negative) means "keep forever" — the industry convention, consistent with the audit-log
+        // 0 (or negative) means "keep forever" - the industry convention, consistent with the audit-log
         // purge and the "0 = keep forever" hint in the Settings UI. Without this, retention 0 would compute
         // a cutoff of "now" and delete everything.
         if (retentionDays <= 0) return 0;
@@ -112,7 +112,7 @@ public sealed class PurgeWorker(
         // operator's own external server there is no cap, so the size-pressure purge never runs there.
         if (!await logs.IsSizeCappedEditionAsync(ct)) return 0;
 
-        // Key off USED space, not the allocated file size (which never shrinks on DELETE) — so the loop
+        // Key off USED space, not the allocated file size (which never shrinks on DELETE) - so the loop
         // actually converges and frees a bounded amount.
         var used = await logs.GetDatabaseUsedBytesAsync(ct);
         var trigger = (long)(o.SizePressure.TriggerGb * BytesPerGb);
@@ -121,7 +121,7 @@ public sealed class PurgeWorker(
         var targetGb = Math.Min(o.SizePressure.TargetGb, o.SizePressure.TriggerGb);
         var target = (long)(targetGb * BytesPerGb);
 
-        log.LogWarning("Database using {UsedGb:F1} GB (Express 10 GB cap) — archiving + purging oldest rows down to {TargetGb:F1} GB",
+        log.LogWarning("Database using {UsedGb:F1} GB (Express 10 GB cap) - archiving + purging oldest rows down to {TargetGb:F1} GB",
             used / (double)BytesPerGb, targetGb);
 
         // Archive rows to weekly JSONL before deleting them, so this emergency purge never silently loses
@@ -157,7 +157,7 @@ public sealed class PurgeWorker(
 
     private static int PurgeFiles(string dir, int retentionDays, bool includeMeta, string pattern = "*.eml")
     {
-        // 0 (or negative) means "keep forever" — see PurgeLogAsync. Guard before computing the cutoff,
+        // 0 (or negative) means "keep forever" - see PurgeLogAsync. Guard before computing the cutoff,
         // otherwise retention 0 would delete every file older than "now".
         if (retentionDays <= 0 || !Directory.Exists(dir)) return 0;
         var cutoff = DateTime.UtcNow.AddDays(-retentionDays);

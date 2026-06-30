@@ -93,7 +93,7 @@ public class ApiMessageHandlerTests
             var handler = new ApiMessageHandler(new SpoolDirectory(dir),
                 Options.Create(new ApiOptions { MaxMessageBytes = 0 }), Resolver(maxBytes: 0),
                 NullLogger<ApiMessageHandler>.Instance);
-            // The \r\n in the header value is real CR/LF after JSON decoding — a header-smuggling attempt.
+            // The \r\n in the header value is real CR/LF after JSON decoding - a header-smuggling attempt.
             var json = "{\"from\":\"a@x.com\",\"to\":[\"b@y.com\"],\"subject\":\"hi\",\"text\":\"body\",\"headers\":{\"X-Evil\":\"a\\r\\nInjected: yes\"}}";
 
             var result = await handler.HandleAsync(JsonRequest(json), default);

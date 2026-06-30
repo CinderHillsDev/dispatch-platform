@@ -9,7 +9,7 @@ Mailgun is an HTTP-based email provider. Add it from the dashboard's **Relays** 
 
 ## How it works
 
-Dispatch posts the raw MIME message to Mailgun's `/messages.mime` endpoint. Because the original MIME is preserved, all of your headers and attachments pass through exactly as built — see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
+Dispatch posts the raw MIME message to Mailgun's `/messages.mime` endpoint. Because the original MIME is preserved, all of your headers and attachments pass through exactly as built - see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
 
 ## Settings
 

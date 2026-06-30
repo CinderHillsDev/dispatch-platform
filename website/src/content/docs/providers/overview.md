@@ -25,7 +25,7 @@ text + HTML bodies, custom headers, and attachments**.
 | [Bird](https://bird.com) | REST API | API credentials |
 | [Azure Communication Services](https://azure.microsoft.com/products/communication-services) | SDK | Connection String, Sender Address |
 | Generic **SMTP** | SMTP via MailKit | Host, Port, Username, Password, TLS mode |
-| **Local** | Capture only | — captures to the [Local Inbox](/sending/local-inbox/); never delivers |
+| **Local** | Capture only | - captures to the [Local Inbox](/sending/local-inbox/); never delivers |
 
 ## Notes
 
@@ -33,8 +33,8 @@ text + HTML bodies, custom headers, and attachments**.
   arbitrary custom headers.
 - **Azure Communication Services** requires each sender to be a configured **MailFrom** address; the
   dashboard test lets you pick from the MailFrom addresses defined for that relay.
-- The **Local** provider is for development and CI — see [Local Inbox](/sending/local-inbox/).
+- The **Local** provider is for development and CI - see [Local Inbox](/sending/local-inbox/).
 
-More providers are welcome — see the
+More providers are welcome - see the
 [provider issues](https://github.com/chrismuench/Dispatch-SMTP-Relay/issues?q=label%3Aprovider) and
 the [Contributing](/project/contributing/) guide.

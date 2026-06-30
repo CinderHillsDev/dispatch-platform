@@ -67,7 +67,7 @@ export function Routing() {
       </div>
       <p className="muted" style={{ fontSize: 13, margin: "8px 0 18px" }}>
         Rules are checked in order (#1 first); the first match wins. Mail that matches no rule falls through
-        to the catch-all at the bottom — choose which relay handles it there.
+        to the catch-all at the bottom - choose which relay handles it there.
       </p>
 
       <div className="panel" style={{ padding: 0 }}>
@@ -81,7 +81,7 @@ export function Routing() {
                 <td>{r.recipientPattern ?? <span className="muted">(any)</span>}</td>
                 <td>{r.senderPattern ?? <span className="muted">(any)</span>}</td>
                 <td>{r.relayName}</td>
-                <td>{r.enabled ? "✓" : "—"}</td>
+                <td>{r.enabled ? "✓" : "-"}</td>
                 <td style={{ textAlign: "right" }}>
                   <ActionsMenu items={[
                     { label: "Edit", onClick: () => setEditing(r) },
@@ -102,10 +102,10 @@ export function Routing() {
               <td className="muted">(any)</td>
               <td>
                 {relays.length === 0
-                  ? <span className="muted">— no relay configured —</span>
+                  ? <span className="muted">- no relay configured -</span>
                   : (
                     <select value={catchAll?.id ?? ""} onChange={(e) => setCatchAll(Number(e.target.value))} style={{ width: "100%" }}>
-                      {!catchAll && <option value="">— select a relay —</option>}
+                      {!catchAll && <option value="">- select a relay -</option>}
                       {relays.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                   )}
@@ -142,7 +142,7 @@ export function Routing() {
   );
 }
 
-// Add/edit routing-rule dialog — a labelled form instead of the old free-text row.
+// Add/edit routing-rule dialog - a labelled form instead of the old free-text row.
 function RuleModal({ relays, rule, onClose, onSaved }: {
   relays: RelayListItem[]; rule?: RuleItem; onClose: () => void; onSaved: () => Promise<void>;
 }) {
@@ -179,7 +179,7 @@ function RuleModal({ relays, rule, onClose, onSaved }: {
             {relays.map((r) => <option key={r.id} value={r.id}>{r.name}{r.isDefault ? " (catch-all)" : ""}</option>)}
           </select>
         </Lbl>
-        <p className="muted" style={{ fontSize: 12, margin: 0 }}>Match by recipient and/or sender domain — at least one is required.</p>
+        <p className="muted" style={{ fontSize: 12, margin: 0 }}>Match by recipient and/or sender domain - at least one is required.</p>
         {err && <p style={{ color: "var(--red)", fontSize: 13, margin: 0 }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
           <button onClick={onClose}>Cancel</button>

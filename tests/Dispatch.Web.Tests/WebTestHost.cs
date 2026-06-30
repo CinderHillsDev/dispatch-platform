@@ -22,7 +22,7 @@ namespace Dispatch.Web.Tests;
 
 /// <summary>
 /// Boots a real Kestrel host (the endpoints branch on the real local port, so a real listener is
-/// needed — TestServer reports port 0) with in-memory fakes instead of SQL. Shared across a test class.
+/// needed - TestServer reports port 0) with in-memory fakes instead of SQL. Shared across a test class.
 /// </summary>
 public sealed class WebTestHost : IAsyncLifetime
 {
@@ -74,9 +74,9 @@ public sealed class WebTestHost : IAsyncLifetime
         // /health reports configuredPorts (from ListenerOptions) plus an empty listeningPorts.
         builder.Services.AddSingleton<Dispatch.Core.Maintenance.SmtpListenerState>();
 
-        // ConfigCache is the runtime source of truth (spec §12.5). Seed defaults into the fake config repo —
+        // ConfigCache is the runtime source of truth (spec §12.5). Seed defaults into the fake config repo -
         // overriding the ports the test host actually listens on so ApiKeyMiddleware (which reads api.port
-        // live) routes correctly — then load the cache from it. Seeding the repo (not just the cache) means a
+        // live) routes correctly - then load the cache from it. Seeding the repo (not just the cache) means a
         // PUT /api/config that reloads the cache reconstructs every key, not only the ones it wrote.
         var fakeConfig = new FakeConfigRepository();
         var seed = new Dictionary<string, string>(ConfigDefaults.Defaults, StringComparer.OrdinalIgnoreCase)

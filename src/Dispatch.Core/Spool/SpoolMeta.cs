@@ -36,12 +36,12 @@ public sealed class SpoolMeta
     public void Save(string emlPath) =>
         File.WriteAllText(PathFor(emlPath), JsonSerializer.Serialize(this, Json));
 
-    /// <summary>Full load — used by the worker after claiming a file.</summary>
+    /// <summary>Full load - used by the worker after claiming a file.</summary>
     public static SpoolMeta Load(string emlPath) =>
         JsonSerializer.Deserialize<SpoolMeta>(File.ReadAllText(PathFor(emlPath)), Json)!;
 
     /// <summary>
-    /// Reads the .meta without requiring the .eml — used by the relay-aware claim loop.
+    /// Reads the .meta without requiring the .eml - used by the relay-aware claim loop.
     /// Returns null if the meta is missing (file just written) or corrupt (being written).
     /// </summary>
     public static SpoolMeta? Peek(string emlPath)

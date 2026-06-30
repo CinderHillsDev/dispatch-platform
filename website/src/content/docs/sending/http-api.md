@@ -30,9 +30,9 @@ curl -X POST http://localhost:8025/api/v1/messages \
 # → 202 Accepted: { "id": "spl_a1b2c3d4", "message": "Queued. Thank you." }
 ```
 
-- **`multipart/form-data`** — fields `from`, `to`, `cc`, `bcc`, `subject`, `text`, `html`,
+- **`multipart/form-data`** - fields `from`, `to`, `cc`, `bcc`, `subject`, `text`, `html`,
   `h:<Name>` (custom headers), `attachment` (repeatable), `o:tag` (repeatable).
-- **`application/json`** — `{ from, to[], cc[], bcc[], subject, text, html, headers{}, tags[] }`.
+- **`application/json`** - `{ from, to[], cc[], bcc[], subject, text, html, headers{}, tags[] }`.
 
 ## Check status / history
 
@@ -46,7 +46,7 @@ Status values: `queued` → `processing` → `delivered` | `retrying` | `failed`
 ## HTTPS
 
 Enable the HTTPS listener under **Settings → HTTP API** (port 8026). It uses the shared
-[TLS certificate](/configuration/tls-certificate/) that also secures SMTP STARTTLS — and if you
+[TLS certificate](/configuration/tls-certificate/) that also secures SMTP STARTTLS - and if you
 haven't configured one, it falls back to an auto-generated self-signed cert, so HTTPS works as soon as
 you flip the toggle. Once clients are migrated you can turn the plain-HTTP listener off entirely. The API is gated by API keys and a
-source-IP allow-list (closed to private ranges by default) — see [Security](/security/).
+source-IP allow-list (closed to private ranges by default) - see [Security](/security/).

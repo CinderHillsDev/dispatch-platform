@@ -1,6 +1,6 @@
 namespace Dispatch.Core.Smtp;
 
-/// <summary>A configured SMTP sender credential (spec §5.3) — never carries the password.</summary>
+/// <summary>A configured SMTP sender credential (spec §5.3) - never carries the password.</summary>
 public sealed record SmtpCredential(int Id, string Username, DateTime CreatedAt, DateTime? LastUsedAt);
 
 /// <summary>Manages the SMTP AUTH allow-list stored in <c>config_smtp_credentials</c> (bcrypt-hashed).</summary>

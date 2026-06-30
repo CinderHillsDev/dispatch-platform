@@ -128,7 +128,7 @@ export function Reports() {
 }
 
 function deliveryRate(delivered: number, received: number): string {
-  if (received <= 0) return "—";
+  if (received <= 0) return "-";
   return `${Math.round((delivered / received) * 100)}%`;
 }
 
@@ -137,7 +137,7 @@ function Card({ label, value, accent, suffix }: { label: string; value: number |
     <div className="card">
       <div className="muted" style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</div>
       <div style={{ fontSize: 26, fontWeight: 600, marginTop: 6, color: accent ?? "var(--text)" }}>
-        {value === undefined ? "—" : typeof value === "number" ? n(value) : value}{suffix ?? ""}
+        {value === undefined ? "-" : typeof value === "number" ? n(value) : value}{suffix ?? ""}
       </div>
     </div>
   );

@@ -25,22 +25,22 @@ Your apps / scripts  →  Dispatch API  (port 8025/8026)    ─┘
 
 ## The flow
 
-1. **Ingest** — a message arrives over SMTP or the HTTP API. After source-IP and auth checks, it is
+1. **Ingest** - a message arrives over SMTP or the HTTP API. After source-IP and auth checks, it is
    written to `spool/incoming/` as an `.eml` file with a `.meta` sidecar.
-2. **Acknowledge** — Dispatch returns `250 OK` (SMTP) or `202 Accepted` (API) immediately. Nothing
+2. **Acknowledge** - Dispatch returns `250 OK` (SMTP) or `202 Accepted` (API) immediately. Nothing
    on the hot path touches the database or the network.
-3. **Relay** — a worker picks up the file, resolves the [routing rule](/routing/) to choose a relay,
+3. **Relay** - a worker picks up the file, resolves the [routing rule](/routing/) to choose a relay,
    and forwards it to the provider. On success it moves on; on a transient error it retries with
    back-off; on permanent failure it lands in `spool/failed/` for manual retry.
-4. **Log** — the outcome is written to the `relay_log` table in SQL Server for the searchable history
+4. **Log** - the outcome is written to the `relay_log` table in SQL Server for the searchable history
    in the dashboard.
 
 ## Why it matters
 
-- **Resilience** — the spool is the source of truth. If SQL Server or the provider is down, mail is
+- **Resilience** - the spool is the source of truth. If SQL Server or the provider is down, mail is
   still accepted and delivered once they recover.
-- **Speed** — senders never wait on a database write or an upstream API call.
-- **Durability** — `.eml` files survive process restarts and crashes.
+- **Speed** - senders never wait on a database write or an upstream API call.
+- **Durability** - `.eml` files survive process restarts and crashes.
 
 See [Configuration](/configuration/overview/) for the spool directory, worker count, and retry
 policy.

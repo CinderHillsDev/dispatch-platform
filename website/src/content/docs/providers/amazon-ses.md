@@ -9,7 +9,7 @@ Amazon Simple Email Service (SES) is an HTTP-based email provider. Add it from t
 
 ## How it works
 
-Dispatch sends through the SES v2 API using the official AWS SDK, submitting the raw MIME message. Because the original MIME is preserved, all of your headers and attachments pass through exactly as built — see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
+Dispatch sends through the SES v2 API using the official AWS SDK, submitting the raw MIME message. Because the original MIME is preserved, all of your headers and attachments pass through exactly as built - see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
 
 ## Settings
 

@@ -30,7 +30,7 @@ export function SmtpAuth() {
       <p className="muted" style={{ fontSize: 13, margin: "0 0 18px" }}>
         They're only enforced when <strong>Require SMTP AUTH</strong> is on under <strong>Settings → SMTP listener</strong>;
         otherwise the listener accepts mail from any allowed source IP without a login. Passwords are stored
-        bcrypt-hashed — they can't be retrieved, only reset.
+        bcrypt-hashed - they can't be retrieved, only reset.
       </p>
 
       <div className="panel" style={{ maxWidth: 680, padding: 0 }}>
@@ -50,7 +50,7 @@ export function SmtpAuth() {
                 </td>
               </tr>
             ))}
-            {creds.length === 0 && <tr><td colSpan={4} className="center">No SMTP logins yet — click “Add credential”.</td></tr>}
+            {creds.length === 0 && <tr><td colSpan={4} className="center">No SMTP logins yet - click “Add credential”.</td></tr>}
           </tbody>
         </table>
       </div>

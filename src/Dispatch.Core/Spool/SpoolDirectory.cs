@@ -20,7 +20,7 @@ public sealed class SpoolDirectory
     /// rows before deleting them, so an emergency near-10GB purge never silently loses history.</summary>
     public string ArchiveDir { get; }
 
-    // Bounded doorbell: filenames only. DropOldest because a dropped wake-up is harmless —
+    // Bounded doorbell: filenames only. DropOldest because a dropped wake-up is harmless -
     // the FileSystemWatcher and startup sweep guarantee files are still discovered.
     private readonly Channel<string> _doorbell =
         Channel.CreateBounded<string>(new BoundedChannelOptions(256)
@@ -36,7 +36,7 @@ public sealed class SpoolDirectory
         FailedDir = Path.Combine(Root, "failed");
         CapturedDir = Path.Combine(Root, "captured");
         ArchiveDir = Path.Combine(Root, "archive");
-        // The spool holds full message bodies (and the .dispatch-key lives in the data dir) — restrict to the
+        // The spool holds full message bodies (and the .dispatch-key lives in the data dir) - restrict to the
         // owner (700) on non-Windows so other local users can't read spooled mail.
         CreatePrivate(Root);
         CreatePrivate(IncomingDir);
@@ -52,7 +52,7 @@ public sealed class SpoolDirectory
         if (!OperatingSystem.IsWindows())
         {
             try { File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); } // 700
-            catch { /* best-effort — a restrictive umask or unsupported FS shouldn't block startup */ }
+            catch { /* best-effort - a restrictive umask or unsupported FS shouldn't block startup */ }
         }
     }
 
@@ -60,7 +60,7 @@ public sealed class SpoolDirectory
     public string ProcessingPath(string filename) => Path.Combine(ProcessingDir, filename);
     public string FailedPath(string filename) => Path.Combine(FailedDir, filename);
 
-    /// <summary>Wake an idle worker. Best-effort — never blocks.</summary>
+    /// <summary>Wake an idle worker. Best-effort - never blocks.</summary>
     public void Signal(string filename) => _doorbell.Writer.TryWrite(filename);
 
     public ValueTask<string> WaitAsync(CancellationToken ct) => _doorbell.Reader.ReadAsync(ct);

@@ -5,7 +5,7 @@ very welcome.
 
 ## Reporting a vulnerability
 
-**Please report privately — do not open a public issue for a vulnerability.**
+**Please report privately - do not open a public issue for a vulnerability.**
 
 Use **[GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new)**
 (Security → Report a vulnerability). That keeps the report private until a fix is available and lets us
@@ -15,7 +15,7 @@ If you can, include:
 
 - A description of the issue and its impact
 - Steps to reproduce (a minimal proof of concept is ideal)
-- Affected version / commit, and your environment (OS, deployment shape — installer, Docker, etc.)
+- Affected version / commit, and your environment (OS, deployment shape - installer, Docker, etc.)
 - Any suggested remediation
 
 Please give us a reasonable window to release a fix before public disclosure. We'll acknowledge your
@@ -28,7 +28,7 @@ branch. Please reproduce on the latest version before reporting.
 
 ## Scope
 
-In scope — anything that lets an attacker:
+In scope - anything that lets an attacker:
 
 - Send mail through Dispatch without authorization (open-relay / allow-list bypass / SMTP AUTH bypass)
 - Read or exfiltrate message content, the spool, provider credentials, or API keys

@@ -26,7 +26,7 @@ public static class WebEndpoints
     private static readonly string Version =
         typeof(WebEndpoints).Assembly.GetName().Version?.ToString() ?? "dev";
 
-    /// <summary>Ingestion API (spec §7), reachable only on the API port(s) — plain HTTP and/or HTTPS; auth is
+    /// <summary>Ingestion API (spec §7), reachable only on the API port(s) - plain HTTP and/or HTTPS; auth is
     /// enforced by middleware.</summary>
     public static void MapIngestionApi(this IEndpointRouteBuilder app, ApiOptions api)
     {
@@ -35,7 +35,7 @@ public static class WebEndpoints
         group.MapPost("/messages", (HttpContext ctx, ApiMessageHandler handler, CancellationToken ct) =>
             handler.HandleAsync(ctx, ct));
 
-        // Per-key recent message list (spec §7.4). Scoped to the calling key — never leaks other keys' messages.
+        // Per-key recent message list (spec §7.4). Scoped to the calling key - never leaks other keys' messages.
         group.MapGet("/messages", async (HttpContext ctx, IMessageLogQuery logs, CancellationToken ct) =>
         {
             if (ctx.Items[ApiKeyMiddleware.ApiKeyItem] is not ApiKey key)
@@ -54,7 +54,7 @@ public static class WebEndpoints
         group.MapGet("/messages/{id}", async (string id, HttpContext ctx, SpoolDirectory spool, IMessageLogQuery logs, CancellationToken ct) =>
         {
             // Scope to the calling key so one key can't probe another key's message by guessing its id
-            // (spec §7.4 — per-key). The spool fast-path checks the .meta's api key; the log lookup filters by it.
+            // (spec §7.4 - per-key). The spool fast-path checks the .meta's api key; the log lookup filters by it.
             if (ctx.Items[ApiKeyMiddleware.ApiKeyItem] is not ApiKey callerKey)
                 return Results.Unauthorized();
 
@@ -94,9 +94,9 @@ public static class WebEndpoints
     {
         // No auth, any port (§14.4). Liveness ("status") never blocks on SQL; all probes are best-effort,
         // non-throwing, and short-budget so monitors get a fast answer. Three states (spec §14.4):
-        //   healthy  — everything nominal                                    -> 200
-        //   degraded — SQL unreachable (mail still flows via the spool)      -> 200
-        //   critical — intake suspended (disk critically low)                -> 503
+        //   healthy  - everything nominal                                    -> 200
+        //   degraded - SQL unreachable (mail still flows via the spool)      -> 200
+        //   critical - intake suspended (disk critically low)                -> 503
         app.MapGet("/health", async (
             SpoolDirectory spool, IDatabaseHealth db, ILogMaintenance maintenance, MinuteCounterRing ring,
             IntakeState intake, IOptions<ListenerOptions> listener, SmtpListenerState listenerState,
@@ -110,21 +110,21 @@ public static class WebEndpoints
             if (connected)
             {
                 try { dbSizeMb = (await maintenance.GetDatabaseSizeBytesAsync(ct)) / (1024 * 1024); }
-                catch { /* best-effort — leave null */ }
+                catch { /* best-effort - leave null */ }
             }
 
             long? diskFreeMb = null;
             try { diskFreeMb = new DriveInfo(spool.Root).AvailableFreeSpace / (1024 * 1024); }
-            catch { /* best-effort — leave null */ }
+            catch { /* best-effort - leave null */ }
 
             var configuredPorts = listener.Value.EffectivePorts;
             var listeningPorts = listenerState.ListeningPorts;   // what actually bound (may differ: 25 -> 2525 fallback)
             var suspended = intake.Level == IntakeLevel.Suspended;
             var status = suspended ? "critical" : connected ? "healthy" : "degraded";
             var message = suspended
-                ? "Disk space critically low — SMTP intake suspended"
+                ? "Disk space critically low - SMTP intake suspended"
                 : connected ? null
-                : "SQL Server unavailable — mail flow unaffected; UI log unavailable";
+                : "SQL Server unavailable - mail flow unaffected; UI log unavailable";
 
             var payload = new
             {
@@ -144,7 +144,7 @@ public static class WebEndpoints
                 },
                 sql = new { connected, dbSizeMb },
                 // `ports` (configured) is kept for backward compatibility; `listeningPorts` is what actually
-                // bound — they differ when 25 couldn't be bound and the listener fell back to 2525.
+                // bound - they differ when 25 couldn't be bound and the listener fell back to 2525.
                 smtp = new { listening = configuredPorts.Length > 0, ports = configuredPorts, configuredPorts, listeningPorts },
             };
             return suspended
@@ -224,7 +224,7 @@ public static class WebEndpoints
         group.MapGet("/spool", (SpoolDirectory spool) => Results.Ok(SpoolCounts(spool)));
 
         // Storage usage broken out by retention category (spec §6.10): how much each log-event class, the
-        // audit log, and each spool dir is actually consuming — so operators can see what their retention
+        // audit log, and each spool dir is actually consuming - so operators can see what their retention
         // windows hold. DB per-event bytes are estimated by apportioning the relay_log table size across the
         // event row counts (exact per-event bytes aren't cheap in SQL Server); spool figures are exact.
         group.MapGet("/storage", async (IStorageReport report, SpoolDirectory spool, CancellationToken ct) =>
@@ -363,7 +363,7 @@ public static class WebEndpoints
         {
             foreach (var f in new DirectoryInfo(dir).EnumerateFiles("*.eml")) { files++; bytes += f.Length; }
         }
-        catch { /* dir missing or racing a purge — report what we have */ }
+        catch { /* dir missing or racing a purge - report what we have */ }
         return new { files, bytes };
     }
 
@@ -415,7 +415,7 @@ public static class WebEndpoints
         string status, int relayId, string relayName, string provider, RelayMessage msg,
         string? subject, int durationMs, string? providerMessageId, string? detail, string? error) => new()
     {
-        // A provider test is logged like a real message — Delivered/Failed by outcome — so it "feels" real;
+        // A provider test is logged like a real message - Delivered/Failed by outcome - so it "feels" real;
         // it's identified as a test only by its origin (IngestSource = "Test"), not a separate status.
         Event = status == "OK" ? "Delivered" : "Failed",
         Status = status,

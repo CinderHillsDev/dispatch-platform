@@ -28,7 +28,7 @@ public sealed class ApiKeyCache
     }
 
     /// <summary>Evict any cached entry for the given key id so a revoked key stops working immediately,
-    /// not after the TTL (spec §17.4 — revocation has no grace period).</summary>
+    /// not after the TTL (spec §17.4 - revocation has no grace period).</summary>
     public void Invalidate(int keyId)
     {
         foreach (var (raw, e) in _cache)

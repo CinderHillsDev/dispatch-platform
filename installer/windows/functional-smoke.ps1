@@ -1,32 +1,31 @@
 #Requires -Version 7
 <#
-  Functional QC smoke for a real Dispatch install — the pre-release gate that proves core functionality
+  Functional QC smoke for a real Dispatch install - the pre-release gate that proves core functionality
   actually works end to end (not just that the service starts). Uses the Local provider so nothing leaves
   the box and delivery is deterministic; delivery is confirmed via the /stats delivered counter (the log
   stores spool ids in a different format than the API returns, so a counter delta is the robust signal).
 
   Coverage (each section cleans up the resources it creates):
 
-    1.  API delivery            — POST /api/v1/messages (HTTP, port 8025) -> Delivered via the Local relay
-    2.  SMTP delivery           — a real SMTP session upgraded with STARTTLS -> Delivered
-    3.  API key revocation      — a revoked key is refused (401)
-    4.  SMTP AUTH               — over STARTTLS: valid creds accepted (235), bad creds rejected (535)
-    5.  Local Inbox + features  — API message with cc/html/tags is captured; detail shows cc + bodies
-    6.  Attachments (SMTP)      — a MIME attachment sent over SMTP is parsed and downloadable from the inbox
-    6b. Attachments (HTTP API)  — a Mailgun-style multipart 'attachment' upload is parsed and downloadable
-    7.  Routing rules + simulate — a recipient rule routes to the chosen relay; non-match falls to default
-    8.  Relay test endpoint     — POST /relays/{id}/test succeeds against the Local provider
-    9.  Reports round-trip      — /reports reflects the deliveries we just made
-    10. Config round-trip       — PUT /config/api persists + reloads the cache (live setting)
-    11. Settings round-trip     — PUT /settings persists a retention threshold
-    12. Audit log               — operations produce audit rows
-    13. Retention purges        — real data: backdated files are deleted at 1-day retention and KEPT at
+    1.  API delivery            - POST /api/v1/messages (HTTP, port 8025) -> Delivered via the Local relay
+    2.  SMTP delivery           - a real SMTP session upgraded with STARTTLS -> Delivered
+    3.  API key revocation      - a revoked key is refused (401)
+    4.  SMTP AUTH               - over STARTTLS: valid creds accepted (235), bad creds rejected (535)
+    5.  Local Inbox + features  - API message with cc/html/tags is captured; detail shows cc + bodies
+    6.  Attachments (SMTP)      - a MIME attachment sent over SMTP is parsed and downloadable from the inbox
+    6b. Attachments (HTTP API)  - a Mailgun-style multipart 'attachment' upload is parsed and downloadable
+    7.  Routing rules + simulate - a recipient rule routes to the chosen relay; non-match falls to default
+    8.  Relay test endpoint     - POST /relays/{id}/test succeeds against the Local provider
+    9.  Reports round-trip      - /reports reflects the deliveries we just made
+    10. Config round-trip       - PUT /config/api persists + reloads the cache (live setting)
+    11. Settings round-trip     - PUT /settings persists a retention threshold
+    12. Audit log               - operations produce audit rows
+    13. Retention purges        - real data: backdated files are deleted at 1-day retention and KEPT at
                                   0 (0 = keep forever); log/audit purges honour 0 too; recorded in history
-    14. Storage usage           — /storage breakdown reflects real rows/files (per-event + spool dirs)
-    15. Read-only endpoints      — health/stats/system/spool/metrics all answer
-    16. Size-pressure archive    — forces Express size-pressure; oldest rows exported to weekly JSONL
+    14. Storage usage           - /storage breakdown reflects real rows/files (per-event + spool dirs)
+    15. Read-only endpoints      - health/stats/system/spool/metrics all answer
+    16. Size-pressure archive    - forces Express size-pressure; oldest rows exported to weekly JSONL
                                   before deletion (destructive, runs last)
-    14. Read-only endpoints     — health/stats/system/spool/metrics all answer
 
   Run after the service is up (serving /health).
 #>
@@ -235,7 +234,7 @@ try {
     if (@($apiDet.attachments).Count -lt 1) { throw "API multipart attachment was not parsed into the message" }
     $apiDl  = Invoke-WebRequest -SkipCertificateCheck -WebSession $sess -Uri "$Dashboard/api/local/messages/$apiId/attachments/0"
     if ((Get-BodyText $apiDl) -notmatch [regex]::Escape($apiAttText)) { throw "downloaded API attachment content did not match" }
-    Write-Host "OK: HTTP API accepted a multipart attachment (Mailgun-style) — parsed + downloaded intact"
+    Write-Host "OK: HTTP API accepted a multipart attachment (Mailgun-style) - parsed + downloaded intact"
 }
 finally {
     DDel "/api/keys/$($key3.id)" | Out-Null
@@ -297,7 +296,7 @@ $cfgAudit = DGet '/api/audit?category=Config'   # config PUTs above audit with c
 if (@($cfgAudit.rows).Count -lt 1) { throw "audit log should contain Config-category rows after config changes" }
 Write-Host "OK: audit log recorded operations ($(@($audit.rows).Count) rows, $(@($cfgAudit.rows).Count) Config)"
 
-# === 13. Retention purges actually delete — and 0 means "keep forever" (real data, live install) ==
+# === 13. Retention purges actually delete - and 0 means "keep forever" (real data, live install) ==
 # Verified against real spooled files on the box: backdate a file so a 1-day retention removes it, and
 # confirm 0 keeps it (the industry "0 = keep forever" convention). The purge worker reads retention via
 # a 10-second cache, so each change waits the TTL out before the dependent purge. Settings are restored
@@ -327,23 +326,23 @@ if ($spoolDir -and -not [System.IO.Path]::IsPathRooted($spoolDir)) {
     $spoolDir = Join-Path $DataRoot ($spoolDir -replace '^\.[\\/]', '')
 }
 if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
-    # 13a. Captured / Local Inbox file purge — 0 keeps, 1 deletes the aged file.
+    # 13a. Captured / Local Inbox file purge - 0 keeps, 1 deletes the aged file.
     $capEml = New-AgedEml (Join-Path $spoolDir 'captured') "smoke-purge-cap-$tok.eml"
     Invoke-PurgeAfter '{"retention":{"capturedRetentionDays":0}}'
     if (-not (Test-Path -LiteralPath $capEml)) { throw "capturedRetentionDays=0 must KEEP files (0 = keep forever), but the aged file was deleted" }
     Invoke-PurgeAfter '{"retention":{"capturedRetentionDays":1}}'
     if (Test-Path -LiteralPath $capEml) { Remove-Item -LiteralPath $capEml -Force -EA SilentlyContinue; throw "capturedRetentionDays=1 should have deleted the 10-day-old captured file" }
-    Write-Host "OK: captured purge — 0 keeps the aged file, 1 deletes it"
+    Write-Host "OK: captured purge - 0 keeps the aged file, 1 deletes it"
 
-    # 13b. Spool failed-file purge — same 0-keeps / 1-deletes proof on real spool files.
+    # 13b. Spool failed-file purge - same 0-keeps / 1-deletes proof on real spool files.
     $failEml = New-AgedEml (Join-Path $spoolDir 'failed') "smoke-purge-fail-$tok.eml"
     Invoke-PurgeAfter '{"retention":{"spoolFailedRetentionDays":0}}'
     if (-not (Test-Path -LiteralPath $failEml)) { throw "spoolFailedRetentionDays=0 must KEEP files, but the aged file was deleted" }
     Invoke-PurgeAfter '{"retention":{"spoolFailedRetentionDays":1}}'
     if (Test-Path -LiteralPath $failEml) { Remove-Item -LiteralPath $failEml -Force -EA SilentlyContinue; throw "spoolFailedRetentionDays=1 should have deleted the 10-day-old failed file" }
-    Write-Host "OK: spool failed-file purge — 0 keeps the aged file, 1 deletes it"
+    Write-Host "OK: spool failed-file purge - 0 keeps the aged file, 1 deletes it"
 }
-else { Write-Host "SKIP: spool dir not locally accessible ($spoolDir) — file-purge deletion not exercised" }
+else { Write-Host "SKIP: spool dir not locally accessible ($spoolDir) - file-purge deletion not exercised" }
 
 # 13c. Log-row + audit purge honour 0 = keep forever. (A fresh install has no >1-day-old rows to
 #      age-delete, so we prove the guard the user emphasized: retention 0 must NOT delete current data.)
@@ -374,7 +373,7 @@ if (-not $deliveredUse -or [int]$deliveredUse.rows -lt 1) { throw "storage: expe
 if ([long]$st.database.relayLog.tableBytes -le 0) { throw "storage: relay_log table size should be > 0" }
 if ($null -eq $st.spool.captured.files) { throw "storage: spool.captured.files missing" }
 if ($null -eq $st.spool.failed.bytes)   { throw "storage: spool.failed.bytes missing" }
-Write-Host "OK: storage usage — Delivered rows=$($deliveredUse.rows), relay_log=$([math]::Round($st.database.relayLog.tableBytes/1KB))KB, captured files=$($st.spool.captured.files)"
+Write-Host "OK: storage usage - Delivered rows=$($deliveredUse.rows), relay_log=$([math]::Round($st.database.relayLog.tableBytes/1KB))KB, captured files=$($st.spool.captured.files)"
 
 # === 15. Read-only / observability endpoints all answer =========================================
 foreach ($p in '/api/stats', '/api/stats/relays', '/api/stats/throughput', '/api/system', '/api/spool', '/health') {
@@ -384,7 +383,7 @@ $metrics = Invoke-WebRequest -SkipCertificateCheck -WebSession $sess -Uri "$Dash
 if ([int]$metrics.StatusCode -ne 200) { throw "/metrics did not return 200 (got $($metrics.StatusCode))" }
 Write-Host "OK: stats / system / spool / health / metrics all answer"
 
-# === 16. Size-pressure ARCHIVES then deletes (Express only) — DESTRUCTIVE, runs last ============
+# === 16. Size-pressure ARCHIVES then deletes (Express only) - DESTRUCTIVE, runs last ============
 # Force size-pressure by dropping the trigger below current usage, then confirm the oldest rows are
 # exported to weekly JSONL *before* being deleted (the emergency purge never silently loses history).
 # This wipes the message-log/audit on the CI box, so it is intentionally the final step.
@@ -392,7 +391,7 @@ if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
     $archiveDir = Join-Path $spoolDir 'archive'
     Get-ChildItem -LiteralPath $archiveDir -Filter *.jsonl -EA SilentlyContinue | Remove-Item -Force -EA SilentlyContinue
     $rowsBefore = [int](DGet '/api/messages?event=Delivered&pageSize=1').total
-    Invoke-PurgeAfter '{"retention":{"sizeTriggerGb":0.001,"sizeTargetGb":0.0005}}'   # ~1 MB trigger → always over
+    Invoke-PurgeAfter '{"retention":{"sizeTriggerGb":0.001,"sizeTargetGb":0.0005}}'   # ~1 MB trigger -> always over
     Start-Sleep -Seconds 2
     $archives = @(Get-ChildItem -LiteralPath $archiveDir -Filter 'relay_log-*.jsonl' -EA SilentlyContinue)
     if ($archives.Count -lt 1) { throw "size-pressure should have written a relay_log JSONL archive before deleting" }
@@ -402,6 +401,6 @@ if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
     DPut '/api/settings' '{"retention":{"sizeTriggerGb":9.5,"sizeTargetGb":9.0}}' | Out-Null   # restore
     Write-Host "OK: size-pressure archived $($archives.Count) JSONL file(s) then deleted rows ($rowsBefore -> $rowsAfter)"
 }
-else { Write-Host "SKIP: spool dir not locally accessible — size-pressure archive test not exercised" }
+else { Write-Host "SKIP: spool dir not locally accessible - size-pressure archive test not exercised" }
 
 Write-Host "FUNCTIONAL SMOKE PASSED"

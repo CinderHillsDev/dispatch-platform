@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# Dispatch appliance — in-guest provisioning, run by virt-customize during the image build (NOT at runtime).
+# Dispatch appliance - in-guest provisioning, run by virt-customize during the image build (NOT at runtime).
 # virt-customize runs --run scripts with /bin/sh, so this is POSIX sh (no bashisms). Runs with NO network
 # (libguestfs's passt networking is unreliable on CI runners): the SQL Server Express + tools packages are
 # pre-downloaded on the host into /opt/stage/debs (see build-appliance.sh) and installed offline here. SQL is
-# only unpacked — it's configured per-VM on first boot (appliance/firstboot.sh).
+# only unpacked - it's configured per-VM on first boot (appliance/firstboot.sh).
 #
 set -eu
 export DEBIAN_FRONTEND=noninteractive
@@ -36,7 +36,7 @@ printf '[Unit]\nAfter=dispatch-firstboot.service\nRequires=dispatch-firstboot.se
   > /etc/systemd/system/dispatch.service.d/10-appliance.conf
 # Enable both units offline. `systemctl --root=/` creates the WantedBy symlinks without a running systemd
 # (a plain `systemctl enable` is a silent no-op in the build appliance), and the explicit ln is a fallback.
-# Without this neither first-boot nor Dispatch starts at boot (VM comes up to a bare login — the boot smoke
+# Without this neither first-boot nor Dispatch starts at boot (VM comes up to a bare login - the boot smoke
 # caught exactly that).
 systemctl --root=/ enable dispatch-firstboot.service dispatch.service 2>&1 || echo "WARN: systemctl --root enable returned nonzero"
 mkdir -p /etc/systemd/system/multi-user.target.wants
@@ -54,10 +54,10 @@ if [ -d "$ESP/ubuntu" ]; then
   [ -f "$ESP/ubuntu/grubx64.efi" ] && cp -f "$ESP/ubuntu/grubx64.efi" "$ESP/BOOT/grubx64.efi"
   echo "   fallback bootloader: $(ls "$ESP/BOOT" 2>/dev/null | tr '\n' ' ')"
 else
-  echo "   WARN: $ESP/ubuntu not found (ESP not mounted?) — skipping fallback bootloader"
+  echo "   WARN: $ESP/ubuntu not found (ESP not mounted?) - skipping fallback bootloader"
 fi
 
-echo "==> cloud-init: no cloud metadata service on Hyper-V — avoid boot-time probing delays"
+echo "==> cloud-init: no cloud metadata service on Hyper-V - avoid boot-time probing delays"
 mkdir -p /etc/cloud/cloud.cfg.d
 printf 'datasource_list: [ NoCloud, None ]\n' > /etc/cloud/cloud.cfg.d/99-dispatch-datasource.cfg
 

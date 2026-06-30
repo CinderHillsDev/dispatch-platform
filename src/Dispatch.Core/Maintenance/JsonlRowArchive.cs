@@ -4,13 +4,13 @@ using System.Text.Json;
 
 namespace Dispatch.Core.Maintenance;
 
-/// <summary>Hands a batch of database rows to a sink (archive them) — invoked by the size-pressure purge
+/// <summary>Hands a batch of database rows to a sink (archive them) - invoked by the size-pressure purge
 /// just before the rows are deleted, so an emergency near-10GB purge never silently loses history.</summary>
 public delegate Task ArchiveRows(IReadOnlyList<IReadOnlyDictionary<string, object?>> rows, CancellationToken ct);
 
 /// <summary>
 /// Appends database rows to weekly JSON Lines files (one JSON object per line) under an archive directory,
-/// grouped by the ISO week of each row's timestamp column — e.g. <c>relay_log-2026-W26.jsonl</c>. JSONL is
+/// grouped by the ISO week of each row's timestamp column - e.g. <c>relay_log-2026-W26.jsonl</c>. JSONL is
 /// append-friendly and trivially re-ingestible/greppable. Only the (single-threaded) purge worker writes
 /// here, so plain append is safe.
 /// </summary>

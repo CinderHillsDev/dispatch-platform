@@ -41,7 +41,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <div className="panel" style={{ width: 360 }}>
         <div className="brand" style={{ marginBottom: 18 }}><span className="dot" /> Dispatch</div>
         <h2>{setup ? "Create admin password" : "Sign in"}</h2>
-        {setup && <p className="muted" style={{ fontSize: 13 }}>First-run setup — set the admin password for this dashboard.</p>}
+        {setup && <p className="muted" style={{ fontSize: 13 }}>First-run setup - set the admin password for this dashboard.</p>}
         <input
           type="password"
           autoFocus

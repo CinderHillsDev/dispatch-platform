@@ -5,7 +5,7 @@ namespace Dispatch.Core.Spool;
 
 /// <summary>
 /// Brings a relayed message up to the minimum RFC 5322 / deliverability bar before it leaves: a message MUST
-/// carry a Date header (§3.6.1) and SHOULD carry a Message-Id (§3.6.4) — providers (Gmail, etc.) spam-filter
+/// carry a Date header (§3.6.1) and SHOULD carry a Message-Id (§3.6.4) - providers (Gmail, etc.) spam-filter
 /// or reject mail missing them. We only add what the submitting client omitted; existing values are untouched.
 /// </summary>
 public static class MessageNormalizer

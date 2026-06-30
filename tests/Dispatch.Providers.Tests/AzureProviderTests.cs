@@ -58,7 +58,7 @@ public class AzureProviderTests
     [Fact]
     public async Task Domain_only_entry_does_not_match_address()
     {
-        // ACS has no domain wildcard — a bare domain must NOT grant a same-domain address.
+        // ACS has no domain wildcard - a bare domain must NOT grant a same-domain address.
         var factory = new TripwireFactory();
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new AzureProvider(Config("example.com"), factory).SendAsync(ProviderTestSupport.Message(), default));

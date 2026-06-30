@@ -53,7 +53,7 @@ public sealed class SmtpListenerService : BackgroundService
         if (ports.Length == 0)
         {
             // Nothing bindable (already logged). Return without starting the SMTP server so the rest of the
-            // host (dashboard + ingestion API) keeps running — a missing SMTP port must never take it down.
+            // host (dashboard + ingestion API) keeps running - a missing SMTP port must never take it down.
             _state.ListeningPorts = [];
             return;
         }
@@ -117,10 +117,10 @@ public sealed class SmtpListenerService : BackgroundService
         catch (Exception ex)
         {
             // A bind failure here (e.g. a port was taken in the race between our probe and the actual bind)
-            // must NOT crash the host — by default an unhandled exception in a BackgroundService stops the
+            // must NOT crash the host - by default an unhandled exception in a BackgroundService stops the
             // whole app. Log and return so the dashboard + ingestion API stay up.
             _state.ListeningPorts = [];
-            _log.LogError(ex, "SMTP listener failed to start — the dashboard and ingestion API are unaffected");
+            _log.LogError(ex, "SMTP listener failed to start - the dashboard and ingestion API are unaffected");
             return;
         }
 
@@ -141,7 +141,7 @@ public sealed class SmtpListenerService : BackgroundService
         var result = SmtpPortResolver.Resolve(requested, CanBind, msg => _log.LogWarning("{Message}", msg));
 
         if (result.Length == 0)
-            _log.LogError("No SMTP port could be bound from [{Requested}] — the listener will not accept mail",
+            _log.LogError("No SMTP port could be bound from [{Requested}] - the listener will not accept mail",
                 string.Join(", ", requested));
 
         return result;

@@ -104,7 +104,7 @@ jobs:
             import-proxmox.sh
           if-no-files-found: error
 
-      - name: Boot smoke (UEFI) — service comes up on first boot
+      - name: Boot smoke (UEFI) - service comes up on first boot
         run: |
           sudo apt-get install -y qemu-system-x86 ovmf imagemagick
           code=$(ls /usr/share/OVMF/OVMF_CODE*.fd | head -1)
@@ -112,8 +112,8 @@ jobs:
           cp "$varsrc" vars.fd
           echo "OVMF: $code / $varsrc"
           # -cpu host requires KVM; under the TCG fallback use a TCG-compatible CPU model.
-          if [ -e /dev/kvm ]; then echo "KVM available"; ACCEL="-enable-kvm -cpu host"; else echo "KVM NOT available — TCG (slow)"; ACCEL="-accel tcg -cpu max"; fi
-          # Boot the image as qcow2 (rules out QEMU's vhdx driver — Hyper-V reads the vhdx itself) and attach
+          if [ -e /dev/kvm ]; then echo "KVM available"; ACCEL="-enable-kvm -cpu host"; else echo "KVM NOT available - TCG (slow)"; ACCEL="-accel tcg -cpu max"; fi
+          # Boot the image as qcow2 (rules out QEMU's vhdx driver - Hyper-V reads the vhdx itself) and attach
           # it as an explicit virtio-blk device with bootindex=0, so OVMF (empty NVRAM) actually boots it.
           # -vga std + a QMP socket let us screenshot the VGA console (firmware/GRUB output goes there, not serial).
           qemu-img convert -O qcow2 dispatch-appliance.vhdx boot.qcow2

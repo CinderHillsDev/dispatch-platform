@@ -37,7 +37,7 @@ jobs:
             }
           }
 
-          # Static analysis — fail on Error severity only (Write-Host is intentional CLI output).
+          # Static analysis - fail on Error severity only (Write-Host is intentional CLI output).
           $results = foreach ($d in $dirs) { Invoke-ScriptAnalyzer -Path $d -Recurse -Severity Error -ExcludeRule PSAvoidUsingWriteHost }
           if ($results) { $fail = $true; ($results | Format-Table -AutoSize | Out-String) | Write-Host }
 

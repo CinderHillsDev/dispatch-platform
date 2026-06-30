@@ -6,7 +6,7 @@ using Serilog;
 namespace Dispatch.Service;
 
 /// <summary>
-/// Supplies the dashboard's TLS certificate when the operator hasn't configured one (spec §17.2 — the admin
+/// Supplies the dashboard's TLS certificate when the operator hasn't configured one (spec §17.2 - the admin
 /// UI is HTTPS-only). A self-signed cert is generated once and persisted to the content root so it stays
 /// stable across restarts (no new browser-trust prompt each time); it's regenerated only when missing,
 /// unreadable, or within a day of expiry.
@@ -24,7 +24,7 @@ public static class SelfSignedCert
                 var existing = X509CertificateLoader.LoadPkcs12FromFile(path, null);
                 if (existing.NotAfter > DateTime.UtcNow.AddDays(1)) return existing;
             }
-            catch { /* unreadable / expired — fall through and regenerate */ }
+            catch { /* unreadable / expired - fall through and regenerate */ }
         }
 
         // ECDSA P-256 (modern, smaller, faster) instead of RSA-2048; serverAuth only.
@@ -47,7 +47,7 @@ public static class SelfSignedCert
         {
             File.WriteAllBytes(path, pfx);
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // 600 — contains the private key
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // 600 - contains the private key
         }
         catch (Exception ex)
         {

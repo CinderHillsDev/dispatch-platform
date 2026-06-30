@@ -13,13 +13,13 @@ public static class ConfigKeys
     public const string ListenerMaxMessageBytes = "listener.max_message_bytes";
     public const string ListenerRequireAuth = "listener.require_auth";
     public const string ListenerAllowUnsecureAuth = "listener.allow_unsecure_auth"; // AUTH over plaintext (no STARTTLS)
-    public const string ListenerTlsCertPath = "listener.tls_cert_path";         // deprecated — see Tls* (shared cert)
+    public const string ListenerTlsCertPath = "listener.tls_cert_path";         // deprecated - see Tls* (shared cert)
     public const string ListenerTlsCertPassword = "listener.tls_cert_password"; // deprecated
     public const string ListenerTlsCertSource = "listener.tls_cert_source";     // deprecated
     public const string ListenerConnectionTimeoutSeconds = "listener.connection_timeout_seconds";
     public const string ListenerMaxConnections = "listener.max_connections";
 
-    // Shared TLS certificate — secures both the SMTP listener (STARTTLS) and the HTTPS ingestion API.
+    // Shared TLS certificate - secures both the SMTP listener (STARTTLS) and the HTTPS ingestion API.
     // (The dashboard keeps its own cert in appsettings / an auto self-signed cert.)
     public const string TlsCertPath = "tls.cert_path";
     public const string TlsCertPassword = "tls.cert_password";                  // encrypted

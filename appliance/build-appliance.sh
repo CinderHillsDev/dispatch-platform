@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Dispatch SMTP Relay — Hyper-V appliance builder (Ubuntu 24.04 LTS).
+# Dispatch SMTP Relay - Hyper-V appliance builder (Ubuntu 24.04 LTS).
 #
 # Customizes the official Ubuntu cloud image offline with libguestfs (no Hyper-V host, no nested virt) and
 # converts it to a Gen2/UEFI dynamic VHDX. SQL Server Express's binaries are baked in; each VM configures
@@ -82,11 +82,11 @@ echo "==> Verifying the image (bootloader + key files present)"
 echo "ESP /EFI/BOOT:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null || echo "  (none!)"
 echo "ESP /EFI/ubuntu:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/ubuntu 2>/dev/null || echo "  (none!)"
 virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null | grep -qi '^BOOTX64.EFI$' \
-  || { echo "ERROR: UEFI fallback bootloader \EFI\BOOT\BOOTX64.EFI missing — image would not boot on empty-NVRAM firmware" >&2; exit 1; }
+  || { echo "ERROR: UEFI fallback bootloader \EFI\BOOT\BOOTX64.EFI missing - image would not boot on empty-NVRAM firmware" >&2; exit 1; }
 
 for unit in dispatch.service dispatch-firstboot.service; do
   virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants 2>/dev/null | grep -qx "$unit" \
-    || { echo "ERROR: $unit is not enabled (no WantedBy symlink) — it would not start at boot" >&2; exit 1; }
+    || { echo "ERROR: $unit is not enabled (no WantedBy symlink) - it would not start at boot" >&2; exit 1; }
 done
 echo "verified: bootloader fallback + dispatch/firstboot units enabled"
 
@@ -120,7 +120,7 @@ if [ -n "${OVA_OUT:-}" ]; then
   ( cd "$ova_dir" && printf 'SHA256(%s)= %s\n' "$ovf" "$(sha256sum "$ovf" | cut -d' ' -f1)" >  "$mf"
                      printf 'SHA256(%s)= %s\n' "$vmdk" "$(sha256sum "$vmdk" | cut -d' ' -f1)" >> "$mf" )
 
-  # OVA = tar of ovf, then mf, then disk — in that order (required by the OVF spec / ovftool).
+  # OVA = tar of ovf, then mf, then disk - in that order (required by the OVF spec / ovftool).
   ( cd "$ova_dir" && tar -cf "$OVA_OUT" "$ovf" "$mf" "$vmdk" )
   echo "==> Built $OVA_OUT"; ls -lh "$OVA_OUT"
 fi

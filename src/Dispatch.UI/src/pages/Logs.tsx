@@ -116,7 +116,7 @@ export function Logs() {
                   {r.detail && <div className="muted" style={{ fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{r.detail}</div>}
                 </td>
                 <td><span className={sevBadge(r.severity)}>{r.severity}</span></td>
-                <td style={{ whiteSpace: "nowrap" }} className="muted">{r.sourceIp ?? "—"}{r.actor ? ` · ${r.actor}` : ""}</td>
+                <td style={{ whiteSpace: "nowrap" }} className="muted">{r.sourceIp ?? "-"}{r.actor ? ` · ${r.actor}` : ""}</td>
               </tr>
             ))}
           </tbody>

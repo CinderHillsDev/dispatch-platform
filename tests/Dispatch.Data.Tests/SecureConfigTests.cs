@@ -38,7 +38,7 @@ public class SecureConfigTests
     {
         // The disaster-recovery guarantee: a value encrypted with the .dispatch-key on one host decrypts on a
         // different host when the key file is restored. Simulate by decrypting with a separate byte[] holding
-        // the same key bytes (a "restored" copy) — proving decryption is key-based, not machine-bound.
+        // the same key bytes (a "restored" copy) - proving decryption is key-based, not machine-bound.
         var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
         var cipher = SecureConfig.EncryptWith(key, "provider-secret");
 
@@ -53,7 +53,7 @@ public class SecureConfigTests
         var cipher = SecureConfig.EncryptWith(key, "provider-secret");
 
         var wrongKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
-        // GCM authentication must reject a wrong key — never return wrong plaintext.
+        // GCM authentication must reject a wrong key - never return wrong plaintext.
         Assert.ThrowsAny<System.Security.Cryptography.CryptographicException>(
             () => SecureConfig.DecryptWith(wrongKey, cipher));
     }

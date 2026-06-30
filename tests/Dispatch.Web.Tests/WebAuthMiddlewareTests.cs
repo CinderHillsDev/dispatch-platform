@@ -96,7 +96,7 @@ public class WebAuthMiddlewareTests
     [Fact]
     public async Task Ignores_other_ports()
     {
-        // Ingestion port (different) is governed by API keys, not the cookie — pass through.
+        // Ingestion port (different) is governed by API keys, not the cookie - pass through.
         var (ctx, nextCalled) = Context("/api/v1/messages", 8025, authenticated: false);
         await Invoke(ctx);
         Assert.True(nextCalled());
@@ -105,7 +105,7 @@ public class WebAuthMiddlewareTests
     [Fact]
     public async Task Blocks_source_ip_outside_allow_list()
     {
-        // An operator-tightened allow-list must 403 a source IP outside it — even for the open /health path.
+        // An operator-tightened allow-list must 403 a source IP outside it - even for the open /health path.
         var (ctx, nextCalled) = Context("/health", WebPort, authenticated: false, remoteIp: "203.0.113.9");
         await Invoke(ctx, allowedCidrs: "[\"10.0.0.0/8\"]");
         Assert.Equal(StatusCodes.Status403Forbidden, ctx.Response.StatusCode);

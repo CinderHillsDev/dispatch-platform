@@ -10,7 +10,7 @@ namespace Dispatch.Web.Realtime;
 /// <summary>One structured line of a provider-test run (spec §11.5).</summary>
 public sealed record TestRunLine(DateTimeOffset Ts, string Level, string Message);
 
-/// <summary>An in-memory provider-test run. Ephemeral UI state — never persisted to SQL (spec §11.5).</summary>
+/// <summary>An in-memory provider-test run. Ephemeral UI state - never persisted to SQL (spec §11.5).</summary>
 public sealed class TestRun
 {
     public string RunId { get; } = $"tr_{Guid.NewGuid():N}"[..12];
@@ -79,7 +79,7 @@ public sealed class ProviderTestService : IDisposable
             ? request.From!.Trim()
             : DefaultTestFrom(providerType, config.Settings);
 
-        // Fire and forget — the caller gets the runId immediately; the test streams over SignalR.
+        // Fire and forget - the caller gets the runId immediately; the test streams over SignalR.
         _ = Task.Run(() => ExecuteAsync(run, config, recipient, fromOverride));
 
         return run;
@@ -148,7 +148,7 @@ public sealed class ProviderTestService : IDisposable
         else
             message.From.Add(new MailboxAddress("Dispatch Test", $"dispatch-test@{hostname}"));
         message.To.Add(MailboxAddress.Parse(recipient));
-        message.Subject = $"Dispatch provider test — {provider} — {timestamp}";
+        message.Subject = $"Dispatch provider test - {provider} - {timestamp}";
         message.Headers.Add("X-Dispatch-Test", "true");
 
         var text = $"Your {provider} relay credentials are working.\r\n\r\nDispatch version: {version}\r\nSent: {timestamp}\r\n";

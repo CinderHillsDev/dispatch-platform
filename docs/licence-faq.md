@@ -1,10 +1,10 @@
 # Licence FAQ
 
-Dispatch is licensed under **AGPL-3.0 with the Commons Clause** — see [LICENSE](../LICENSE). This page
+Dispatch is licensed under **AGPL-3.0 with the Commons Clause** - see [LICENSE](../LICENSE). This page
 explains common scenarios in plain language. It is **not legal advice**; the [LICENSE](../LICENSE) text
 governs.
 
-The short version: you can freely use, self-host, and modify Dispatch — you just can't sell it or sell a
+The short version: you can freely use, self-host, and modify Dispatch - you just can't sell it or sell a
 hosted version of it.
 
 ### Can I run Dispatch internally at my company?
@@ -16,10 +16,10 @@ commercial business activity. Sending mail through Dispatch is *using* the softw
 you must offer those users the corresponding source of your modifications.
 
 ### Can I contribute changes back?
-**Yes, please** — see [CONTRIBUTING.md](../CONTRIBUTING.md). Contributions are accepted under the same licence.
+**Yes, please** - see [CONTRIBUTING.md](../CONTRIBUTING.md). Contributions are accepted under the same licence.
 
 ### Can I sell Dispatch, or charge for a hosted version of it?
-**No.** The Commons Clause removes the right to "Sell" the software — that includes selling the binary and
+**No.** The Commons Clause removes the right to "Sell" the software - that includes selling the binary and
 charging others for a hosted/managed service whose value derives substantially from Dispatch itself.
 
 ### Can I offer consulting or support around Dispatch?
@@ -28,5 +28,5 @@ is what the Commons Clause restricts. If in doubt, ask.
 
 ### Can I bundle Dispatch inside a paid product?
 **No**, if the paid product's value derives substantially from Dispatch. Using it internally to power
-features you build is different from redistributing/selling Dispatch as part of a paid offering — when in
+features you build is different from redistributing/selling Dispatch as part of a paid offering - when in
 doubt, consult a lawyer.

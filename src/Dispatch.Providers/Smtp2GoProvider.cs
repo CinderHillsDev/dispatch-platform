@@ -45,7 +45,7 @@ public sealed class Smtp2GoProvider(RelayConfig config, HttpClient http) : IRela
 
         var (status, json) = await ProviderHttp.SendAsync(http, req, Name, ct);
 
-        // SMTP2GO returns HTTP 200 even when it rejects the message — the real outcome lives in `data`
+        // SMTP2GO returns HTTP 200 even when it rejects the message - the real outcome lives in `data`
         // (succeeded/failed counts, or an error/field_validation_errors). Treat anything that isn't a
         // confirmed success as a permanent failure so it's logged and surfaced rather than silently "sent".
         using var doc = JsonDocument.Parse(json);
@@ -60,7 +60,7 @@ public sealed class Smtp2GoProvider(RelayConfig config, HttpClient http) : IRela
             throw new InvalidOperationException(
                 $"SMTP2GO rejected the message: {err.GetString()}" +
                 (code is not null ? $" (code {code})" : "") +
-                (fields is not null ? $" — {fields}" : ""));
+                (fields is not null ? $" - {fields}" : ""));
         }
 
         var succeeded = data.TryGetProperty("succeeded", out var s) && s.TryGetInt32(out var sv) ? sv : 0;
@@ -74,6 +74,6 @@ public sealed class Smtp2GoProvider(RelayConfig config, HttpClient http) : IRela
         }
 
         string? id = data.TryGetProperty("email_id", out var m) ? m.GetString() : null;
-        return RelayResult.Success(id, $"HTTP {status} — SMTP2GO succeeded={succeeded}, email_id: {id}");
+        return RelayResult.Success(id, $"HTTP {status} - SMTP2GO succeeded={succeeded}, email_id: {id}");
     }
 }

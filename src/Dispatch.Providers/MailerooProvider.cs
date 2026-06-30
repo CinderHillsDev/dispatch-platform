@@ -56,7 +56,7 @@ public sealed class MailerooProvider(RelayConfig config, HttpClient http) : IRel
         }
         catch { /* best-effort */ }
 
-        return RelayResult.Success(id, $"HTTP {status} — Maileroo reference: {id}");
+        return RelayResult.Success(id, $"HTTP {status} - Maileroo reference: {id}");
     }
 
     private static Dictionary<string, object?> Address(string addr, string? name) =>

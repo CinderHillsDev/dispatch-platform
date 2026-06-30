@@ -26,8 +26,8 @@ while [ $# -gt 0 ]; do
 done
 
 [ -f "$QCOW2" ] || { echo "qcow2 not found: $QCOW2" >&2; exit 1; }
-[ "$(id -u)" = 0 ] || { echo "Run this on the Proxmox VE host as root — qm requires it. Try: sudo $0 ..." >&2; exit 1; }
-command -v qm >/dev/null || { echo "qm not found — run this on a Proxmox VE host." >&2; exit 1; }
+[ "$(id -u)" = 0 ] || { echo "Run this on the Proxmox VE host as root - qm requires it. Try: sudo $0 ..." >&2; exit 1; }
+command -v qm >/dev/null || { echo "qm not found - run this on a Proxmox VE host." >&2; exit 1; }
 qm status "$VMID" >/dev/null 2>&1 && { echo "VMID $VMID already exists." >&2; exit 1; }
 
 echo "==> Creating VM $VMID ($NAME): q35 + OVMF/UEFI, ${CORES} cores, ${MEMORY} MB, bridge $BRIDGE"

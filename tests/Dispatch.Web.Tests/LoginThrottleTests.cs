@@ -2,7 +2,7 @@ using Dispatch.Web.Auth;
 
 namespace Dispatch.Web.Tests;
 
-// Per-IP web-UI login lockout (brute-force defence). Pure in-memory logic — no host needed.
+// Per-IP web-UI login lockout (brute-force defence). Pure in-memory logic - no host needed.
 public class LoginThrottleTests
 {
     [Fact]
@@ -23,7 +23,7 @@ public class LoginThrottleTests
         var t = new LoginThrottle();
         for (var i = 0; i < 9; i++) t.RecordFailure("1.2.3.4");
         t.RecordSuccess("1.2.3.4");
-        // History cleared — a fresh burst must start the count over, not tip into lockout.
+        // History cleared - a fresh burst must start the count over, not tip into lockout.
         for (var i = 0; i < 9; i++) t.RecordFailure("1.2.3.4");
         Assert.False(t.IsLocked("1.2.3.4", out _));
     }

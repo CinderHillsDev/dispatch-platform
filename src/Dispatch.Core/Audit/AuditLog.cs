@@ -15,7 +15,7 @@ public sealed record AuditFilter(string? Kind, string? Category, string? Severit
 public sealed record AuditPage(IReadOnlyList<AuditEntry> Rows, AuditCursor? NextCursor);
 
 /// <summary>
-/// Append-only audit/security event log (spec §17). Writes are best-effort — a logging failure must never
+/// Append-only audit/security event log (spec §17). Writes are best-effort - a logging failure must never
 /// break the action being audited, so implementations swallow errors.
 /// </summary>
 public interface IAuditLog
@@ -43,7 +43,7 @@ public static class AuditLogExtensions
         string severity = "Info", string? actor = null, string? sourceIp = null, string? detail = null, CancellationToken ct = default)
         => log.WriteAsync("audit", category, @event, severity, actor, sourceIp, detail, ct);
 
-    /// <summary>A system-level problem — e.g. an unhandled server exception.</summary>
+    /// <summary>A system-level problem - e.g. an unhandled server exception.</summary>
     public static Task System(this IAuditLog log, string @event, string? detail, string? sourceIp = null, CancellationToken ct = default)
         => log.WriteAsync("system", "System", @event, "Error", actor: null, sourceIp, detail, ct);
 
@@ -51,7 +51,7 @@ public static class AuditLogExtensions
     public static Task Lifecycle(this IAuditLog log, string @event, string? detail = null, string severity = "Info", CancellationToken ct = default)
         => log.WriteAsync("system", "System", @event, severity, actor: null, sourceIp: null, detail, ct);
 
-    /// <summary>A relay/delivery problem (e.g. a provider rejected the message — bad API key, etc.).</summary>
+    /// <summary>A relay/delivery problem (e.g. a provider rejected the message - bad API key, etc.).</summary>
     public static Task Relay(this IAuditLog log, string @event, string? detail, string severity = "Error", CancellationToken ct = default)
         => log.WriteAsync("relay", "Relay", @event, severity, actor: null, sourceIp: null, detail, ct);
 }

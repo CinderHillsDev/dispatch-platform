@@ -31,7 +31,7 @@ export const PROVIDER_FIELDS: Record<string, ProviderField[]> = {
       name: "MailFrom", secret: false, required: true,
       label: "MailFrom address(es)",
       placeholder: "DoNotReply@your-domain.azurecomm.net, alerts@your-domain.azurecomm.net",
-      help: "Comma-separated MailFrom addresses configured on your ACS resource. Mail must be sent from one of these exact addresses (ACS has no domain wildcard) — anything else is rejected before it reaches Azure. The first is used when a message has no From.",
+      help: "Comma-separated MailFrom addresses configured on your ACS resource. Mail must be sent from one of these exact addresses (ACS has no domain wildcard) - anything else is rejected before it reaches Azure. The first is used when a message has no From.",
     },
   ],
   AmazonSes: [
@@ -120,5 +120,5 @@ export const PROVIDER_LABELS: Record<string, string> = {
   Maileroo: "Maileroo",
   AzureCommunication: "Azure Communication Services",
   Smtp: "Generic SMTP host",
-  Local: "Local (developer capture — no external delivery)",
+  Local: "Local (developer capture - no external delivery)",
 };

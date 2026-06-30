@@ -51,7 +51,7 @@ public sealed class SqlRetrySettings(IConfigRepository config, IOptions<RetryOpt
                 var parsed = JsonSerializer.Deserialize<double[]>(raw);
                 if (parsed is { Length: > 0 }) return parsed;
             }
-            catch (JsonException) { /* malformed override — fall back to defaults */ }
+            catch (JsonException) { /* malformed override - fall back to defaults */ }
         }
         return _defaults.EffectiveDelaysSeconds;
     }

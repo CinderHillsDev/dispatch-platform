@@ -5,11 +5,11 @@ sidebar:
   order: 12
 ---
 
-The Generic SMTP provider relays to any SMTP smart host — Office 365, Postfix, AWS SES SMTP, and similar. Add it from the dashboard's **Relays** page, choose **SMTP**, and fill in the settings below. See the [provider overview](/providers/overview/) for how relays fit into routing.
+The Generic SMTP provider relays to any SMTP smart host - Office 365, Postfix, AWS SES SMTP, and similar. Add it from the dashboard's **Relays** page, choose **SMTP**, and fill in the settings below. See the [provider overview](/providers/overview/) for how relays fit into routing.
 
 ## How it works
 
-Dispatch delivers over SMTP using MailKit, sending the raw MIME message. The envelope recipients, CC, BCC, and attachments are all preserved — see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
+Dispatch delivers over SMTP using MailKit, sending the raw MIME message. The envelope recipients, CC, BCC, and attachments are all preserved - see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
 
 ## Settings
 

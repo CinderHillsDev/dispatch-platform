@@ -7,7 +7,7 @@ using System.Net.Sockets;
 namespace Dispatch.Providers;
 
 /// <summary>
-/// Generic SMTP upstream relay via MailKit (spec §8.4) — for AWS SES SMTP, Office 365, Postfix,
+/// Generic SMTP upstream relay via MailKit (spec §8.4) - for AWS SES SMTP, Office 365, Postfix,
 /// or any smart host. Settings: Host, Port, Username, Password, TlsMode (None|Auto|StartTls|SslOnConnect).
 /// 4xx / connection errors are mapped to <see cref="TransientRelayException"/> so they are retried.
 /// </summary>
@@ -38,7 +38,7 @@ public sealed class SmtpProvider : IRelayProvider
                 await client.AuthenticateAsync(user, pass ?? "", ct);
 
             // Deliver to the SMTP envelope recipients (MAIL FROM / RCPT TO), not whatever the message headers
-            // happen to list — otherwise MailKit derives recipients from To/Cc/Bcc headers and silently drops
+            // happen to list - otherwise MailKit derives recipients from To/Cc/Bcc headers and silently drops
             // Bcc recipients (which are envelope-only, never in the headers) and any header/envelope mismatch.
             var recipients = (message.ToAddresses.Count > 0
                     ? message.ToAddresses

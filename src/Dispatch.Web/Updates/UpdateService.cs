@@ -64,7 +64,7 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
     {
         if (!await IsSelfManagedAsync(ct))
             return new(false, StatusCodes.Status409Conflict,
-                "In-app updates aren't available on this install type — update via your platform's normal method.");
+                "In-app updates aren't available on this install type - update via your platform's normal method.");
         if (!req.HasFormContentType)
             return new(false, StatusCodes.Status400BadRequest, "Expected a multipart upload with 'bundle', 'manifest', and 'signature'.");
 

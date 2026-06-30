@@ -22,7 +22,7 @@ export default defineConfig({
     starlight({
       title: 'Dispatch SMTP Relay',
       description:
-        'Self-hosted .NET SMTP relay — forward mail from your apps to a dozen providers, capture mail locally for testing, with a durable spool and a live dashboard.',
+        'Self-hosted .NET SMTP relay - forward mail from your apps to a dozen providers, capture mail locally for testing, with a durable spool and a live dashboard.',
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/chrismuench/Dispatch-SMTP-Relay' },
       ],
@@ -47,5 +47,5 @@ export default defineConfig({
     }),
   ],
   // The retired standalone pages (/deploy.html, /appliance.html) are redirected via meta-refresh
-  // stubs in website/public/ — reliable on static GitHub Pages output.
+  // stubs in website/public/ - reliable on static GitHub Pages output.
 });

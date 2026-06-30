@@ -29,7 +29,7 @@ export function LocalInbox() {
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => { api.settings.get().then((s) => setRetentionDays(s.retention.capturedRetentionDays)).catch(() => {}); }, []);
 
-  // Optional auto-refresh so new captures appear (off by default — same control as the Message Log).
+  // Optional auto-refresh so new captures appear (off by default - same control as the Message Log).
   const [autoMs, setAutoMs] = useState(0);
   useEffect(() => {
     if (!autoMs) return;
@@ -85,7 +85,7 @@ export function LocalInbox() {
         </div>
       </div>
       <p className="muted" style={{ marginTop: -10, marginBottom: 18 }}>
-        Messages captured by the Local / developer provider — never sent externally.
+        Messages captured by the Local / developer provider - never sent externally.
         {retentionDays !== null && (
           retentionDays > 0
             ? <> They're automatically deleted after <strong>{retentionDays} day{retentionDays === 1 ? "" : "s"}</strong> (change under Settings → Storage &amp; retention).</>
@@ -134,7 +134,7 @@ export function LocalInbox() {
                   <span className={badgeClass(log.status)}>{log.event}</span>
                 </div>
                 <div className="muted" style={{ fontSize: 13, display: "grid", gap: 4 }}>
-                  <div>Relay: {log.relayName ?? "—"} · Provider: {log.provider ?? "—"}</div>
+                  <div>Relay: {log.relayName ?? "-"} · Provider: {log.provider ?? "-"}</div>
                   <div>Source: {log.ingestSource}{log.durationMs != null ? ` · ${log.durationMs} ms` : ""}</div>
                   <div>Logged: {new Date(log.loggedAt).toLocaleString()}</div>
                 </div>

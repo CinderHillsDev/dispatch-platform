@@ -36,7 +36,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
     private readonly Dispatch.Core.Audit.IAuditLog? _audit;
     private readonly ILogger<CidrMailboxFilter> _log;
 
-    // Memoised CIDR parse — reparsed only when the allow-list changes in the config table (spec §12.5 live).
+    // Memoised CIDR parse - reparsed only when the allow-list changes in the config table (spec §12.5 live).
     private readonly Lock _cidrLock = new();
     private string? _cidrKey;
     private IPNetwork[] _cidrNetworks = [];
@@ -81,7 +81,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         ISessionContext context, IMailbox from, int size, CancellationToken cancellationToken)
     {
         // Disk back-pressure (spec §14.1): reject when suspended so senders retry; delay when throttled
-        // to slow the inbound rate. Checked first — under disk pressure we don't want to do more work.
+        // to slow the inbound rate. Checked first - under disk pressure we don't want to do more work.
         switch (_intake.Level)
         {
             case IntakeLevel.Suspended:
@@ -122,27 +122,27 @@ public sealed class CidrMailboxFilter : IMailboxFilter
                 $"Declared size {size} exceeds global limit {listener.MaxMessageBytes}", cancellationToken);
             _log.LogWarning("Rejecting MAIL FROM {From}: size {Size} exceeds limit {Limit}",
                 from.AsAddress(), size, listener.MaxMessageBytes);
-            // 552 (RFC 5321 §4.2.3): message exceeds the size limit — distinct from a 550 mailbox rejection.
+            // 552 (RFC 5321 §4.2.3): message exceeds the size limit - distinct from a 550 mailbox rejection.
             throw new SmtpResponseException(new SmtpResponse(SmtpReplyCode.SizeLimitExceeded,
                 $"5.3.4 Message size {size} exceeds the {listener.MaxMessageBytes}-byte limit"));
         }
 
         // Closed model (spec §17.10): only source IPs in the allow-list may connect. An empty list denies
-        // everyone — add ranges in Access Control to open it up. To allow all sources, add 0.0.0.0/0 + ::/0.
+        // everyone - add ranges in Access Control to open it up. To allow all sources, add 0.0.0.0/0 + ::/0.
         // Rejections use 550 5.7.1 (access denied) with a clear reason rather than the library's generic
         // "mailbox unavailable", which misleads operators into thinking it's a recipient problem.
         var allowed = AllowedNetworks(listener.EffectiveAllowedCidrs);
         var ip = RemoteIp(context);
         if (allowed.Length == 0)
         {
-            await DenyAsync(context, from.AsAddress(), null, "SMTP allow-list is empty — all sources denied", cancellationToken);
+            await DenyAsync(context, from.AsAddress(), null, "SMTP allow-list is empty - all sources denied", cancellationToken);
             _log.LogWarning("Denied SMTP connection: allow-list is empty (closed by default; add ranges in Access Control)");
             if (_audit is not null) await _audit.Audit("Access", "SMTP connection denied: allow-list is empty", "Warning", sourceIp: ip?.ToString());
-            throw AccessDenied("no source IPs are allowed yet — add your network under Access Control → SMTP listener");
+            throw AccessDenied("no source IPs are allowed yet - add your network under Access Control → SMTP listener");
         }
         if (ip is null)
         {
-            await DenyAsync(context, from.AsAddress(), null, "Source IP unavailable — cannot verify allow-list", cancellationToken);
+            await DenyAsync(context, from.AsAddress(), null, "Source IP unavailable - cannot verify allow-list", cancellationToken);
             _log.LogWarning("Denied SMTP connection: source IP unavailable, cannot match allow-list");
             throw AccessDenied("could not determine your source IP to check the allow-list");
         }
@@ -155,7 +155,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
             await DenyAsync(context, from.AsAddress(), null, $"Source IP {ip} not in allow-list", cancellationToken);
             _log.LogWarning("Denied connection from {Ip} (not in allow-list)", ip);
             if (_audit is not null) await _audit.Audit("Access", $"SMTP connection denied: {ip} not in allow-list", "Warning", sourceIp: ip.ToString());
-            throw AccessDenied($"source IP {ip} is not in the allow-list — add it under Access Control → SMTP listener");
+            throw AccessDenied($"source IP {ip} is not in the allow-list - add it under Access Control → SMTP listener");
         }
 
         return true;
@@ -193,7 +193,7 @@ public sealed class CidrMailboxFilter : IMailboxFilter
 
     /// <summary>
     /// Records a denial: always increments the Denied counter, and (when enabled) writes a Denied relay_log
-    /// row so refusals are visible in the message log, not just the dashboard counter. Both are best-effort —
+    /// row so refusals are visible in the message log, not just the dashboard counter. Both are best-effort -
     /// a logging/counter failure must never turn a refusal into an acceptance.
     /// </summary>
     private async Task DenyAsync(ISessionContext context, string from, string? to, string reason, CancellationToken ct)

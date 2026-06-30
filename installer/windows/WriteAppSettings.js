@@ -1,6 +1,6 @@
 // Deferred custom action (adapted from the FluxDeploy installer pattern): writes appsettings.json into
 // the Dispatch data directory. Per spec §12.1, appsettings holds ONLY the SQL connection string and the
-// Web UI TLS cert path — everything else lives in the SQL config table. The admin password is set on first
+// Web UI TLS cert path - everything else lives in the SQL config table. The admin password is set on first
 // run via the dashboard, so it is NOT written here.
 // CustomActionData format: "sqlConn|dataDir"
 var data = Session.Property("CustomActionData");
@@ -44,5 +44,5 @@ if (parts.length >= 2) {
         var shell = new ActiveXObject("WScript.Shell");
         shell.Run('cmd /c icacls "' + dataDir + '" /inheritance:d /T /C', 0, true);
         shell.Run('cmd /c icacls "' + dataDir + '" /remove:g "*S-1-5-32-545" "*S-1-5-11" /T /C', 0, true);
-    } catch (e) { /* ignore — the per-file key ACL still applies */ }
+    } catch (e) { /* ignore - the per-file key ACL still applies */ }
 }

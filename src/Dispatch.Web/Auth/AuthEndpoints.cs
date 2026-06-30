@@ -100,7 +100,7 @@ public static class AuthEndpoints
     };
 
     // Common weak base tokens. A password is rejected if its lowercased form CONTAINS one of these, so
-    // long-but-predictable passwords like "Password123456" or "MyQwerty12345" are still caught — a closer
+    // long-but-predictable passwords like "Password123456" or "MyQwerty12345" are still caught - a closer
     // approximation of the spec's "top-N common passwords" intent than an exact list alone.
     private static readonly string[] CommonBaseTokens =
     [

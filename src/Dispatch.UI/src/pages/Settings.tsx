@@ -141,7 +141,7 @@ function RetryPanel({ initial }: { initial: AppSettings["retry"] }) {
       </label>
       <label style={{ display: "block", margin: "12px 0" }}>
         <div>Retry delays (seconds)</div>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Comma-separated, one per attempt — e.g. 30, 300, 1800.</div>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Comma-separated, one per attempt - e.g. 30, 300, 1800.</div>
         <input type="text" value={delaysText} onChange={(e) => setDelaysText(e.target.value)} style={{ width: 280 }} />
       </label>
     </SavePanel>
@@ -197,8 +197,8 @@ function fmtBytes(n: number): string {
   return `${(n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-// Shows what each retention category is actually consuming — DB tables (relay_log broken out by event,
-// plus the audit log) and the on-disk spool dirs — so the numbers on the Retention tab have context.
+// Shows what each retention category is actually consuming - DB tables (relay_log broken out by event,
+// plus the audit log) and the on-disk spool dirs - so the numbers on the Retention tab have context.
 function StorageUsagePanel() {
   const [u, setU] = useState<StorageUsage | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -302,7 +302,7 @@ function PurgePanel() {
                 <td>{h.manual ? "manual" : "scheduled"}</td>
                 <td>{h.spoolFilesDeleted}</td>
                 <td>{h.logRowsDeleted}</td>
-                <td>{h.databaseSizeBytes > 0 ? `${Math.round(h.databaseSizeBytes / 1048576)} MB` : "—"}</td>
+                <td>{h.databaseSizeBytes > 0 ? `${Math.round(h.databaseSizeBytes / 1048576)} MB` : "-"}</td>
               </tr>
             ))}
           </tbody>
@@ -341,11 +341,11 @@ function SmtpListenerPanel({ initial }: { initial: SystemConfig["listener"] }) {
         maxMessageBytes: listener.maxMessageBytes, requireAuth: listener.requireAuth,
         allowUnsecureAuth: listener.allowUnsecureAuth,
       })}>
-      <Txt label="Ports — comma-separated, e.g. 25, 587, 2525" value={portsText} onChange={setPortsText} />
+      <Txt label="Ports - comma-separated, e.g. 25, 587, 2525" value={portsText} onChange={setPortsText} />
       <Txt label="Server name" value={listener.serverName} onChange={(v) => setListener({ ...listener, serverName: v })} />
       <NumMb label="Max message size (MB, 0 = no limit)" bytes={listener.maxMessageBytes} onChange={(b) => setListener({ ...listener, maxMessageBytes: b })} />
       <Chk label="Require SMTP AUTH" checked={listener.requireAuth} onChange={(v) => setListener({ ...listener, requireAuth: v })} />
-      <Chk label="Allow AUTH without TLS (insecure — sends credentials in the clear; leave off unless internal/dev)"
+      <Chk label="Allow AUTH without TLS (insecure - sends credentials in the clear; leave off unless internal/dev)"
         checked={listener.allowUnsecureAuth} onChange={(v) => setListener({ ...listener, allowUnsecureAuth: v })} />
     </SavePanel>
   );
@@ -367,12 +367,12 @@ function ApiPanel({ initial, tlsCertSource }: { initial: SystemConfig["api"]; tl
       <Num label="HTTPS port" value={apiCfg.tlsPort} onChange={(v) => setApiCfg({ ...apiCfg, tlsPort: v })} />
       {httpsNoCert && (
         <p style={{ color: "var(--amber)", fontSize: 12, margin: "2px 0 8px" }}>
-          ⚠ HTTPS is on but no TLS certificate is set — configure one under the <strong>TLS certificate</strong> tab.
+          ⚠ HTTPS is on but no TLS certificate is set - configure one under the <strong>TLS certificate</strong> tab.
           Until then a temporary self-signed certificate is used.
         </p>
       )}
       {!apiCfg.httpEnabled && !apiCfg.tlsEnabled && (
-        <p style={{ color: "var(--amber)", fontSize: 12, margin: "2px 0 8px" }}>⚠ Both HTTP and HTTPS are off — the ingestion API won't accept any requests.</p>
+        <p style={{ color: "var(--amber)", fontSize: 12, margin: "2px 0 8px" }}>⚠ Both HTTP and HTTPS are off - the ingestion API won't accept any requests.</p>
       )}
       <p className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>HTTPS uses the shared TLS certificate (same as SMTP STARTTLS).</p>
       <NumMb label="Max message size (MB, 0 = no limit)" bytes={apiCfg.maxMessageBytes} onChange={(b) => setApiCfg({ ...apiCfg, maxMessageBytes: b })} />
@@ -395,7 +395,7 @@ function WebUiPanel({ initial }: { initial: SystemConfig["webui"] }) {
 
 // ---- Shared building blocks -------------------------------------------------------------------
 
-// `value` is a snapshot of the panel's form state — the Save button only appears once it differs from
+// `value` is a snapshot of the panel's form state - the Save button only appears once it differs from
 // the last-saved baseline, so an unchanged panel shows no button (replacing the always-on big Save).
 function SavePanel({ title, intro, restart, value, onSave, children }: {
   title: string; intro: string; restart?: boolean; value: unknown; onSave: () => Promise<unknown>; children: ReactNode;
@@ -411,7 +411,7 @@ function SavePanel({ title, intro, restart, value, onSave, children }: {
 
   const save = async () => {
     setBusy(true); setMsg(null);
-    try { await onSave(); setBaseline(serialized); setMsg(restart ? "Saved — applies after the next service restart." : "Saved."); }
+    try { await onSave(); setBaseline(serialized); setMsg(restart ? "Saved - applies after the next service restart." : "Saved."); }
     catch (e) { setMsg(`Error: ${(e as Error).message}`); }
     finally { setBusy(false); }
   };
@@ -429,7 +429,7 @@ function SavePanel({ title, intro, restart, value, onSave, children }: {
   );
 }
 
-// Shared TLS cert: generate a self-signed one or upload a cert + key — no file paths. Applies on restart.
+// Shared TLS cert: generate a self-signed one or upload a cert + key - no file paths. Applies on restart.
 function TlsCertPanel({ initial }: { initial: string }) {
   const [source, setSource] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -438,7 +438,7 @@ function TlsCertPanel({ initial }: { initial: string }) {
 
   const status = source === "generated" ? "Using a generated self-signed certificate."
     : source === "uploaded" ? "Using an uploaded certificate."
-    : "Off — SMTP STARTTLS is unavailable and HTTPS API falls back to a temporary self-signed cert.";
+    : "Off - SMTP STARTTLS is unavailable and HTTPS API falls back to a temporary self-signed cert.";
 
   const run = async (fn: () => Promise<unknown>, newSource: string, done: string) => {
     setBusy(true); setMsg(null);
@@ -462,12 +462,12 @@ function TlsCertPanel({ initial }: { initial: string }) {
         <span className="muted" style={{ marginLeft: 8 }}>{status}</span>
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
-        <button disabled={busy} onClick={() => run(api.settings.generateTlsCert, "generated", "Generated — restart to apply.")}>Generate certificate</button>
+        <button disabled={busy} onClick={() => run(api.settings.generateTlsCert, "generated", "Generated - restart to apply.")}>Generate certificate</button>
         <button disabled={busy} onClick={() => setUploading(true)}>Upload cert + key</button>
-        {source && <button disabled={busy} onClick={() => run(api.settings.removeTlsCert, "", "Removed — restart to apply.")}>Remove</button>}
+        {source && <button disabled={busy} onClick={() => run(api.settings.removeTlsCert, "", "Removed - restart to apply.")}>Remove</button>}
         {msg && <span className={msg.startsWith("Error") ? "badge error" : "badge ok"}>{msg}</span>}
       </div>
-      {uploading && <UploadCertModal onClose={() => setUploading(false)} onDone={() => { setSource("uploaded"); setMsg("Uploaded — restart to apply."); setUploading(false); }} />}
+      {uploading && <UploadCertModal onClose={() => setUploading(false)} onDone={() => { setSource("uploaded"); setMsg("Uploaded - restart to apply."); setUploading(false); }} />}
     </div>
   );
 }
@@ -529,7 +529,7 @@ function Num({ label, value, onChange }: { label: string; value: number; onChang
   );
 }
 
-// Message size shown/edited in MB (MiB) but stored as bytes — nobody configures limits in raw bytes.
+// Message size shown/edited in MB (MiB) but stored as bytes - nobody configures limits in raw bytes.
 function NumMb({ label, bytes, onChange }: { label: string; bytes: number; onChange: (bytes: number) => void }) {
   const MB = 1048576;
   const mb = bytes ? +(bytes / MB).toFixed(2) : 0;

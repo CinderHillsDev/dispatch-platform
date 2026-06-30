@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace Dispatch.Core.Configuration;
 
 /// <summary>
-/// In-memory snapshot of the SQL <c>config</c> table — the single source of truth for all runtime settings
+/// In-memory snapshot of the SQL <c>config</c> table - the single source of truth for all runtime settings
 /// (spec §12.5). Loaded once at startup with one query and refreshed (<see cref="LoadAsync"/>) within the
 /// same request that saves a setting, so changes are live without a restart or a file watcher. Workers and
 /// services read their settings from here, never from <c>IOptionsMonitor</c> or appsettings.json.

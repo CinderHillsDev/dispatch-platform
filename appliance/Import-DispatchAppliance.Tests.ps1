@@ -1,8 +1,8 @@
 # Pester tests for the Hyper-V import helper. The real Hyper-V cmdlets need the Hyper-V role (absent on CI
-# runners), so we declare stub functions for them and Pester-Mock those — validating the script's LOGIC
+# runners), so we declare stub functions for them and Pester-Mock those - validating the script's LOGIC
 # (folder layout, VLAN tagging, Secure Boot template, validation/guards) without an actual hypervisor.
 # Run on windows-latest, where the runner is an Administrator (so the script's access check passes) and the
-# Windows identity APIs work. This is NOT a substitute for a live import — it's the part we can automate.
+# Windows identity APIs work. This is NOT a substitute for a live import - it's the part we can automate.
 
 BeforeAll {
     $script:ScriptPath = Join-Path $PSScriptRoot 'Import-DispatchAppliance.ps1'

@@ -8,7 +8,7 @@ namespace Dispatch.Providers;
 /// <summary>
 /// Postmark upstream relay via the Email API (spec §8). Sends a structured email (from/to/subject/bodies).
 /// Settings: ApiKey (server token), optional MessageStream (default "outbound"). Postmark returns 200 with an
-/// ErrorCode — a non-zero ErrorCode is a permanent failure even on HTTP 200.
+/// ErrorCode - a non-zero ErrorCode is a permanent failure even on HTTP 200.
 /// </summary>
 public sealed class PostmarkProvider(RelayConfig config, HttpClient http) : IRelayProvider
 {
@@ -60,6 +60,6 @@ public sealed class PostmarkProvider(RelayConfig config, HttpClient http) : IRel
         catch { /* best-effort parse */ }
 
         if (errorCode != 0) throw new InvalidOperationException($"Postmark ErrorCode {errorCode}: {msg}");
-        return RelayResult.Success(id, $"HTTP {status} — Postmark MessageID: {id}");
+        return RelayResult.Success(id, $"HTTP {status} - Postmark MessageID: {id}");
     }
 }

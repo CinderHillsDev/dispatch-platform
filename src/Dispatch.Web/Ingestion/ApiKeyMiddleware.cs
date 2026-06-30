@@ -34,7 +34,7 @@ public sealed class ApiKeyMiddleware(
         var o = config.Api();
         if (!o.IsApiPort(ctx.Connection.LocalPort))
         {
-            await next(ctx);   // not an ingestion port (plain HTTP or HTTPS) — leave it to the dashboard pipeline
+            await next(ctx);   // not an ingestion port (plain HTTP or HTTPS) - leave it to the dashboard pipeline
             return;
         }
 

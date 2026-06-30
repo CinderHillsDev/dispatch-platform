@@ -14,14 +14,14 @@ export function ProviderFieldsInput({ fields, values, onChange }: {
           {f.options
             ? (
               <select value={values[f.name] ?? ""} onChange={(e) => set(f.name, e.target.value)} style={{ width: "100%" }}>
-                <option value="">{f.required ? "— select —" : "(default)"}</option>
+                <option value="">{f.required ? "- select -" : "(default)"}</option>
                 {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             )
             : (
               <input type={f.secret ? "password" : "text"} placeholder={f.placeholder}
                 value={values[f.name] ?? ""} onChange={(e) => set(f.name, e.target.value)} style={{ width: "100%" }}
-                // These are provider credentials, not the user's login — don't let the browser or password
+                // These are provider credentials, not the user's login - don't let the browser or password
                 // managers offer to save/autofill them. "new-password" suppresses autofill of saved logins.
                 autoComplete={f.secret ? "new-password" : "off"} spellCheck={false}
                 data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />

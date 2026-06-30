@@ -9,7 +9,7 @@ SMTP2GO is an HTTP-based email provider. Add it from the dashboard's **Relays** 
 
 ## How it works
 
-Dispatch sends through SMTP2GO's REST API (JSON). All standard message capabilities are supported — see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
+Dispatch sends through SMTP2GO's REST API (JSON). All standard message capabilities are supported - see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
 
 ## Settings
 

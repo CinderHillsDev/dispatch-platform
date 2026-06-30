@@ -1,12 +1,12 @@
 ---
 title: Local Inbox
-description: A built-in mail trap — capture and inspect what your app sends without delivering anything.
+description: A built-in mail trap - capture and inspect what your app sends without delivering anything.
 sidebar:
   order: 3
 ---
 
 The **Local Inbox** is a built-in mail trap for developers. Point your application at Dispatch with a
-relay set to the **Local** provider, and every message is **captured, not delivered** — then inspect
+relay set to the **Local** provider, and every message is **captured, not delivered** - then inspect
 exactly what your app sent, right in the dashboard. No third-party service to wire up, no real inboxes
 spammed.
 
@@ -29,7 +29,7 @@ Open **Local Inbox** in the dashboard to see every captured message with:
 - Subject, From, and all recipients (**To / Cc / Bcc**)
 - The rendered **HTML** body (shown in a sandboxed iframe) and the **plain-text** body
 - **Custom headers** and tags
-- **Attachments** — listed with type/size and downloadable
+- **Attachments** - listed with type/size and downloadable
 
 ## How it works
 

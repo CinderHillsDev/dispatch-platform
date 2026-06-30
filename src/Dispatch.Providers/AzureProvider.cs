@@ -29,7 +29,7 @@ public sealed class AzureProvider(RelayConfig config, IEmailClientFactory client
 
         var mime = message.Message;
 
-        // Closed policy: the message's From must be one of the configured MailFrom addresses (exact match —
+        // Closed policy: the message's From must be one of the configured MailFrom addresses (exact match -
         // ACS has no domain wildcard) or it's rejected before touching ACS. A message with no From is sent
         // as the first configured MailFrom. The matching/chosen MailFrom is the ACS sender.
         var from = !string.IsNullOrWhiteSpace(message.FromAddress)
@@ -43,7 +43,7 @@ public sealed class AzureProvider(RelayConfig config, IEmailClientFactory client
             sender = from;
         else
             throw new InvalidOperationException(
-                $"Sender '{from}' is not a configured MailFrom for this Azure relay — message rejected and not sent to ACS. Configured: {string.Join(", ", mailFroms)}.");
+                $"Sender '{from}' is not a configured MailFrom for this Azure relay - message rejected and not sent to ACS. Configured: {string.Join(", ", mailFroms)}.");
 
         var rcpt = ProviderHttp.SplitRecipients(message);
 
@@ -91,7 +91,7 @@ public sealed class AzureProvider(RelayConfig config, IEmailClientFactory client
 
     /// <summary>
     /// True when <paramref name="from"/> exactly matches one of the configured MailFrom addresses
-    /// (case-insensitive). ACS has no domain-level wildcard — each sender must be listed explicitly.
+    /// (case-insensitive). ACS has no domain-level wildcard - each sender must be listed explicitly.
     /// </summary>
     private static bool IsAllowedSender(string from, IEnumerable<string> allowed) =>
         allowed.Any(e => string.Equals(e, from, StringComparison.OrdinalIgnoreCase));

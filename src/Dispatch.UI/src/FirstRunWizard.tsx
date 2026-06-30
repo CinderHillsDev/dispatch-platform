@@ -70,7 +70,7 @@ function Welcome({ onNext }: { onNext: () => void }) {
       <h2 style={h2}>Welcome 👋</h2>
       <p style={p}>
         Dispatch is your own SMTP relay: point your apps and devices at it, and it forwards every message
-        to an email provider — with a durable queue and this dashboard to watch it all.
+        to an email provider - with a durable queue and this dashboard to watch it all.
       </p>
       <p style={p}>Let's connect your first provider. It takes about a minute.</p>
       <Nav right={<button onClick={onNext}>Get started →</button>} />
@@ -101,7 +101,7 @@ function ProviderStep({ onDone, onBack }: { onDone: (id: number, provider: strin
   return (
     <>
       <h2 style={h2}>Connect your email provider</h2>
-      <p style={p}>This becomes your <strong>catch-all</strong> relay — every message goes through it unless a routing rule says otherwise.</p>
+      <p style={p}>This becomes your <strong>catch-all</strong> relay - every message goes through it unless a routing rule says otherwise.</p>
 
       <label style={lbl}>Provider</label>
       <select value={provider} onChange={(e) => { setProvider(e.target.value); setValues({}); }} style={{ width: "100%" }}>
@@ -109,7 +109,7 @@ function ProviderStep({ onDone, onBack }: { onDone: (id: number, provider: strin
       </select>
 
       <ProviderFieldsInput fields={fields} values={values} onChange={setValues} />
-      {provider === "Local" && <p style={{ ...p, fontSize: 13 }}>Local mode captures mail to the dashboard and never delivers externally — handy for testing.</p>}
+      {provider === "Local" && <p style={{ ...p, fontSize: 13 }}>Local mode captures mail to the dashboard and never delivers externally - handy for testing.</p>}
 
       {err && <p style={{ color: "var(--red)", fontSize: 13 }}>{err}</p>}
       <Nav
@@ -137,7 +137,7 @@ function TestStep({ relayId, onBack, onNext }: { relayId: number; onBack: () => 
   return (
     <>
       <h2 style={h2}>Send a test email</h2>
-      <p style={p}>Optional, but worth it — confirm your credentials actually deliver before you rely on them.</p>
+      <p style={p}>Optional, but worth it - confirm your credentials actually deliver before you rely on them.</p>
       <label style={lbl}>From address</label>
       <input type="email" placeholder="sender@your-verified-domain.com" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: "100%" }} />
       <p style={{ ...p, fontSize: 12, margin: "4px 0 0" }}>Most providers only accept mail from a domain you've <strong>verified</strong> with them.</p>
@@ -169,7 +169,7 @@ function RoutingStep({ catchAllProvider, onBack, onNext }: { catchAllProvider: s
   const addRule = async () => {
     setBusy(true); setErr(null);
     try {
-      const label = `${PROVIDER_LABELS[provider] ?? provider} — ${domain.trim()}`;
+      const label = `${PROVIDER_LABELS[provider] ?? provider} - ${domain.trim()}`;
       const { id } = await api.relays.create(label, provider);
       await api.relays.update(id, { name: label, provider, enabled: true, maxConcurrency: 4, settings: values });
       await api.rules.create({ name: `Mail to ${domain.trim()}`, recipientPattern: domain.trim(), senderPattern: null, relayId: id });
@@ -184,7 +184,7 @@ function RoutingStep({ catchAllProvider, onBack, onNext }: { catchAllProvider: s
       <h2 style={h2}>Routing rules <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional)</span></h2>
       <p style={p}>
         Right now <strong>all mail</strong> goes through your catch-all ({PROVIDER_LABELS[catchAllProvider] ?? catchAllProvider}).
-        Most setups stop here. If you want mail to a specific domain to use a <em>different</em> provider, add a rule —
+        Most setups stop here. If you want mail to a specific domain to use a <em>different</em> provider, add a rule -
         otherwise just finish.
       </p>
 
@@ -254,7 +254,7 @@ function AccessStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
       <h2 style={h2}>Who can connect?</h2>
       <p style={p}>
         Dispatch is <strong>closed by default</strong>: only the network ranges (CIDRs) you list here may
-        connect — everything else is refused, so you never run an open relay by accident. We've pre-filled
+        connect - everything else is refused, so you never run an open relay by accident. We've pre-filled
         your private/loopback networks; adjust them to match where your apps and devices live.
       </p>
       <p style={{ ...p, color: "var(--amber)", fontSize: 13 }}>
@@ -267,7 +267,7 @@ function AccessStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
 
       {anyEmpty && (
         <p style={{ fontSize: 12, color: "var(--amber)", margin: "10px 0 0" }}>
-          One or more lists is empty — that endpoint will reject all connections until you add a range.
+          One or more lists is empty - that endpoint will reject all connections until you add a range.
         </p>
       )}
       {err && <p style={{ color: "var(--red)", fontSize: 13 }}>{err}</p>}
@@ -303,7 +303,7 @@ function CidrList({ label, intro, list, onChange }: {
       </div>
       <p className="muted" style={{ fontSize: 12, margin: "4px 0 10px" }}>{intro}</p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, minHeight: 28 }}>
-        {list.length === 0 && <span style={{ fontSize: 12, color: "var(--amber)", fontStyle: "italic", alignSelf: "center" }}>No ranges — all blocked.</span>}
+        {list.length === 0 && <span style={{ fontSize: 12, color: "var(--amber)", fontStyle: "italic", alignSelf: "center" }}>No ranges - all blocked.</span>}
         {list.map((c) => (
           <span key={c} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 999, padding: "3px 4px 3px 10px", fontSize: 12 }}>
             <code style={{ background: "none", padding: 0 }}>{c}</code>

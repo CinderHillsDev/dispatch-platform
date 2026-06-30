@@ -44,7 +44,7 @@ public sealed class SqlConfigRepository(SqlConnectionFactory factory, ILogger<Sq
             .ToList();
     }
 
-    // A machine-key change (or corrupt value) shouldn't crash config reads — log and treat as unset.
+    // A machine-key change (or corrupt value) shouldn't crash config reads - log and treat as unset.
     private string? TryDecrypt(string key, string ciphertext)
     {
         try

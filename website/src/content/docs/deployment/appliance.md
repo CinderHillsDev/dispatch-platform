@@ -1,11 +1,11 @@
 ---
 title: Virtual appliance
-description: Import a ready-to-run Dispatch VM on Hyper-V, VMware, KVM, or Proxmox — and manage logins and a static IP.
+description: Import a ready-to-run Dispatch VM on Hyper-V, VMware, KVM, or Proxmox - and manage logins and a static IP.
 sidebar:
   order: 5
 ---
 
-A prebuilt **Ubuntu 24.04 + SQL Server + Dispatch** VM. Nothing to install — import the image for
+A prebuilt **Ubuntu 24.04 + SQL Server + Dispatch** VM. Nothing to install - import the image for
 your hypervisor, power on, and on first boot it configures SQL and starts Dispatch with unique
 per-VM secrets. Grab the files from the
 [releases page](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest). Recommended:
@@ -23,7 +23,7 @@ per-VM secrets. Grab the files from the
 ### Hyper-V
 
 Unzip the `.vhdx`, then in **PowerShell as Administrator** (the helper is in the download). Run it with
-no networking flags for a **guided menu** — it lists the host's virtual switches to pick from, your
+no networking flags for a **guided menu** - it lists the host's virtual switches to pick from, your
 storage volumes (with free space) to choose where the VM lives, an optional **VLAN ID**, and
 memory/CPU, then confirms before creating:
 
@@ -44,13 +44,13 @@ starts it. Manual route: New VM → Generation 2 → use the existing VHDX → S
 template = Microsoft UEFI Certificate Authority.
 
 Run it as an elevated **Administrator**, or as a member of the **Hyper-V Administrators** group (which
-can manage Hyper-V without elevation) — the script checks for one of these and stops with a clear
+can manage Hyper-V without elevation) - the script checks for one of these and stops with a clear
 message otherwise.
 
 ### VMware (vSphere / ESXi / Workstation / Fusion)
 
 vSphere Client → **Deploy OVF Template** → select the `.ova` (or *File → Open* in
-Workstation/Fusion). Accept defaults — the descriptor already sets EFI firmware and an Ubuntu 64-bit
+Workstation/Fusion). Accept defaults - the descriptor already sets EFI firmware and an Ubuntu 64-bit
 guest. CLI: `ovftool dispatch-appliance.ova vi://user@vcenter/Datacenter/host/esxi`.
 
 ### KVM / libvirt
@@ -62,7 +62,7 @@ virsh domifaddr dispatch        # find its IP
 
 ### Proxmox VE
 
-Copy the `.qcow2` + helper to the Proxmox host and run it **as root** (`qm` requires it — the script
+Copy the `.qcow2` + helper to the Proxmox host and run it **as root** (`qm` requires it - the script
 checks), picking an unused VM ID (e.g. 9000):
 
 ```bash
@@ -75,7 +75,7 @@ checks), picking an unused VM ID (e.g. 9000):
 | | Username | Password | Change it |
 |---|---|---|---|
 | **OS** (console / SSH) | `ubuntu` | `dispatch` | forced on first login; later `passwd` |
-| **Dashboard** (web UI) | — (single admin) | set on first visit to `:8420` | **System → About → Change password** |
+| **Dashboard** (web UI) | - (single admin) | set on first visit to `:8420` | **System → About → Change password** |
 
 SSH is enabled with password auth (`ssh ubuntu@<vm-ip>`). The dashboard password is stored only as a
 bcrypt hash.
@@ -83,10 +83,10 @@ bcrypt hash.
 ## Set a static IP (recommended)
 
 It boots on DHCP, but a relay your apps point at should have a **fixed address**. The appliance ships
-a helper that auto-detects the NIC, writes netplan, and applies it — log in (console or SSH) and run:
+a helper that auto-detects the NIC, writes netplan, and applies it - log in (console or SSH) and run:
 
 ```bash
-# interactive — just answer the prompts:
+# interactive - just answer the prompts:
 sudo dispatch-set-ip
 
 # or in one line (DNS defaults to 1.1.1.1,8.8.8.8):

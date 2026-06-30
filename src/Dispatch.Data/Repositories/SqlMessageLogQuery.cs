@@ -9,7 +9,7 @@ namespace Dispatch.Data.Repositories;
 /// <summary>
 /// Keyset-paginated reads of <c>relay_log</c> for the Message Log (spec §9.2, §19). No <c>COUNT(*)</c>,
 /// no <c>OFFSET</c>. The WHERE clause is built by appending fixed fragments; every value is a Dapper
-/// parameter, never interpolated — verified against SQL-injection payloads in the tests (§17).
+/// parameter, never interpolated - verified against SQL-injection payloads in the tests (§17).
 /// </summary>
 public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageLogQuery
 {
@@ -59,7 +59,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         // The list shows ONE row per message. relay_log holds a row per lifecycle event (a Retrying row per
         // failed attempt, then a terminal Delivered/Failed), so collapse by spool_id and keep only the latest
         // event as the message's current state. Connection-level rows (denials, pre-DATA failures) have no
-        // spool_id — each stays its own row (grouped by id). The full per-attempt history is in the detail view.
+        // spool_id - each stays its own row (grouped by id). The full per-attempt history is in the detail view.
         var sql = $"""
             SELECT COUNT(*) FROM (SELECT DISTINCT {GroupKey} AS grp FROM relay_log {where}) g;
             SELECT {RowColumns}
@@ -92,7 +92,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
     // spool_id. Connection-level rows with no spool_id (denials, pre-DATA failures) each get their own group.
     private const string GroupKey = "CASE WHEN spool_id IS NULL OR spool_id = '' THEN CONCAT('id:', id) ELSE spool_id END";
 
-    // Shared filter clauses (no cursor/paging). Every user value is a parameter — never interpolated.
+    // Shared filter clauses (no cursor/paging). Every user value is a parameter - never interpolated.
     private static void AppendFilters(StringBuilder where, DynamicParameters p, MessageLogFilter filter)
     {
         // Bind dates as datetime2 to match the column precision.
@@ -151,7 +151,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         p.Add("Limit", limit);
         if (statuses is { Length: > 0 }) { where.Append(" AND status IN @Statuses"); p.Add("Statuses", statuses); }
 
-        // One row per message (latest event), matching the dashboard list — see GroupKey.
+        // One row per message (latest event), matching the dashboard list - see GroupKey.
         var sql = $"""
             SELECT TOP (@Limit) {RowColumns}
             FROM (
@@ -207,7 +207,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         return raw.ToDetail(history);
     }
 
-    /// <summary>Flat projection — the JSON array columns are deserialised into string[] by <see cref="ToDetail"/>.</summary>
+    /// <summary>Flat projection - the JSON array columns are deserialised into string[] by <see cref="ToDetail"/>.</summary>
     private sealed class DetailRow
     {
         public long Id { get; init; }

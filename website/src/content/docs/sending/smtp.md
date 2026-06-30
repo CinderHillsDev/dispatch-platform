@@ -8,9 +8,9 @@ sidebar:
 Dispatch listens for SMTP on the standard ports **25** and **587** by default. Point any app, device,
 or appliance that speaks SMTP at it.
 
-Binding 25/587 needs elevation — the installers and the appliance run with it (the systemd unit is
+Binding 25/587 needs elevation - the installers and the appliance run with it (the systemd unit is
 granted `CAP_NET_BIND_SERVICE`; Windows runs as a service; the container runs as root). If port **25**
-can't be bound — it's already in use, or the process lacks privilege — the listener automatically
+can't be bound - it's already in use, or the process lacks privilege - the listener automatically
 falls back to **2525** (587 is still used when it's free). You'll see this in the logs at startup.
 
 :::tip[Recommended]

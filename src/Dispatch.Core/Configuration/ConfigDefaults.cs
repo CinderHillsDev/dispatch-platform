@@ -2,7 +2,7 @@ namespace Dispatch.Core.Configuration;
 
 /// <summary>
 /// First-run config seeding (spec §12.6): when the <c>config</c> table is missing a key, it is populated
-/// with its default value so a freshly installed instance is immediately usable. Idempotent — existing
+/// with its default value so a freshly installed instance is immediately usable. Idempotent - existing
 /// values (operator edits) are never overwritten. Secret keys (TLS passwords, relay credentials) are left
 /// unset rather than seeded with an encrypted empty string.
 /// </summary>
@@ -11,7 +11,7 @@ public static class ConfigDefaults
     // SMTP listener and ingestion API are CLOSED by default (spec §17.10): only listed source IPs may
     // connect and an empty list denies everyone. Both default to loopback + private ranges (RFC1918 +
     // IPv6 ULA) so same-host apps, private LANs and Docker networks work out of the box while the public
-    // internet can't — to open them an operator adds 0.0.0.0/0 + ::/0 deliberately in Access Control.
+    // internet can't - to open them an operator adds 0.0.0.0/0 + ::/0 deliberately in Access Control.
     // The dashboard is the exception: it is password-protected and governed by its own middleware where
     // an empty list = allow all, so a headless/NAT'd server stays reachable for first login.
     private const string DashboardAllowAll = "[]";
@@ -44,7 +44,7 @@ public static class ConfigDefaults
         [ConfigKeys.ApiTlsEnabled] = "false",
         [ConfigKeys.ApiTlsPort] = "8026",
         [ConfigKeys.ApiAllowedCidrs] = PrivateRanges,
-        [ConfigKeys.ApiMaxMessageBytes] = "26214400",   // 25 MiB — bounds in-memory buffering of HTTP uploads (0 = no limit)
+        [ConfigKeys.ApiMaxMessageBytes] = "26214400",   // 25 MiB - bounds in-memory buffering of HTTP uploads (0 = no limit)
         [ConfigKeys.ApiRateLimitPerKey] = "100",
 
         [ConfigKeys.WebUiPort] = "8420",

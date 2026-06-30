@@ -12,7 +12,7 @@ public delegate long FreeSpaceProbe(string spoolRoot);
 /// partition and updates <see cref="IntakeState"/> so inbound SMTP throttles/suspends well before the disk
 /// fills. The slower <see cref="PurgeWorker"/> evaluates the same probe on its cycle as a backstop. The
 /// free-space source is injected (defaults to <see cref="DriveInfo"/>) so it can be tested without real
-/// disk pressure. All work is best-effort — a probe failure is logged and never crashes the service.
+/// disk pressure. All work is best-effort - a probe failure is logged and never crashes the service.
 /// </summary>
 public sealed class DiskMonitor : BackgroundService
 {
@@ -77,19 +77,19 @@ public sealed class DiskMonitor : BackgroundService
             switch (next)
             {
                 case IntakeLevel.Suspended:
-                    _log.LogError("Spool disk critically low ({FreeMb:F0} MB free) — SMTP intake SUSPENDED", freeBytes / mb);
+                    _log.LogError("Spool disk critically low ({FreeMb:F0} MB free) - SMTP intake SUSPENDED", freeBytes / mb);
                     break;
                 case IntakeLevel.Throttled:
-                    _log.LogWarning("Spool disk low ({FreeMb:F0} MB free) — SMTP intake THROTTLED", freeBytes / mb);
+                    _log.LogWarning("Spool disk low ({FreeMb:F0} MB free) - SMTP intake THROTTLED", freeBytes / mb);
                     break;
                 case IntakeLevel.Normal:
-                    _log.LogInformation("Spool disk recovered ({FreeMb:F0} MB free) — SMTP intake NORMAL", freeBytes / mb);
+                    _log.LogInformation("Spool disk recovered ({FreeMb:F0} MB free) - SMTP intake NORMAL", freeBytes / mb);
                     break;
             }
         }
         else if (next == IntakeLevel.Normal && freeBytes < IntakeState.WarnBytes)
         {
-            // Below the warn threshold but not yet throttling — surface it without spamming on transitions.
+            // Below the warn threshold but not yet throttling - surface it without spamming on transitions.
             _log.LogWarning("Spool disk free space low: {FreeMb:F0} MB", freeBytes / (1024d * 1024d));
         }
     }

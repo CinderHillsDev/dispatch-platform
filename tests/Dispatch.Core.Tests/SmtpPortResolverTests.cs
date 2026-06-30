@@ -33,7 +33,7 @@ public class SmtpPortResolverTests
     [Fact]
     public void Nothing_bindable_returns_empty()
     {
-        // Even 2525 is taken — the listener should report nothing (caller keeps the host alive).
+        // Even 2525 is taken - the listener should report nothing (caller keeps the host alive).
         var result = SmtpPortResolver.Resolve([25, 587], Free(/* none */));
         Assert.Empty(result);
     }
@@ -49,7 +49,7 @@ public class SmtpPortResolverTests
     [Fact]
     public void Port25_taken_but_2525_also_taken_keeps_only_587()
     {
-        // 25 down, 2525 also unavailable, 587 free — no fallback possible, keep what bound.
+        // 25 down, 2525 also unavailable, 587 free - no fallback possible, keep what bound.
         var result = SmtpPortResolver.Resolve([25, 587], Free(587));
         Assert.Equal([587], result);
     }

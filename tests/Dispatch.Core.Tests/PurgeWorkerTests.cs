@@ -77,7 +77,7 @@ public class PurgeWorkerTests
     {
         using var t = new TempSpool();
 
-        // A year-old file in each managed dir — would be purged at any positive retention.
+        // A year-old file in each managed dir - would be purged at any positive retention.
         var agedFailed = Path.Combine(t.Spool.FailedDir, $"{Guid.NewGuid()}.eml");
         File.WriteAllText(agedFailed, "old");
         File.SetLastWriteTimeUtc(agedFailed, DateTime.UtcNow.AddDays(-365));

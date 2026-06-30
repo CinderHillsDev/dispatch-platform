@@ -16,7 +16,7 @@ namespace Dispatch.Web.Endpoints;
 /// Live settings stored in the SQL config table (spec §12). Covers the relay_log suppression toggles,
 /// the retry/back-off policy (spool.max_retries / spool.retry_delays_seconds), and the purge retention
 /// thresholds (purge.*). Each value falls back to the appsettings default when unset. Changes take effect
-/// within the relevant settings cache TTL — no restart. Listener ports and spool worker count are NOT
+/// within the relevant settings cache TTL - no restart. Listener ports and spool worker count are NOT
 /// editable here: they require a restart and are surfaced read-only in the UI.
 /// </summary>
 public static class SettingsEndpoints
@@ -80,7 +80,7 @@ public static class SettingsEndpoints
             return Results.Ok(new { ok = true });
         });
 
-        // Shared TLS cert management — operators generate a self-signed cert or upload a cert + key (no file
+        // Shared TLS cert management - operators generate a self-signed cert or upload a cert + key (no file
         // paths). It secures both the SMTP listener (STARTTLS) and the HTTPS ingestion API; both load it at
         // startup, so changes take effect after a service restart.
         group.MapPost("/config/tls-cert/generate", async (ConfigCache cache, IConfigRepository config, IWebHostEnvironment env, IAuditLog audit, HttpContext http, CancellationToken ct) =>
@@ -251,7 +251,7 @@ public static class SettingsEndpoints
                 var parsed = JsonSerializer.Deserialize<double[]>(v);
                 if (parsed is { Length: > 0 }) return parsed;
             }
-            catch (JsonException) { /* malformed — fall back */ }
+            catch (JsonException) { /* malformed - fall back */ }
         }
         return fallback;
     }

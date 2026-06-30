@@ -18,7 +18,7 @@ using MimeKit;
 namespace Dispatch.Core.Tests;
 
 // End-to-end inbound SMTP: actually start the listener on a loopback port and drive it with a real SMTP
-// client. Covers what the unit tests can't — STARTTLS via the self-signed fallback, message acceptance into
+// client. Covers what the unit tests can't - STARTTLS via the self-signed fallback, message acceptance into
 // the spool, and the source-IP allow-list enforced over the wire. Complements the slow installer smoke with
 // a fast, in-process regression guard.
 public sealed class SmtpListenerIntegrationTests

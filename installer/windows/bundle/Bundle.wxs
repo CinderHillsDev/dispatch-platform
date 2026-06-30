@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Dispatch SMTP Relay — Windows bundle (WiX v4 Burn), adapted from the FluxDeploy installer pattern.
+  Dispatch SMTP Relay - Windows bundle (WiX v4 Burn), adapted from the FluxDeploy installer pattern.
 
   Chains: (1) install SQL Server Express (named instance DISPATCHSQL + DispatchLog DB) via the
   InstallSqlExpress.exe bootstrap, then (2) the Dispatch MSI, which writes appsettings.json pointing at

@@ -9,7 +9,7 @@ Download `DispatchSetup-{version}-x64.exe` from the
 [latest release](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest). It's a single
 bundled installer that:
 
-1. Installs **SQL Server 2025 Express** (a dedicated `DISPATCHSQL` instance) — skipped automatically if
+1. Installs **SQL Server 2025 Express** (a dedicated `DISPATCHSQL` instance) - skipped automatically if
    that instance already exists.
 2. Installs the Dispatch MSI.
 3. Installs and starts Dispatch as a **Windows Service**.
@@ -41,7 +41,7 @@ proceed.
 
 ## After install
 
-Everything lives under `C:\ProgramData\Dispatch` — the connection string (`appsettings.json`), the
+Everything lives under `C:\ProgramData\Dispatch` - the connection string (`appsettings.json`), the
 spool, logs, and the `.dispatch-key` encryption key. The installer locks that folder down (inheritance
 disabled; SYSTEM + Administrators only) so other local users can't read it. Open the dashboard at
 **https://localhost:8420** (accept the self-signed certificate warning).

@@ -54,7 +54,7 @@ public class ApiKeysApiTests(WebTestHost host)
     [Fact]
     public async Task Per_key_message_list_is_scoped_to_the_calling_key()
     {
-        // OtherKey (id 3) has no messages in the fake — must not see ValidKey's row.
+        // OtherKey (id 3) has no messages in the fake - must not see ValidKey's row.
         var res = await host.Api.SendAsync(Get("/api/v1/messages", WebTestHost.OtherKey));
         res.EnsureSuccessStatusCode();
         var body = await res.Content.ReadFromJsonAsync<MessagesResponse>();

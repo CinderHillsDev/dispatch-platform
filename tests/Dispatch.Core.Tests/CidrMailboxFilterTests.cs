@@ -120,7 +120,7 @@ public class CidrMailboxFilterTests
     [Fact]
     public async Task CanAcceptFrom_denies_all_when_allow_list_empty()
     {
-        // Closed model (spec §17.10): an empty allow-list denies everyone — even a private/loopback source —
+        // Closed model (spec §17.10): an empty allow-list denies everyone - even a private/loopback source -
         // so an unconfigured listener is never an open relay. Allowing all requires explicit 0.0.0.0/0 + ::/0.
         var filter = Build(relayMaxBytes: 0, allowedCidrs: "[]");
         var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Parse("127.0.0.1"), 4242));
@@ -176,7 +176,7 @@ public class CidrMailboxFilterTests
     {
         var connections = new Dispatch.Service.ConnectionTracker();
         connections.Increment();   // 1
-        connections.Increment();   // 2 — over a cap of 1
+        connections.Increment();   // 2 - over a cap of 1
         var filter = Build(relayMaxBytes: 0, connections: connections, maxConnections: 1);
         var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Loopback, 4242));
 

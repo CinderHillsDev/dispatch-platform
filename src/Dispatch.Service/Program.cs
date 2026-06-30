@@ -36,7 +36,7 @@ try
     builder.Host.UseWindowsService();
     builder.Host.UseSystemd();
 
-    // CLI: `Dispatch.Service reset-admin-password` resets the dashboard admin password and exits — for
+    // CLI: `Dispatch.Service reset-admin-password` resets the dashboard admin password and exits - for
     // operators locked out locally. Runs before any web setup; uses the same config (appsettings/env).
     if (args.Contains("reset-admin-password", StringComparer.OrdinalIgnoreCase))
         return await ResetAdminPasswordAsync(builder.Configuration);
@@ -50,7 +50,7 @@ try
     // --- Bootstrap (spec §12.1, §12.6, §12.8) -------------------------------------------------
     // appsettings.json holds ONLY the DB connection string and the Web UI TLS cert. Everything else lives
     // in the SQL config table. SQL must be reachable at startup: initialise the schema, seed default config
-    // on first run, and load the ConfigCache — the single source of truth — before configuring listeners.
+    // on first run, and load the ConfigCache - the single source of truth - before configuring listeners.
     var connectionString = builder.Configuration.GetConnectionString("DispatchLog")
         ?? throw new InvalidOperationException("ConnectionStrings:DispatchLog is not configured.");
 
@@ -66,7 +66,7 @@ try
     }
     catch (Exception ex)
     {
-        // §12.8: without config there is nothing safe to do — log clearly and exit non-zero so the
+        // §12.8: without config there is nothing safe to do - log clearly and exit non-zero so the
         // service manager retries on its configured restart interval.
         Log.Fatal(ex, "Dispatch cannot start: the SQL configuration database is unreachable.");
         return 1;
@@ -103,7 +103,7 @@ try
 
     // Kestrel: dashboard/read API on the web port, ingestion API on the API port (from SQL config).
     // The dashboard is HTTPS-only (spec §17.2): it uses the configured TLS cert (appsettings, §12.2) when
-    // present, otherwise an auto-generated, persisted self-signed cert — never plain HTTP. The ingestion
+    // present, otherwise an auto-generated, persisted self-signed cert - never plain HTTP. The ingestion
     // API stays plain HTTP so devices/apps that can't do TLS can still post (it's gated by API keys).
     // Optional HTTPS ingestion API (its own port) uses the shared TLS cert; if none is configured yet it
     // falls back to the dashboard's self-signed cert, so enabling HTTPS never blocks startup.
@@ -190,7 +190,7 @@ try
     // HTTP, so those are relaxed to keep dev login working.
     var enforceHttps = !builder.Environment.IsDevelopment();
 
-    // Web/ingestion services (SignalR, live feed, rate limiter, API-key middleware) — must follow AddDispatchData.
+    // Web/ingestion services (SignalR, live feed, rate limiter, API-key middleware) - must follow AddDispatchData.
     builder.Services.AddDispatchWeb(enforceHttps,
         configCache.GetInt(ConfigKeys.WebUiSessionTimeoutMinutes, 480));
 
@@ -205,7 +205,7 @@ try
 
     var app = builder.Build();
 
-    // Global exception handler (OWASP A10): never leak internals — log with an error id, record a System
+    // Global exception handler (OWASP A10): never leak internals - log with an error id, record a System
     // audit event, and return a generic 500 carrying just that id. Must be first to catch downstream throws.
     app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
     {

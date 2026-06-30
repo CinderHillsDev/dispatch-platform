@@ -62,7 +62,7 @@ public static class MetricsEndpoints
 
             return Results.Text(sb.ToString(), "text/plain; version=0.0.4");
         })
-        // Unauthenticated, but only on the dashboard port — never exposed on the ingestion listener.
+        // Unauthenticated, but only on the dashboard port - never exposed on the ingestion listener.
         .AddEndpointFilter(async (ctx, next) =>
             ctx.HttpContext.Connection.LocalPort == webPort ? await next(ctx) : Results.NotFound());
     }

@@ -45,7 +45,7 @@ public static class TlsCert
         if (!OperatingSystem.IsWindows())
         {
             using (File.Create(path)) { }
-            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // 600 — holds the private key
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // 600 - holds the private key
         }
         File.WriteAllBytes(path, pfx);
         return (path, password);

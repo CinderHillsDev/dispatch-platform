@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Dispatch SMTP Relay — Linux installer.
+# Dispatch SMTP Relay - Linux installer.
 #
 # Publishes the service, lays out config/data directories, and installs a systemd unit. Per spec §12.1 the
 # only things written to appsettings.json are the SQL connection string, the install-time admin-password
-# seed, and (optionally) the Web UI TLS cert — everything else lives in the SQL config table and is managed
+# seed, and (optionally) the Web UI TLS cert - everything else lives in the SQL config table and is managed
 # from the dashboard after first run (default ports: SMTP 25 & 587, dashboard 8420, API 8025). The service
 # runs as the unprivileged 'dispatch' user but the systemd unit grants CAP_NET_BIND_SERVICE so it can bind
 # 25/587; if 25 is already taken the listener falls back to 2525 automatically.
@@ -23,7 +23,7 @@
 # Flags:
 #   --sql-connection <s>   Connection string for an existing server (omit when using --install-sql).
 #   --install-sql          Install SQL Server (Express, free) locally + create the DispatchLog DB. On arm64
-#                          (no SQL Server build) this runs Azure SQL Edge in a container instead — needs Docker.
+#                          (no SQL Server build) this runs Azure SQL Edge in a container instead - needs Docker.
 #   --sa-password <s>      SA password for --install-sql (required with --install-sql; must meet SQL policy).
 #   --admin-password <s>   Dashboard admin password seed (prompted if omitted).
 #   --generate-cert        Generate a self-signed PFX and serve the dashboard over HTTPS (spec §17.2).
@@ -88,7 +88,7 @@ install_sql_server() {
   . /etc/os-release
 
   # SQL Server has no arm64 Linux build, so on arm64 fall back to Azure SQL Edge, which is arm64-native
-  # but ships only as a container image. This is a dev/test convenience — SQL Edge is deprecated by
+  # but ships only as a container image. This is a dev/test convenience - SQL Edge is deprecated by
   # Microsoft; for production use an amd64 host with SQL Server, or point --sql-connection at an external
   # instance.
   local arch; arch="$(uname -m)"
@@ -121,7 +121,7 @@ install_sql_server() {
     ACCEPT_EULA=Y MSSQL_PID=Express MSSQL_SA_PASSWORD="$SA_PASSWORD" "$PM" install -y mssql-server
     "$PM" install -y mssql-tools18 unixODBC-devel || true
   else
-    echo "Unsupported package manager — install SQL Server manually and pass --sql-connection." >&2; exit 1
+    echo "Unsupported package manager - install SQL Server manually and pass --sql-connection." >&2; exit 1
   fi
 
   echo "==> Running unattended SQL Server setup (Express edition)"
@@ -143,7 +143,7 @@ install_sql_server() {
 # arm64. Needs a container runtime (docker/podman); the DispatchLog database is created by the service's
 # own DatabaseInitializer on first start, so no sqlcmd is required.
 install_sql_edge_container() {
-  echo "==> arm64 detected — SQL Server has no arm64 Linux build; using Azure SQL Edge (container) instead."
+  echo "==> arm64 detected - SQL Server has no arm64 Linux build; using Azure SQL Edge (container) instead."
   local runtime=""
   if command -v docker >/dev/null 2>&1; then runtime="docker"
   elif command -v podman >/dev/null 2>&1; then runtime="podman"
@@ -197,7 +197,7 @@ generate_cert() {
 [[ -n "$SQL_CONNECTION" ]] || { echo "Provide --sql-connection, or use --install-sql." >&2; exit 1; }
 
 # Prompt for the admin password only when omitted AND running interactively. In a non-interactive run
-# (e.g. baking the appliance image) leave it unset — the dashboard requires the admin password to be set on
+# (e.g. baking the appliance image) leave it unset - the dashboard requires the admin password to be set on
 # first login, so an empty seed is safe and avoids a hang/failure on a missing TTY.
 if [[ -z "$ADMIN_PASSWORD" && -t 0 ]]; then
   read -rsp "Set the dashboard admin password: " ADMIN_PASSWORD; echo
@@ -236,15 +236,15 @@ if [[ -n "$PREBUILT_DIR" ]]; then
   [[ -d "$PREBUILT_DIR" ]] || { echo "--prebuilt dir not found: $PREBUILT_DIR (cwd: $PWD, script: $SCRIPT_DIR)" >&2; exit 1; }
   [[ -f "$PREBUILT_DIR/Dispatch.Service" ]] || { echo "--prebuilt dir has no Dispatch.Service executable: $PREBUILT_DIR" >&2; exit 1; }
   # A self-contained .NET build still needs the system ICU library for globalization (it aborts at
-  # startup without it) plus TLS roots — minimal images often lack both.
+  # startup without it) plus TLS roots - minimal images often lack both.
   echo "==> Ensuring .NET runtime dependencies (ICU, CA certs)"
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -y >/dev/null 2>&1 || true
     apt-get install -y ca-certificates || true
-    # On Debian/Ubuntu the ICU runtime is version-numbered (libicu74, libicu76, …) — there is no plain
+    # On Debian/Ubuntu the ICU runtime is version-numbered (libicu74, libicu76, …) - there is no plain
     # "libicu" package. Resolve the highest-versioned one; fall back to libicu-dev which always pulls it.
     icu_pkg="$(apt-cache --names-only search '^libicu[0-9]+$' 2>/dev/null | awk '{print $1}' | sort -V | tail -1)"
-    apt-get install -y "${icu_pkg:-libicu-dev}" || echo "WARN: could not install the ICU runtime — install libicu manually if the service fails to start." >&2
+    apt-get install -y "${icu_pkg:-libicu-dev}" || echo "WARN: could not install the ICU runtime - install libicu manually if the service fails to start." >&2
   elif command -v dnf >/dev/null 2>&1; then dnf install -y libicu ca-certificates || true
   elif command -v yum >/dev/null 2>&1; then yum install -y libicu ca-certificates || true
   fi
@@ -307,7 +307,7 @@ install -m 644 "$UNIT_SRC" /etc/systemd/system/dispatch.service
 systemctl daemon-reload
 if [[ "$NO_START" == "1" ]]; then
   systemctl enable dispatch                      # appliance build: started on first boot, not now
-  echo "==> Service enabled (not started — --no-start)"
+  echo "==> Service enabled (not started - --no-start)"
 else
   systemctl enable --now dispatch
 fi
@@ -324,7 +324,7 @@ fi
 SCHEME="https"
 if [[ "$NO_START" == "1" ]]; then
   echo
-  echo "Dispatch is staged (service enabled, not started) — it will start on first boot."
+  echo "Dispatch is staged (service enabled, not started) - it will start on first boot."
   exit 0
 fi
 echo

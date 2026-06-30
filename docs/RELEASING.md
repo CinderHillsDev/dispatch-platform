@@ -16,7 +16,7 @@ That triggers the **Release** workflow, which:
 1. Stamps the version (`v1.0.0` → `1.0.0`) into the published service, the MSI, and the Burn bundle.
 2. Builds the **Windows installer** (`DispatchSetup-<ver>-x64.exe` + `Dispatch-<ver>-x64.msi`) and, if signing is configured,
    Authenticode-signs both (engine detached, signed, reattached, then the bundle is signed).
-3. Builds the **universal Linux tarball** (`dispatch-<ver>-linux.tar.gz`, x64 + arm64, self-contained) —
+3. Builds the **universal Linux tarball** (`dispatch-<ver>-linux.tar.gz`, x64 + arm64, self-contained) -
    `install.sh` auto-detects the arch; no .NET SDK needed on the box.
 4. Generates `SHA256SUMS` and publishes a **GitHub Release** with all four assets and auto-generated notes.
 
@@ -29,7 +29,7 @@ That triggers the **Release** workflow, which:
 ### Dry run (no tag)
 
 Run the **Release** workflow manually (`workflow_dispatch`) with a `version` input. It builds everything
-and publishes a **draft** release you can inspect and delete — nothing goes public.
+and publishes a **draft** release you can inspect and delete - nothing goes public.
 
 ## What users download
 
@@ -41,7 +41,7 @@ and publishes a **draft** release you can inspect and delete — nothing goes pu
 | Any      | `ghcr.io/chrismuench/dispatch-smtp-relay:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |
 | All      | `SHA256SUMS` | Verify downloads: `sha256sum -c SHA256SUMS`. |
 
-## First release — one-time setup
+## First release - one-time setup
 
 The first tag push creates the GHCR package, but **GHCR packages are private by default**, so anonymous
 `docker pull` will fail until you make it public:
@@ -54,11 +54,11 @@ The first tag push creates the GHCR package, but **GHCR packages are private by 
    docker pull ghcr.io/chrismuench/dispatch-smtp-relay:1.0.0
    ```
 
-Subsequent releases reuse the same (now public) package — this step is only needed once.
+Subsequent releases reuse the same (now public) package - this step is only needed once.
 
 ## Code signing (Azure Artifact Signing)
 
-Signing is **opt-in and dormant** until provisioned — until then releases publish unsigned (Windows
+Signing is **opt-in and dormant** until provisioned - until then releases publish unsigned (Windows
 SmartScreen will warn on first run). To enable it:
 
 1. Set up an **Azure Artifact Signing** account + certificate profile (renamed from Trusted Signing,
@@ -74,7 +74,7 @@ The next tagged release then signs the MSI and the bundle automatically. The sig
 `AZURE_SIGNING_ACCOUNT`; if it's unset, they're skipped.
 
 > Note: the project is licensed AGPL-3.0 + Commons Clause. The Commons Clause is not OSI-approved, so the
-> free **SignPath Foundation** OSS signing program does not apply — Azure Artifact Signing (a paid service
+> free **SignPath Foundation** OSS signing program does not apply - Azure Artifact Signing (a paid service
 > tied to your own identity, license-agnostic) is the path here.
 
 ## CI vs. release builds

@@ -1,5 +1,5 @@
 # Dispatch SMTP Relay
-### Open-Source .NET SMTP Relay — Forward mail from your apps to any cloud provider — Technical Specification v1.0
+### Open-Source .NET SMTP Relay - Forward mail from your apps to any cloud provider - Technical Specification v1.0
 *June 2026*
 
 ---
@@ -26,8 +26,8 @@
 18. [CI/CD and Build Pipeline](#18-cicd-and-build-pipeline)
 19. [Claude Code Implementation Notes](#19-claude-code-implementation-notes)
 20. [Open Source & Licence](#20-open-source--licence)
-- [Appendix A — Suggested Future Providers](#appendix-a--suggested-future-providers)
-- [Appendix B — Suggested Future Features](#appendix-b--suggested-future-features)
+- [Appendix A - Suggested Future Providers](#appendix-a--suggested-future-providers)
+- [Appendix B - Suggested Future Features](#appendix-b--suggested-future-features)
 
 ---
 
@@ -35,34 +35,34 @@
 
 Dispatch is a lightweight, open-source SMTP relay server built on .NET 10. It accepts inbound messages over **SMTP** (ports 25/587) and a **developer-friendly HTTP API** (port 8025), then forwards every message to a configurable upstream provider such as Mailgun, SendGrid, or Azure Communication Services.
 
-A small embedded web UI — served directly from the process on port 8420 — lets administrators view live message logs, manage API keys, and configure all settings from any browser without installing separate software. No Electron, no Avalonia, no external web server required.
+A small embedded web UI - served directly from the process on port 8420 - lets administrators view live message logs, manage API keys, and configure all settings from any browser without installing separate software. No Electron, no Avalonia, no external web server required.
 
 **Key design goals:**
 
-- Zero external runtime dependencies — single self-contained executable on both Windows and Linux
-- **Dual ingest** — accept mail via SMTP or HTTP API; same spool pipeline, same delivery guarantees
+- Zero external runtime dependencies - single self-contained executable on both Windows and Linux
+- **Dual ingest** - accept mail via SMTP or HTTP API; same spool pipeline, same delivery guarantees
 - Embedded ASP.NET Core web UI for configuration, log inspection, and API key management
 - Windows: installs as a Windows Service via MSI
 - Linux: runs as a systemd unit
-- Provider-agnostic relay — swap between Mailgun, SendGrid, SMTP, Azure Communication Services, or others through the UI without restarting
-- AGPL-3.0 + Commons Clause — free to use and self-host; selling the software or charging for hosted access is prohibited
+- Provider-agnostic relay - swap between Mailgun, SendGrid, SMTP, Azure Communication Services, or others through the UI without restarting
+- AGPL-3.0 + Commons Clause - free to use and self-host; selling the software or charging for hosted access is prohibited
 
 ### 1.1 Implementation deltas (authoritative)
 
 The shipped implementation intentionally diverges from a few details described later in this document. Where they conflict, the notes here win; the older passages are kept for context but should be read with these in mind:
 
-- **Default SMTP ports are `25` and `587`, with an automatic fallback to `2525`.** The installers, appliance, and container all run with enough privilege to bind the standard ports (the systemd unit is granted `CAP_NET_BIND_SERVICE`). At startup the listener probes each configured port and, if `25` can't be bound (already in use, or no privilege — e.g. a non-elevated dev run), falls back to `2525` so mail still flows. A bind failure never crashes the host: if no port can be bound the SMTP listener is skipped and the dashboard/API stay up. Recommendation: run on a host with no other SMTP software so 25/587 are free. (Affects §5.3, §12.3 `listener.ports`.)
-- **No "None" provider.** The provider model is `Unconfigured` (the out-of-the-box default — never delivers, fails clearly) plus `Local` (developer mode — captures to `spool/captured/`, never delivers externally). The schema/enum has no `None` value; references to provider `None` mean `Local`/`Unconfigured`. (Affects §10.2, §10.4/§10.5, §11.6.)
+- **Default SMTP ports are `25` and `587`, with an automatic fallback to `2525`.** The installers, appliance, and container all run with enough privilege to bind the standard ports (the systemd unit is granted `CAP_NET_BIND_SERVICE`). At startup the listener probes each configured port and, if `25` can't be bound (already in use, or no privilege - e.g. a non-elevated dev run), falls back to `2525` so mail still flows. A bind failure never crashes the host: if no port can be bound the SMTP listener is skipped and the dashboard/API stay up. Recommendation: run on a host with no other SMTP software so 25/587 are free. (Affects §5.3, §12.3 `listener.ports`.)
+- **No "None" provider.** The provider model is `Unconfigured` (the out-of-the-box default - never delivers, fails clearly) plus `Local` (developer mode - captures to `spool/captured/`, never delivers externally). The schema/enum has no `None` value; references to provider `None` mean `Local`/`Unconfigured`. (Affects §10.2, §10.4/§10.5, §11.6.)
 - **No CSV export.** The async CSV export (job endpoints, Export UI) was dropped as out of scope. (Affects §9.2 Export, §9.3 `/api/messages/export*`.)
 - **Logging is repository-driven, not Serilog custom sinks.** Relay events reach `relay_log` via `ILogRepository.InsertAsync` and the live feed via a `BroadcastingLogRepository` decorator + `RelayEventStream`; there is no `RelayLogDbSink`/`RingBufferSink`. File + console Serilog sinks remain. (Affects §13.1/§13.2.)
-- **`api_keys.rate_limit_per_minute` default is `100`** (the spec is internally inconsistent — §6.11 says 0, §7.6 says 100; code uses 100; 0 still means "use the global default").
-- **Web UI HTTPS is enforced (§17.2).** The dashboard uses the configured `WebUi:TlsCertPath` (appsettings, §12.2) when present, otherwise the **service** auto-generates and persists a self-signed cert (`dispatch-webui.pfx` in the content root) — it never serves plain HTTP. The cert is generated by the app at startup, not by the installer/bootstrap. The ingestion API remains plain HTTP.
+- **`api_keys.rate_limit_per_minute` default is `100`** (the spec is internally inconsistent - §6.11 says 0, §7.6 says 100; code uses 100; 0 still means "use the global default").
+- **Web UI HTTPS is enforced (§17.2).** The dashboard uses the configured `WebUi:TlsCertPath` (appsettings, §12.2) when present, otherwise the **service** auto-generates and persists a self-signed cert (`dispatch-webui.pfx` in the content root) - it never serves plain HTTP. The cert is generated by the app at startup, not by the installer/bootstrap. The ingestion API remains plain HTTP.
 - **Config provider settings** are edited per-relay via `PUT /api/relays/{id}` (named relays, §10), not a global `PUT /api/config/provider`; live in-flight counts are part of `GET /api/stats/relays`. (Affects §9.3.)
-- **Default source-IP allow-lists are deployment-friendly, not loopback-only.** A loopback-only default makes the dashboard unreachable on the common deployment shapes (headless servers have no local browser; containers NAT every request). So the seeded defaults are: `webui.allowed_cidrs` and `api.allowed_cidrs` = **empty (allow all)** — these surfaces are gated by the dashboard password and API keys respectively, with the CIDR list as optional hardening; `listener.allowed_cidrs` = **loopback + private ranges** (`127.0.0.1/32`, `::1/128`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) so same-host apps, private LANs and Docker networks can submit mail while the SMTP listener is **not** an open internet relay out of the box. Operators tighten any of these in the dashboard. (Affects §12.6 defaults, §17.10.)
+- **Default source-IP allow-lists are deployment-friendly, not loopback-only.** A loopback-only default makes the dashboard unreachable on the common deployment shapes (headless servers have no local browser; containers NAT every request). So the seeded defaults are: `webui.allowed_cidrs` and `api.allowed_cidrs` = **empty (allow all)** - these surfaces are gated by the dashboard password and API keys respectively, with the CIDR list as optional hardening; `listener.allowed_cidrs` = **loopback + private ranges** (`127.0.0.1/32`, `::1/128`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) so same-host apps, private LANs and Docker networks can submit mail while the SMTP listener is **not** an open internet relay out of the box. Operators tighten any of these in the dashboard. (Affects §12.6 defaults, §17.10.)
 - **Provider set is larger than §8 describes.** Implemented providers: `Unconfigured` (default), `Local`, `Smtp`, `Mailgun`, `SendGrid`, `AzureCommunication`, **`AmazonSes`, `Postmark`, `Resend`, `SparkPost`, `Smtp2Go`**. The five bold ones were on Appendix A ("future") but are shipped; their credential field schemas live in `RelayProviderSchema` (Core). Anywhere §8/§10.2 says the default relay provider is `None`, read `Unconfigured`. (Affects §8, §10.2, Appendix A.)
-- **Windows install is a WiX Burn bundle, not a WinForms wizard.** §15.2 describes a standalone .NET WinForms setup wizard; the actual installer is `DispatchSetup.exe`, a WiX Burn bundle (`bundle/Bundle.wxs`) that chains a thin `InstallSqlExpress.exe` launcher (runs `InstallSqlExpress.ps1` to install **SQL Server 2025 Express**, instance `DISPATCHSQL`) then the Dispatch MSI. There is no interactive multi-step UI and no certificate-generation step on Windows — automatic self-signed cert generation exists only on Linux via `install.sh --generate-cert`. (Affects §15.2, §17.2.)
-- **The ingestion API is HTTP-only; no API-TLS config keys.** There are no `api.tls_cert_path` / `api.tls_cert_password` config keys and no API-TLS UI controls — Kestrel serves the ingestion port over plain HTTP (terminate TLS at a reverse proxy if needed). The `webui.tls_cert_path` / `webui.tls_cert_password` settings live in **appsettings.json** (§12.2), not the SQL `config` table, so they are not rows in the §12.3 table. There is also no `webui.require_auth` key — the dashboard requires auth whenever an admin password hash is set. Two config keys exist that §12.3 omits: `listener.server_name` (default `Dispatch`) and `purge.captured_retention_days` (default `7`). (Affects §9.2, §12.3.)
-- **Some §-pseudocode signatures are illustrative.** The internal method shapes shown in §10.7 (`RoutingEngine.ResolveAsync`) and §11.5 (provider-test service) differ from the code — e.g. `ResolveAsync` returns `ValueTask<ResolvedRelay>` over `IReadOnlyList<string>` recipients, and starting a provider test is synchronous and returns a `TestRun`. Treat those listings as intent, not literal API.
+- **Windows install is a WiX Burn bundle, not a WinForms wizard.** §15.2 describes a standalone .NET WinForms setup wizard; the actual installer is `DispatchSetup.exe`, a WiX Burn bundle (`bundle/Bundle.wxs`) that chains a thin `InstallSqlExpress.exe` launcher (runs `InstallSqlExpress.ps1` to install **SQL Server 2025 Express**, instance `DISPATCHSQL`) then the Dispatch MSI. There is no interactive multi-step UI and no certificate-generation step on Windows - automatic self-signed cert generation exists only on Linux via `install.sh --generate-cert`. (Affects §15.2, §17.2.)
+- **The ingestion API is HTTP-only; no API-TLS config keys.** There are no `api.tls_cert_path` / `api.tls_cert_password` config keys and no API-TLS UI controls - Kestrel serves the ingestion port over plain HTTP (terminate TLS at a reverse proxy if needed). The `webui.tls_cert_path` / `webui.tls_cert_password` settings live in **appsettings.json** (§12.2), not the SQL `config` table, so they are not rows in the §12.3 table. There is also no `webui.require_auth` key - the dashboard requires auth whenever an admin password hash is set. Two config keys exist that §12.3 omits: `listener.server_name` (default `Dispatch`) and `purge.captured_retention_days` (default `7`). (Affects §9.2, §12.3.)
+- **Some §-pseudocode signatures are illustrative.** The internal method shapes shown in §10.7 (`RoutingEngine.ResolveAsync`) and §11.5 (provider-test service) differ from the code - e.g. `ResolveAsync` returns `ValueTask<ResolvedRelay>` over `IReadOnlyList<string>` recipients, and starting a provider test is synchronous and returns a `TestRun`. Treat those listings as intent, not literal API.
 - **SMTP source-IP denial happens at MAIL FROM, not the greeting.** The CIDR allow-list and intake/back-pressure checks run in the mailbox filter (`CanAcceptFromAsync`); a disallowed source is refused there (and a `Denied` row is logged), rather than with a `554` at the SMTP banner. (Refines §5.3, §17.10.)
 - **SMTP AUTH brute-force lockout** (§17.10) is implemented as `SmtpAuthThrottle`: 5 failed AUTH attempts from a source IP lock it out for 60 seconds, during which AUTH is refused without touching the credential store (mirrors the dashboard's `LoginThrottle`).
 - **API-key revocation is immediate** (§17.4): revoking a key calls `ApiKeyCache.Invalidate`, so it stops working at once rather than lingering until the 30-second cache TTL.
@@ -71,13 +71,13 @@ The shipped implementation intentionally diverges from a few details described l
 
 ## 2. Architecture Overview
 
-Dispatch runs as a single .NET 10 process. The design principle is simple: **the hot path never touches a database**. `250 OK` is returned as soon as a message hits the spool directory. Everything else — provider dispatch, retry, logging — happens asynchronously afterwards.
+Dispatch runs as a single .NET 10 process. The design principle is simple: **the hot path never touches a database**. `250 OK` is returned as soon as a message hits the spool directory. Everything else - provider dispatch, retry, logging - happens asynchronously afterwards.
 
 **SMTP Listener Layer**
-Accepts inbound connections on port 25 and/or 587. Built on the `SmtpServer` NuGet library (v11.x). When a `DATA` command completes successfully, the raw message bytes are written atomically to a `.eml` file in the spool `incoming/` directory and `250 OK` is returned immediately. No database, no parsing, no network call — just a file write.
+Accepts inbound connections on port 25 and/or 587. Built on the `SmtpServer` NuGet library (v11.x). When a `DATA` command completes successfully, the raw message bytes are written atomically to a `.eml` file in the spool `incoming/` directory and `250 OK` is returned immediately. No database, no parsing, no network call - just a file write.
 
 **HTTP Ingestion API Layer**
-A second ASP.NET Core listener on port 8025 (default, separate from the web UI port). Accepts `POST /api/v1/messages` with `multipart/form-data` or JSON. API keys are required (managed in the web UI). On receipt, MimeKit builds a `MimeMessage` from the POST fields, serialises it to RFC 5322 bytes, and writes it to `spool/incoming/` — identical to the SMTP path. Returns `202 Accepted` immediately.
+A second ASP.NET Core listener on port 8025 (default, separate from the web UI port). Accepts `POST /api/v1/messages` with `multipart/form-data` or JSON. API keys are required (managed in the web UI). On receipt, MimeKit builds a `MimeMessage` from the POST fields, serialises it to RFC 5322 bytes, and writes it to `spool/incoming/` - identical to the SMTP path. Returns `202 Accepted` immediately.
 
 **Spool Directory (Durable Queue)**
 The spool directory on the local filesystem is the source of truth for all in-flight messages. It has three subdirectories:
@@ -89,7 +89,7 @@ spool/
   failed/       ← file moved here after all retries exhausted
 ```
 
-File moves between directories are atomic on the same filesystem — there are no partial states. A `FileSystemWatcher` wakes workers the instant a file appears in `incoming/` so there is no polling delay. On startup, the worker sweeps `processing/` for any files orphaned by a previous crash and requeues them.
+File moves between directories are atomic on the same filesystem - there are no partial states. A `FileSystemWatcher` wakes workers the instant a file appears in `incoming/` so there is no polling delay. On startup, the worker sweeps `processing/` for any files orphaned by a previous crash and requeues them.
 
 **Relay Worker Pool**
 A configurable pool of background workers (default: 4) each claim one spool file at a time by moving it from `incoming/` to `processing/`. The worker parses the `.eml` with MimeKit, runs the **routing engine** to select the correct named relay for this message's sender/recipient domains, calls the relay's `IRelayProvider`, then:
@@ -98,9 +98,9 @@ A configurable pool of background workers (default: 4) each claim one spool file
 - **Transient failure** → increment `relay_counters.retried`; write `Retrying` row to `relay_log` only if `logging.log_retrying = true`; update `.meta` sidecar; sleep back-off; retry
 - **Permanent failure** → increment `relay_counters.failed`; write `Failed` row to `relay_log` (always); move file to `failed/`
 
-SQL Server is only written to **after** the provider responds. If SQL Server is unavailable, mail still flows — the log entry will be missing from the UI until SQL recovers, but no messages are lost.
+SQL Server is only written to **after** the provider responds. If SQL Server is unavailable, mail still flows - the log entry will be missing from the UI until SQL recovers, but no messages are lost.
 
-**SQL Server — Logging & Config Only**
+**SQL Server - Logging & Config Only**
 SQL Server Express holds `relay_log` (event history, configurable suppression), `relay_counters` (daily aggregates, always written), the `config` table, and the schema version table.
 
 **Embedded Web UI Layer**
@@ -109,18 +109,18 @@ ASP.NET Core minimal API hosts a React/Vite SPA on port 8420 (default). The UI r
 | Component | Technology |
 |---|---|
 | SMTP listener | SmtpServer 11.x (NuGet) |
-| **HTTP ingestion API** | **ASP.NET Core minimal API — second listener on port 8025** |
+| **HTTP ingestion API** | **ASP.NET Core minimal API - second listener on port 8025** |
 | Message parsing | MimeKit 4.x (NuGet) |
 | Relay dispatch | MailKit SmtpClient + provider SDKs |
-| **Durable queue** | **Local spool directory — `.eml` files, atomic directory moves** |
+| **Durable queue** | **Local spool directory - `.eml` files, atomic directory moves** |
 | Worker wake signal | `FileSystemWatcher` + `Channel<string>` (filename only) |
-| Relay event log | SQL Server Express — `relay_log` (configurable) + `relay_counters` (always) |
+| Relay event log | SQL Server Express - `relay_log` (configurable) + `relay_counters` (always) |
 | Log ORM | Microsoft.Data.SqlClient + Dapper |
 | Web host | ASP.NET Core 10 minimal API |
 | Real-time log push | SignalR (Microsoft.AspNetCore.SignalR) |
 | Web UI framework | React 18 + Vite (compiled, embedded in assembly) |
 | Configuration store | SQL Server `config` table (connection string only in `appsettings.json`) |
-| Structured logging | Serilog — file sink + SQL Server sink (`relay_log`) + in-memory ring buffer |
+| Structured logging | Serilog - file sink + SQL Server sink (`relay_log`) + in-memory ring buffer |
 | Windows service host | .NET Worker Service (IHostedService) |
 | Windows installer | WiX Toolset v6 (MSI) |
 | Linux service | systemd unit file |
@@ -161,7 +161,7 @@ Dispatch/
 
 | Package | Purpose | Licence |
 |---|---|---|
-| SmtpServer (v11.x) | Embeddable SMTP server — handles ESMTP protocol, TLS, AUTH | MIT |
+| SmtpServer (v11.x) | Embeddable SMTP server - handles ESMTP protocol, TLS, AUTH | MIT |
 | MimeKit (v4.x) | RFC-compliant MIME message parsing and construction | MIT |
 | MailKit (v4.x) | SMTP client used for relay-over-SMTP upstream delivery | MIT |
 | Serilog | Structured logging with multiple sinks | Apache 2.0 |
@@ -187,12 +187,12 @@ Dispatch/
 
 ### 5.2 Supported ESMTP Extensions
 
-- `STARTTLS` — optional TLS upgrade (certificate path configured in web UI)
-- `AUTH PLAIN` / `AUTH LOGIN` — optional credential check against a configured allow-list
-- `SIZE` — advertises `listener.max_message_bytes` (the global ceiling; default 0 = no limit, omitted from `EHLO`); per-relay limits enforced at `RCPT TO` — see Section 14.2
-- `8BITMIME`, `PIPELINING` — standard modern ESMTP extensions
+- `STARTTLS` - optional TLS upgrade (certificate path configured in web UI)
+- `AUTH PLAIN` / `AUTH LOGIN` - optional credential check against a configured allow-list
+- `SIZE` - advertises `listener.max_message_bytes` (the global ceiling; default 0 = no limit, omitted from `EHLO`); per-relay limits enforced at `RCPT TO` - see Section 14.2
+- `8BITMIME`, `PIPELINING` - standard modern ESMTP extensions
 
-**Custom header — `X-Dispatch-Tag`:**
+**Custom header - `X-Dispatch-Tag`:**
 
 SMTP senders can tag messages by including one or more `X-Dispatch-Tag` headers. Tags appear in the Message Log and can be filtered on:
 
@@ -201,7 +201,7 @@ X-Dispatch-Tag: welcome
 X-Dispatch-Tag: onboarding
 ```
 
-Tags are parsed from the raw message at receipt time (minimal MIME header scan only — not a full parse) and stored in `SpoolMeta.Tags`, then written to `relay_log.tags` as a JSON array.
+Tags are parsed from the raw message at receipt time (minimal MIME header scan only - not a full parse) and stored in `SpoolMeta.Tags`, then written to `relay_log.tags` as a JSON array.
 
 ### 5.3 Listener Configuration Defaults
 
@@ -212,13 +212,13 @@ Tags are parsed from the raw message at receipt time (minimal MIME header scan o
 | Allowed source IPs / CIDRs | `127.0.0.1/32` (localhost only) |
 | Max message size (global ceiling) | No limit (0) |
 | Require AUTH | false |
-| TLS certificate path | (empty — plain text by default) |
+| TLS certificate path | (empty - plain text by default) |
 | Connection timeout | 60 s |
 | Max concurrent connections | 100 |
 
 The SMTP listener binds to all interfaces so connections arrive regardless of which network interface they come from. Access control is enforced at the **application layer** via an IP/CIDR allow-list (`listener.allowed_cidrs`). Connections from addresses outside the allow-list are refused at the SMTP greeting with `554 5.7.1 Connection refused` and a `Denied` entry is written to `relay_log` with the source IP, so every rejection is visible in the web UI.
 
-Default allow-list is `127.0.0.1/32` (localhost only). To accept from your local network, add your subnet — e.g. `192.168.1.0/24`. To accept from anywhere, set `0.0.0.0/0` (open relay — only do this with `Require AUTH` enabled).
+Default allow-list is `127.0.0.1/32` (localhost only). To accept from your local network, add your subnet - e.g. `192.168.1.0/24`. To accept from anywhere, set `0.0.0.0/0` (open relay - only do this with `Require AUTH` enabled).
 
 When **Require AUTH** is enabled, Dispatch validates credentials against a username/password list stored in the `config_smtp_credentials` table in SQL Server. The web UI provides a credential manager for this list.
 
@@ -255,13 +255,13 @@ Parse with MimeKit, run RoutingEngine → call IRelayProvider
            failure      Move file to spool/failed/
 ```
 
-SQL Server is written to **only after** the provider responds. If SQL Server is down, mail still flows and spool files accumulate normally — the `relay_log` insert is fire-and-forget. A failed insert is logged to the Serilog file sink (so the event is never silently lost) and the spool file is still deleted on delivery success. The UI Message Log will have gaps for the outage period; no messages are lost.
+SQL Server is written to **only after** the provider responds. If SQL Server is down, mail still flows and spool files accumulate normally - the `relay_log` insert is fire-and-forget. A failed insert is logged to the Serilog file sink (so the event is never silently lost) and the spool file is still deleted on delivery success. The UI Message Log will have gaps for the outage period; no messages are lost.
 
 ### 6.2 Spool Directory Structure
 
 | Path | Contents | Lifecycle |
 |---|---|---|
-| `spool/incoming/` | `{uuid}.eml` — raw RFC 5322 bytes | Written on receipt; claimed by a worker within milliseconds |
+| `spool/incoming/` | `{uuid}.eml` - raw RFC 5322 bytes | Written on receipt; claimed by a worker within milliseconds |
 | `spool/processing/` | `{uuid}.eml` + `{uuid}.meta` | File moved atomically from `incoming/`; deleted on success or moved to `failed/` |
 | `spool/failed/` | `{uuid}.eml` + `{uuid}.meta` | Permanently failed messages; visible in UI; can be manually retried or deleted |
 
@@ -276,9 +276,9 @@ The path is configurable in the web UI under **Settings → Storage & Retention*
 
 ### 6.3 Spool File Format
 
-**`{uuid}.eml`** — the complete raw RFC 5322 message bytes exactly as received from the SMTP client. No transformation, no parsing on the write path.
+**`{uuid}.eml`** - the complete raw RFC 5322 message bytes exactly as received from the SMTP client. No transformation, no parsing on the write path.
 
-**`{uuid}.meta`** — a small JSON sidecar file written when a worker first claims the message, updated on each retry:
+**`{uuid}.meta`** - a small JSON sidecar file written when a worker first claims the message, updated on each retry:
 
 ```json
 {
@@ -298,7 +298,7 @@ The path is configurable in the web UI under **Settings → Storage & Retention*
 
 The `.meta` file is the only thing that changes during retries. The `.eml` file is immutable once written. `ingestSource`, `sourceIp`, and `tags` are set at receipt time and never change. `lastRelayId` is set by the worker after the first dispatch attempt so the counter increment on retry/failure knows which relay to attribute the event to.
 
-### 6.4 Receive Path — Writing to Spool
+### 6.4 Receive Path - Writing to Spool
 
 `MessageStore` implements SmtpServer's `IMessageStore`. It is the only thing that runs before `250 OK`:
 
@@ -314,10 +314,10 @@ public class SpoolMessageStore(SpoolDirectory spool) : IMessageStore
         var id   = Guid.NewGuid();
         var path = spool.IncomingPath(id);
 
-        // Write raw bytes — no parsing, no DB, no network
+        // Write raw bytes - no parsing, no DB, no network
         await File.WriteAllBytesAsync(path, buffer.ToArray(), ct);
 
-        // Ring the doorbell — wakes an idle worker immediately
+        // Ring the doorbell - wakes an idle worker immediately
         spool.Signal(id);
 
         return SmtpResponse.Ok;
@@ -327,18 +327,18 @@ public class SpoolMessageStore(SpoolDirectory spool) : IMessageStore
 
 The only failure mode that prevents `250 OK` is a full disk. Everything else (SQL down, provider unreachable, network issues) happens after the sender has already been acknowledged.
 
-### 6.5 Worker Pool — Claiming and Dispatching
+### 6.5 Worker Pool - Claiming and Dispatching
 
-`SpoolWorkerPool` is an `IHostedService` that maintains a configurable number of concurrent worker tasks (default: 4, max: 32 — set via `spool.worker_count`).
+`SpoolWorkerPool` is an `IHostedService` that maintains a configurable number of concurrent worker tasks (default: 4, max: 32 - set via `spool.worker_count`).
 
 #### Per-Relay Concurrency Control
 
-Each named relay has a `max_concurrency` setting (default: 4). This is enforced by a `SemaphoreSlim` per relay, held in a `ConcurrentDictionary<int, SemaphoreSlim>` keyed by `relay_id`. When a worker claims a spool file it must acquire the semaphore for the file's target relay before dispatching. If the semaphore is at capacity — meaning that relay already has `max_concurrency` dispatches in flight — the worker releases the file back and tries the next one.
+Each named relay has a `max_concurrency` setting (default: 4). This is enforced by a `SemaphoreSlim` per relay, held in a `ConcurrentDictionary<int, SemaphoreSlim>` keyed by `relay_id`. When a worker claims a spool file it must acquire the semaphore for the file's target relay before dispatching. If the semaphore is at capacity - meaning that relay already has `max_concurrency` dispatches in flight - the worker releases the file back and tries the next one.
 
 This gives two important properties:
 
-- **No relay starvation** — a slow relay (e.g. Mailgun-EU at 800ms/message with `max_concurrency=4`) cannot monopolise all 4 global workers. If all 4 Mailgun-EU slots are taken, a worker skips those files and picks up the next file that resolves to a relay with a free slot (e.g. SendGrid).
-- **Per-relay back-pressure** — if a relay starts rate-limiting (429 responses), reducing its `max_concurrency` in the UI immediately throttles the concurrency against it without touching other relays.
+- **No relay starvation** - a slow relay (e.g. Mailgun-EU at 800ms/message with `max_concurrency=4`) cannot monopolise all 4 global workers. If all 4 Mailgun-EU slots are taken, a worker skips those files and picks up the next file that resolves to a relay with a free slot (e.g. SendGrid).
+- **Per-relay back-pressure** - if a relay starts rate-limiting (429 responses), reducing its `max_concurrency` in the UI immediately throttles the concurrency against it without touching other relays.
 
 #### Worker Loop
 
@@ -375,7 +375,7 @@ private async Task<(string emlPath, SemaphoreSlim semaphore)?> ClaimFileForAvail
 {
     var candidates = Directory
         .EnumerateFiles(_spool.IncomingDir, "*.eml")
-        .ToList();   // snapshot — avoid enumerator invalidation
+        .ToList();   // snapshot - avoid enumerator invalidation
 
     foreach (var candidate in candidates)
     {
@@ -383,16 +383,16 @@ private async Task<(string emlPath, SemaphoreSlim semaphore)?> ClaimFileForAvail
         // The meta is written at enqueue time with from/to so routing can run here
         SpoolMeta meta;
         try { meta = SpoolMeta.Peek(candidate); }
-        catch { continue; }   // file may have been claimed by another worker — skip
+        catch { continue; }   // file may have been claimed by another worker - skip
 
         var relay = await _routing.ResolveAsync(meta.FromAddress, meta.ToAddresses);
         var sem   = _semaphores.GetOrAdd(relay.Id,
                         _ => new SemaphoreSlim(relay.MaxConcurrency, relay.MaxConcurrency));
 
-        // Try to acquire without waiting — if slot available, claim the file
-        if (!sem.Wait(0)) continue;   // this relay is at capacity — try next file
+        // Try to acquire without waiting - if slot available, claim the file
+        if (!sem.Wait(0)) continue;   // this relay is at capacity - try next file
 
-        // We hold the semaphore — now atomically claim the file
+        // We hold the semaphore - now atomically claim the file
         var dest = _spool.ProcessingPath(Path.GetFileName(candidate));
         try
         {
@@ -407,7 +407,7 @@ private async Task<(string emlPath, SemaphoreSlim semaphore)?> ClaimFileForAvail
         }
     }
 
-    return null;   // all files are for at-capacity relays — wait for next signal
+    return null;   // all files are for at-capacity relays - wait for next signal
 }
 ```
 
@@ -415,7 +415,7 @@ private async Task<(string emlPath, SemaphoreSlim semaphore)?> ClaimFileForAvail
 
 #### Semaphore Lifecycle
 
-Semaphores are created lazily on first access and stored in `ConcurrentDictionary<int, SemaphoreSlim>`. When a relay's `max_concurrency` is changed in the web UI, the old semaphore is replaced with a new one sized to the new value. The replacement is safe — any workers already holding the old semaphore complete normally; new claims use the new semaphore.
+Semaphores are created lazily on first access and stored in `ConcurrentDictionary<int, SemaphoreSlim>`. When a relay's `max_concurrency` is changed in the web UI, the old semaphore is replaced with a new one sized to the new value. The replacement is safe - any workers already holding the old semaphore complete normally; new claims use the new semaphore.
 
 ```csharp
 public void UpdateRelayConcurrency(int relayId, int newMax)
@@ -433,7 +433,7 @@ The two settings work together:
 |---|---|---|
 | 8 workers | Mailgun: 4, SendGrid: 4 | Up to 8 concurrent dispatches, evenly split |
 | 8 workers | Mailgun: 2, SendGrid: 6 | Mailgun capped at 2; SendGrid can use up to 6 |
-| 4 workers | Mailgun: 10, SendGrid: 10 | Global cap of 4 wins — can never exceed worker count |
+| 4 workers | Mailgun: 10, SendGrid: 10 | Global cap of 4 wins - can never exceed worker count |
 | 4 workers | Mailgun: 1, SendGrid: 1 | Both relays capped at 1 even if workers are free |
 
 The effective concurrency for any relay is `min(spool.worker_count, relay.max_concurrency)`. Setting `max_concurrency = 0` means unlimited (bounded only by `spool.worker_count`).
@@ -455,7 +455,7 @@ private async Task ProcessAsync(string emlPath, CancellationToken ct)
 
         // Always: increment relay_counters (counters are always accurate)
         await _counters.IncrementAsync(relay.Id, CounterField.Delivered);
-        _minuteRing.Increment();   // in-memory sparkline — always updated
+        _minuteRing.Increment();   // in-memory sparkline - always updated
 
         // Conditional: write relay_log row only if success logging is enabled
         var logDelivered = _config.Get<bool>("logging.log_delivered", defaultValue: true);
@@ -548,11 +548,11 @@ private async Task ProcessAsync(string emlPath, CancellationToken ct)
 | 3rd retry (final) | 30 minutes |
 | After 3rd failure | Moved to `spool/failed/`; `Failed` row written to `relay_log` |
 
-Retry counts and delays are configurable in the web UI. The retry state lives in the `.meta` sidecar file — no database involved.
+Retry counts and delays are configurable in the web UI. The retry state lives in the `.meta` sidecar file - no database involved.
 
 ### 6.8 Startup Recovery
 
-On every service start, `SpoolWorkerPool` scans `spool/processing/` for orphaned files — messages that were claimed by a worker that crashed before completing. Each orphaned file is moved back to `spool/incoming/` so it will be retried:
+On every service start, `SpoolWorkerPool` scans `spool/processing/` for orphaned files - messages that were claimed by a worker that crashed before completing. Each orphaned file is moved back to `spool/incoming/` so it will be retried:
 
 ```csharp
 private void RecoverOrphanedFiles()
@@ -571,9 +571,9 @@ private void RecoverOrphanedFiles()
 
 Files in `spool/failed/` are surfaced in the web UI Message Log with status `Failed`. From the UI, administrators can:
 
-- **View** — see full headers and the provider error from the `.meta` sidecar
-- **Retry** — move the file back to `spool/incoming/` and reset `retryCount` to 0
-- **Delete** — remove the `.eml` and `.meta` files permanently
+- **View** - see full headers and the provider error from the `.meta` sidecar
+- **Retry** - move the file back to `spool/incoming/` and reset `retryCount` to 0
+- **Delete** - remove the `.eml` and `.meta` files permanently
 
 ### 6.10 Auto-Purge and Retention
 
@@ -581,9 +581,9 @@ Dispatch manages data growth in two places: spool files on disk and log rows in 
 
 #### Spool File Purge
 
-`spool/failed/` files older than the configured retention period are deleted by the `PurgeWorker` (default: 30 days). `spool/incoming/` and `spool/processing/` files are never auto-purged — they are active messages.
+`spool/failed/` files older than the configured retention period are deleted by the `PurgeWorker` (default: 30 days). `spool/incoming/` and `spool/processing/` files are never auto-purged - they are active messages.
 
-#### relay_log Purge — Time-Based
+#### relay_log Purge - Time-Based
 
 The `PurgeWorker` `IHostedService` runs every 6 hours (configurable) and deletes `relay_log` rows older than the configured retention period:
 
@@ -601,14 +601,14 @@ WHERE logged_at < DATEADD(DAY, -@RetentionDays, SYSUTCDATETIME());
 
 Deletes run in batches of 1,000 rows with a 100 ms pause between batches to avoid lock contention.
 
-#### relay_log Purge — Size-Based Pressure
+#### relay_log Purge - Size-Based Pressure
 
 The purge worker also checks database size on every run and on service startup. If the `DispatchLog` database reaches **9.5 GB**, it deletes the oldest `relay_log` rows in batches of 500 until the database drops below **9.0 GB**:
 
 ```csharp
 // Priority order for size-based purge (oldest first in each phase):
 // 1. relay_log rows (most numerous; no raw bytes)
-// SQL Server Express hard limit is 10 GB — 9.5 GB trigger leaves 500 MB buffer
+// SQL Server Express hard limit is 10 GB - 9.5 GB trigger leaves 500 MB buffer
 ```
 
 | Database size | Behaviour |
@@ -636,11 +636,11 @@ The purge worker also checks database size on every run and on service startup. 
 }
 ```
 
-### 6.11 SQL Server — Full Database Schema
+### 6.11 SQL Server - Full Database Schema
 
 SQL Server holds four tables. There is no `relay_queue` table.
 
-**relays** — named relay configurations:
+**relays** - named relay configurations:
 
 ```sql
 CREATE TABLE relays (
@@ -658,7 +658,7 @@ CREATE TABLE relays (
 CREATE UNIQUE INDEX IX_relays_default ON relays (is_default) WHERE is_default = 1;
 ```
 
-**routing_rules** — ordered routing table:
+**routing_rules** - ordered routing table:
 
 ```sql
 CREATE TABLE routing_rules (
@@ -673,7 +673,7 @@ CREATE TABLE routing_rules (
 );
 ```
 
-**relay_log** — after-the-fact event history:
+**relay_log** - after-the-fact event history:
 
 ```sql
 CREATE TABLE relay_log (
@@ -700,9 +700,9 @@ CREATE TABLE relay_log (
 
     -- Routing
     relay_id            INT               NULL REFERENCES relays(id),
-    relay_name          NVARCHAR(128)     NULL,       -- denormalised — survives relay rename/delete
+    relay_name          NVARCHAR(128)     NULL,       -- denormalised - survives relay rename/delete
     routing_rule_id     INT               NULL REFERENCES routing_rules(id),
-    routing_rule_name   NVARCHAR(128)     NULL,       -- denormalised — survives rule rename/delete
+    routing_rule_name   NVARCHAR(128)     NULL,       -- denormalised - survives rule rename/delete
     routing_matched     BIT               NOT NULL DEFAULT 0,  -- 0 = fell through to default
 
     -- Provider outcome
@@ -765,7 +765,7 @@ CREATE INDEX IX_relay_log_purge
 
 ```
 
-**relay_counters** — lightweight daily aggregates, always written regardless of log suppression settings:
+**relay_counters** - lightweight daily aggregates, always written regardless of log suppression settings:
 
 ```sql
 CREATE TABLE relay_counters (
@@ -793,7 +793,7 @@ WHEN MATCHED     THEN UPDATE SET delivered = delivered + 1
 WHEN NOT MATCHED THEN INSERT (date, relay_id, delivered) VALUES (src.date, src.relay_id, 1);
 ```
 
-The Dashboard reads from `relay_counters` for all counters — never from `relay_log`. This means counters are accurate regardless of whether `relay_log` success logging is enabled or disabled.
+The Dashboard reads from `relay_counters` for all counters - never from `relay_log`. This means counters are accurate regardless of whether `relay_log` success logging is enabled or disabled.
 
 
 
@@ -806,7 +806,7 @@ CREATE TABLE config (
 );
 ```
 
-**api_keys** — HTTP API authentication keys:
+**api_keys** - HTTP API authentication keys:
 
 ```sql
 CREATE TABLE api_keys (
@@ -826,7 +826,7 @@ CREATE TABLE api_keys (
 CREATE INDEX IX_api_keys_lookup ON api_keys (key_id) WHERE revoked = 0;
 ```
 
-**config_smtp_credentials** — SMTP sender allow-list:
+**config_smtp_credentials** - SMTP sender allow-list:
 
 ```sql
 CREATE TABLE config_smtp_credentials (
@@ -838,7 +838,7 @@ CREATE TABLE config_smtp_credentials (
 );
 ```
 
-**schema_version** — migration tracking:
+**schema_version** - migration tracking:
 
 ```sql
 CREATE TABLE schema_version (
@@ -848,45 +848,45 @@ CREATE TABLE schema_version (
 );
 ```
 
-### 6.12 SQL Server — Setup
+### 6.12 SQL Server - Setup
 
 | Item | Detail |
 |---|---|
-| Minimum version | SQL Server Express 2019 or 2022 (free) — full SQL Server editions also supported |
-| Linux support | Yes — via the official Microsoft SQL Server for Linux package |
-| Database name | `DispatchLog` (renamed from `DispatchQueue` — it is a log store, not a queue) |
+| Minimum version | SQL Server Express 2019 or 2022 (free) - full SQL Server editions also supported |
+| Linux support | Yes - via the official Microsoft SQL Server for Linux package |
+| Database name | `DispatchLog` (renamed from `DispatchQueue` - it is a log store, not a queue) |
 | Connection string | Written to `appsettings.json` by the bootstrap installer; editable in the web UI |
 | Schema migration | Applied automatically on startup via embedded SQL scripts |
 | Auth modes | Windows Auth (Windows only) or SQL Auth username/password (both platforms) |
 | SQL down behaviour | Mail flows; `relay_log` inserts fire-and-forget (failed inserts logged to file sink; UI dark); `relay_counters` upserts also fire-and-forget; counters may have gaps during outage |
-| Setup flow | Handled entirely by the Dispatch Bootstrap Installer — see Sections 11 and 12 |
+| Setup flow | Handled entirely by the Dispatch Bootstrap Installer - see Sections 11 and 12 |
 
 
 ## 7. HTTP Ingestion API
 
 ### 7.1 Purpose
 
-In addition to accepting mail over SMTP, Dispatch exposes an HTTP API on a dedicated port (default **8025**) that lets developers submit messages with a simple `POST` request — no SMTP client, no MX configuration, no email library required. The API is intentionally similar to Mailgun's `/messages` endpoint so it is familiar to developers already using cloud email providers.
+In addition to accepting mail over SMTP, Dispatch exposes an HTTP API on a dedicated port (default **8025**) that lets developers submit messages with a simple `POST` request - no SMTP client, no MX configuration, no email library required. The API is intentionally similar to Mailgun's `/messages` endpoint so it is familiar to developers already using cloud email providers.
 
 The HTTP API and the web UI run on **different ports** with **different authentication**. The web UI (8420) requires an admin password (set at install, or via a one-time first-run setup screen). The API (8025) uses API keys issued from the web UI.
 
-All messages received via the HTTP API follow exactly the same path as SMTP messages — written atomically to `spool/incoming/` and `202 Accepted` returned before any database or network call.
+All messages received via the HTTP API follow exactly the same path as SMTP messages - written atomically to `spool/incoming/` and `202 Accepted` returned before any database or network call.
 
 ### 7.2 Port and Binding
 
 | Setting | Default | Config key |
 |---|---|---|
 | API port | 8025 | `api.port` |
-| Bind address | 0.0.0.0 (all interfaces) | — (fixed, not configurable) |
+| Bind address | 0.0.0.0 (all interfaces) | - (fixed, not configurable) |
 | Allowed source IPs / CIDRs | `127.0.0.1/32` | `api.allowed_cidrs` |
 | Max message size (global ceiling) | No limit (0) | `api.max_message_bytes` |
 | Rate limit (per key) | 100 req/min | `api.rate_limit_per_key` |
 
-The API listener binds to all interfaces. Access control is enforced at the **application layer** via an IP/CIDR allow-list. Requests from IPs outside the allow-list receive `403 Forbidden` — never `401` — so the response does not leak whether a valid API key was present. Every denied request is written to `relay_log` as a `Denied` event with the source IP, key ID prefix (if a key was provided), and reason, making all rejections visible in the web UI Message Log.
+The API listener binds to all interfaces. Access control is enforced at the **application layer** via an IP/CIDR allow-list. Requests from IPs outside the allow-list receive `403 Forbidden` - never `401` - so the response does not leak whether a valid API key was present. Every denied request is written to `relay_log` as a `Denied` event with the source IP, key ID prefix (if a key was provided), and reason, making all rejections visible in the web UI Message Log.
 
-The Windows firewall rule (Section 14.3a) opens the port to `any` — it is a port-opener, not a security boundary. The CIDR allow-list in the application is the actual access control.
+The Windows firewall rule (Section 14.3a) opens the port to `any` - it is a port-opener, not a security boundary. The CIDR allow-list in the application is the actual access control.
 
-### 7.3 Authentication — API Keys
+### 7.3 Authentication - API Keys
 
 Every API request must include an API key in the `Authorization` header:
 
@@ -900,7 +900,7 @@ Requests without a valid key receive `401 Unauthorized`. Requests over the rate 
 
 ### 7.4 Endpoints
 
-#### POST /api/v1/messages — Send a message
+#### POST /api/v1/messages - Send a message
 
 Accepts `multipart/form-data` (for attachments) or `application/json` (simple messages).
 
@@ -908,14 +908,14 @@ Accepts `multipart/form-data` (for attachments) or `application/json` (simple me
 
 | Field | Required | Description |
 |---|---|---|
-| `from` | Yes | Sender address — `Name <email>` or `email` |
-| `to` | Yes | Recipient(s) — repeat field or comma-separated |
+| `from` | Yes | Sender address - `Name <email>` or `email` |
+| `to` | Yes | Recipient(s) - repeat field or comma-separated |
 | `cc` | No | CC recipients |
 | `bcc` | No | BCC recipients |
 | `subject` | Yes | Message subject |
 | `text` | No* | Plain-text body |
 | `html` | No* | HTML body |
-| `attachment` | No | File attachment(s) — repeat field for multiple |
+| `attachment` | No | File attachment(s) - repeat field for multiple |
 | `h:X-Custom-Header` | No | Any field prefixed `h:` is added as a message header |
 | `o:tag` | No | Tags stored in the log entry for filtering (repeat for multiple) |
 
@@ -932,7 +932,7 @@ curl -X POST http://localhost:8025/api/v1/messages \
   -F text="Welcome!"
 ```
 
-**Success response — `202 Accepted`:**
+**Success response - `202 Accepted`:**
 ```json
 {
   "id":      "spl_a1b2c3d4",
@@ -957,7 +957,7 @@ The `id` is the spool file UUID and can be used to look up the delivery status l
 }
 ```
 
-#### GET /api/v1/messages/{id} — Check delivery status
+#### GET /api/v1/messages/{id} - Check delivery status
 
 ```
 GET /api/v1/messages/spl_a1b2c3d4
@@ -977,7 +977,7 @@ Response:
 
 Status values: `queued` | `processing` | `delivered` | `retrying` | `failed`
 
-#### GET /api/v1/messages — List recent messages for this key
+#### GET /api/v1/messages - List recent messages for this key
 
 ```
 GET /api/v1/messages?limit=20&status=failed
@@ -988,20 +988,20 @@ Returns the last N messages submitted with this API key. Useful for debugging.
 
 ### 7.5 How API Messages Enter the Spool
 
-The HTTP handler builds a `MimeMessage` from the POST fields using MimeKit, then serialises it to RFC 5322 bytes and writes it to `spool/incoming/` — identical to what the SMTP listener does. From that point the message is indistinguishable from an SMTP message.
+The HTTP handler builds a `MimeMessage` from the POST fields using MimeKit, then serialises it to RFC 5322 bytes and writes it to `spool/incoming/` - identical to what the SMTP listener does. From that point the message is indistinguishable from an SMTP message.
 
 ```csharp
 public class ApiMessageHandler(SpoolDirectory spool, IConfigCache config)
 {
     public async Task<IResult> HandleAsync(SendMessageRequest req, CancellationToken ct)
     {
-        // Validate API key — already done by middleware, key attached to HttpContext
+        // Validate API key - already done by middleware, key attached to HttpContext
         // Build MimeMessage from request fields
         var mime    = BuildMimeMessage(req);
         var id      = Guid.NewGuid();
         var emlPath = spool.IncomingPath(id);
 
-        // Serialise to RFC 5322 bytes — same format as SMTP
+        // Serialise to RFC 5322 bytes - same format as SMTP
         using var stream = File.OpenWrite(emlPath);
         await mime.WriteToAsync(stream, ct);
 
@@ -1033,7 +1033,7 @@ CREATE TABLE api_keys (
 );
 ```
 
-Keys are generated as `dsp_live_{32 random URL-safe chars}`. The `key_id` is the first 12 characters (shown in the UI for identification). The full key is shown once on creation and never again — Dispatch stores only the bcrypt hash.
+Keys are generated as `dsp_live_{32 random URL-safe chars}`. The `key_id` is the first 12 characters (shown in the UI for identification). The full key is shown once on creation and never again - Dispatch stores only the bcrypt hash.
 
 ### 7.7 Key Verification
 
@@ -1075,13 +1075,13 @@ public class ApiKeyMiddleware(IApiKeyRepository keys) : IMiddleware
 }
 ```
 
-Key verification does one SQL lookup (by `key_id` prefix, which is indexed) then a bcrypt compare. The bcrypt compare is the expensive step — cache the full key object in a short-lived memory cache (TTL: 30 seconds) keyed by the raw token to avoid bcrypt on every request under normal load.
+Key verification does one SQL lookup (by `key_id` prefix, which is indexed) then a bcrypt compare. The bcrypt compare is the expensive step - cache the full key object in a short-lived memory cache (TTL: 30 seconds) keyed by the raw token to avoid bcrypt on every request under normal load.
 
 ```sql
 CREATE INDEX IX_api_keys_key_id ON api_keys (key_id) WHERE revoked = 0;
 ```
 
-### 7.8 Web UI — Settings: API Keys
+### 7.8 Web UI - Settings: API Keys
 
 A dedicated **API Keys** page under Settings:
 
@@ -1134,19 +1134,19 @@ Added to the `config` table:
 
 ### 7.10 Firewall Rule (Windows MSI)
 
-The MSI creates a firewall rule that opens port 8025 to all addresses. Scope is intentionally `any` — the firewall is a port-opener only. Access control (which IPs may actually use the API) is enforced by the application-layer CIDR allow-list (`api.allowed_cidrs`), which is configurable in the web UI without touching firewall rules.
+The MSI creates a firewall rule that opens port 8025 to all addresses. Scope is intentionally `any` - the firewall is a port-opener only. Access control (which IPs may actually use the API) is enforced by the application-layer CIDR allow-list (`api.allowed_cidrs`), which is configurable in the web UI without touching firewall rules.
 
 | Rule name | Direction | Protocol | Port | Scope |
 |---|---|---|---|---|
 | `Dispatch API` | Inbound | TCP | 8025 | `any` |
 
-This matches the design of the SMTP rules (25, 587) — the OS firewall opens the port, the application decides which source IPs are allowed. Denied connections are logged and visible in the UI.
+This matches the design of the SMTP rules (25, 587) - the OS firewall opens the port, the application decides which source IPs are allowed. Denied connections are logged and visible in the UI.
 
 ---
 
 ## 8. Upstream Relay Providers
 
-Each provider type implements `IRelayProvider`. Provider instances are not singletons — a new instance is built from a `RelayConfig` (loaded from the `relays` table) each time a message is dispatched. This allows multiple named relays of the same provider type to coexist.
+Each provider type implements `IRelayProvider`. Provider instances are not singletons - a new instance is built from a `RelayConfig` (loaded from the `relays` table) each time a message is dispatched. This allows multiple named relays of the same provider type to coexist.
 
 ```csharp
 public interface IRelayProvider
@@ -1156,7 +1156,7 @@ public interface IRelayProvider
 }
 ```
 
-`IRelayProviderFactory.Build(RelayConfig config)` reads the provider type and credentials from a `RelayConfig` and returns the appropriate `IRelayProvider` implementation. The size limit lives on `RelayConfig.EffectiveMaxMessageBytes` — a computed property that returns `relay.max_message_bytes` if set, or the provider type's built-in default otherwise. See Section 14 (Operational Concerns) for full size enforcement details.
+`IRelayProviderFactory.Build(RelayConfig config)` reads the provider type and credentials from a `RelayConfig` and returns the appropriate `IRelayProvider` implementation. The size limit lives on `RelayConfig.EffectiveMaxMessageBytes` - a computed property that returns `relay.max_message_bytes` if set, or the provider type's built-in default otherwise. See Section 14 (Operational Concerns) for full size enforcement details.
 
 ### 8.1 Mailgun
 
@@ -1190,14 +1190,14 @@ public interface IRelayProvider
 
 | Field | Detail |
 |---|---|
-| Mechanism | MailKit SmtpClient — relay to any SMTP endpoint |
+| Mechanism | MailKit SmtpClient - relay to any SMTP endpoint |
 | Auth | PLAIN / LOGIN / OAuth2 (configurable) |
 | Required settings | Host, Port, Username, Password, TLS mode |
 | Notes | Use for AWS SES SMTP, Office 365, Postfix, or any smart host |
 
 ### 8.5 Local / Developer Mode
 
-A provider that never delivers externally. It captures each message to `spool/captured/` (viewable in the **Local Inbox** page) and logs it as delivered. Ideal for local development so no real emails are sent. (The out-of-the-box default relay is *Unconfigured* — it refuses to relay until a provider is chosen, so mail is never silently delivered or discarded.)
+A provider that never delivers externally. It captures each message to `spool/captured/` (viewable in the **Local Inbox** page) and logs it as delivered. Ideal for local development so no real emails are sent. (The out-of-the-box default relay is *Unconfigured* - it refuses to relay until a provider is chosen, so mail is never silently delivered or discarded.)
 
 ---
 
@@ -1215,23 +1215,23 @@ A provider that never delivers externally. It captures each message to `spool/ca
 | Charts / stats | Recharts |
 | API client | Fetch API + TanStack Query |
 
-The React `dist/` output is embedded into `Dispatch.Web.dll` at compile time via an MSBuild `EmbeddedResource` target. At runtime, ASP.NET Core's static file middleware serves this embedded content — users need no separate web server, Node.js, or file deployment.
+The React `dist/` output is embedded into `Dispatch.Web.dll` at compile time via an MSBuild `EmbeddedResource` target. At runtime, ASP.NET Core's static file middleware serves this embedded content - users need no separate web server, Node.js, or file deployment.
 
 ### 9.2 Pages
 
 #### Dashboard
 
-- **Live counters** — messages received today, delivered, failed, denied, in spool (pending + processing). Counters come from `relay_counters` (the daily aggregate table) — a narrow O(1) query on today's date, always accurate regardless of whether `relay_log` success logging is enabled. Refreshed every 10 seconds via polling.
-- **Throughput sparkline** — messages delivered per minute, last 60 minutes. Because `relay_counters` is daily only, the sparkline reads from `relay_log` when success logging is on, or from a dedicated `relay_counters_minute` in-memory ring buffer (held in `SpoolWorkerPool`, written on every delivery) when success logging is off. The server returns 60 pre-aggregated data points via `GET /api/stats/throughput`. Updated every 60 seconds.
-- **Active relay badges** — one badge per enabled relay showing its message count for today and status (green = last dispatch succeeded, red = last dispatch failed).
-- **Recent activity feed** — last 20 log entries, streamed via SignalR. Under high volume (> 10 messages/second), the SignalR push is **throttled and batched**: the server collects entries for up to 500 ms and sends them as a single array event, not one event per message. The feed shows the 20 most recent at any time, dropping older ones as new ones arrive.
-- **Spool health** — count of files in `incoming/`, `processing/`, `failed/` read directly from the filesystem (no SQL). Updated every 5 seconds.
+- **Live counters** - messages received today, delivered, failed, denied, in spool (pending + processing). Counters come from `relay_counters` (the daily aggregate table) - a narrow O(1) query on today's date, always accurate regardless of whether `relay_log` success logging is enabled. Refreshed every 10 seconds via polling.
+- **Throughput sparkline** - messages delivered per minute, last 60 minutes. Because `relay_counters` is daily only, the sparkline reads from `relay_log` when success logging is on, or from a dedicated `relay_counters_minute` in-memory ring buffer (held in `SpoolWorkerPool`, written on every delivery) when success logging is off. The server returns 60 pre-aggregated data points via `GET /api/stats/throughput`. Updated every 60 seconds.
+- **Active relay badges** - one badge per enabled relay showing its message count for today and status (green = last dispatch succeeded, red = last dispatch failed).
+- **Recent activity feed** - last 20 log entries, streamed via SignalR. Under high volume (> 10 messages/second), the SignalR push is **throttled and batched**: the server collects entries for up to 500 ms and sends them as a single array event, not one event per message. The feed shows the 20 most recent at any time, dropping older ones as new ones arrive.
+- **Spool health** - count of files in `incoming/`, `processing/`, `failed/` read directly from the filesystem (no SQL). Updated every 5 seconds.
 
 #### Message Log
 
 The Message Log is designed to handle millions of rows without degrading. Every design decision below is driven by that constraint.
 
-**Filter bar** — all filters are applied simultaneously; the result set updates on each change with a 300 ms debounce:
+**Filter bar** - all filters are applied simultaneously; the result set updates on each change with a 300 ms debounce:
 
 | Filter | Control | Notes |
 |---|---|---|
@@ -1242,7 +1242,7 @@ The Message Log is designed to handle millions of rows without degrading. Every 
 | Ingest source | Toggle: All · SMTP · API | Filters on `ingest_source` |
 | Sender domain | Text field | Exact match on `from_domain`; indexed |
 | Recipient domain | Text field | Exact match on `to_domain`; indexed |
-| Tag | Text field | Filters using `JSON_VALUE`; slower — shown with a ⚠ indicator |
+| Tag | Text field | Filters using `JSON_VALUE`; slower - shown with a ⚠ indicator |
 | Subject | Text field | Full-text search; shown with a ⚠ indicator and note that it may be slow |
 | API key | Dropdown (when ingest source = API) | Filters on `api_key_id` |
 
@@ -1254,99 +1254,99 @@ Fields marked ⚠ do not have covering indexes and may be slower on large datase
 |---|---|---|
 | Timestamp | `logged_at` | ✓ (default desc) |
 | Status | `status` | ✓ |
-| From | `from_address` | — |
-| To | `to_addresses` (first) | — |
-| Subject | `subject` (truncated to 60 chars) | — |
+| From | `from_address` | - |
+| To | `to_addresses` (first) | - |
+| Subject | `subject` (truncated to 60 chars) | - |
 | Relay | `relay_name` | ✓ |
-| Rule | `routing_rule_name` or "Default" | — |
+| Rule | `routing_rule_name` or "Default" | - |
 | Provider | `provider` | ✓ |
 | Duration | `duration_ms` | ✓ |
 | Size | `size_bytes` | ✓ |
 | Source | `ingest_source` | ✓ |
-| Retry # | `retry_attempt` | — |
+| Retry # | `retry_attempt` | - |
 
 Hidden by default (toggleable): Tag, Source IP, API Key, Provider Message ID.
 
-**Pagination** — keyset (cursor-based), not `OFFSET/FETCH`:
+**Pagination** - keyset (cursor-based), not `OFFSET/FETCH`:
 
 - Page size: 50 rows (configurable 25 / 50 / 100)
-- "Load more" button appends the next page below current results — no page numbers, no "go to page N"
+- "Load more" button appends the next page below current results - no page numbers, no "go to page N"
 - Cursor is the `(logged_at, id)` tuple of the last visible row, passed as an opaque token
 - Why: `OFFSET 5000 FETCH 50` requires SQL Server to scan and discard 5,000 rows first; cursor pagination is O(1) regardless of depth
 
-**No total row count displayed** — computing `COUNT(*)` on a filtered `relay_log` with millions of rows is expensive. The UI shows "Showing 50 of many" or "Showing 12" (when fewer than a page returned) — not "Page 3 of 14,829".
+**No total row count displayed** - computing `COUNT(*)` on a filtered `relay_log` with millions of rows is expensive. The UI shows "Showing 50 of many" or "Showing 12" (when fewer than a page returned) - not "Page 3 of 14,829".
 
-**Dashboard counters come from `relay_counters`, not `relay_log`** — so they are always accurate even when success logging is disabled. The Message Log "Showing N" count is derived from the query result only — never from a separate `COUNT(*)` call.
+**Dashboard counters come from `relay_counters`, not `relay_log`** - so they are always accurate even when success logging is disabled. The Message Log "Showing N" count is derived from the query result only - never from a separate `COUNT(*)` call.
 
-**Live update stream** — new log entries are pushed via SignalR but **not** prepended to the table automatically. Instead:
-- A dismissable banner appears at the top: **"47 new messages since you loaded — click to refresh"**
+**Live update stream** - new log entries are pushed via SignalR but **not** prepended to the table automatically. Instead:
+- A dismissable banner appears at the top: **"47 new messages since you loaded - click to refresh"**
 - This avoids rows jumping around while the user is reading, and avoids rendering churn under high volume
 - The banner count increments in real time; clicking it reloads the first page with the current filters
 
-**Row detail panel** — clicking any row expands an inline panel below it (not a modal) showing:
+**Row detail panel** - clicking any row expands an inline panel below it (not a modal) showing:
 - Full envelope: From, all To/CC/BCC, Message-ID, Received-At
 - Routing: rule name, pattern that matched, relay used, whether it was the default
 - Provider outcome: full provider response, provider's message ID, HTTP status or SMTP response code
 - Retry history: timeline of all attempts for this spool ID (queried from other `relay_log` rows with same `spool_id`)
 - Tags: all tags as chips
 - Source: SMTP or API, source IP, API key name if applicable
-- Actions: **Retry** (if status = Failed — moves spool file back to `incoming/`), **Copy spool ID**
+- Actions: **Retry** (if status = Failed - moves spool file back to `incoming/`), **Copy spool ID**
 
-**Virtualised rendering** — the row list uses a virtual scroll window (TanStack Virtual) so only ~20 rows are in the DOM at any time regardless of how many have been loaded. "Load more" appends to the in-memory list; the virtual window handles rendering.
+**Virtualised rendering** - the row list uses a virtual scroll window (TanStack Virtual) so only ~20 rows are in the DOM at any time regardless of how many have been loaded. "Load more" appends to the in-memory list; the virtual window handles rendering.
 
-**Export** — exporting is async to handle large result sets:
+**Export** - exporting is async to handle large result sets:
 - User clicks **Export CSV** with current filters active
 - Server starts a background job, immediately returns a job ID
 - UI polls `GET /api/messages/export/{jobId}` every 2 seconds
 - Progress shown: "Exporting... 4,231 / ~12,000 rows"
-- When complete, a download link appears — file served from a temp path, deleted after 10 minutes
+- When complete, a download link appears - file served from a temp path, deleted after 10 minutes
 - Export is capped at **100,000 rows** per job; a warning is shown if the filtered result set exceeds this
 
-**Empty state** — when no rows match the current filters, show the active filters as chips with a "Clear all filters" link, not just a generic "No results" message.
+**Empty state** - when no rows match the current filters, show the active filters as chips with a "Clear all filters" link, not just a generic "No results" message.
 
 
-#### Settings — Relays
+#### Settings - Relays
 
 - Table of all named relay configs: name, provider type, default indicator, enabled status, `max_concurrency`, and a live **In Flight** counter showing how many dispatches are currently active against that relay
-- **+ Add Relay** — opens a form with name field, provider dropdown, provider-specific credential fields, max concurrency slider (1–32, default 4; 0 = unlimited), max message size override (0 = use provider default), and a Test button
-- **Edit** per relay — same form; includes Set as Default and Delete (disabled if default or referenced by rules); changing `max_concurrency` or `max_message_bytes` takes effect immediately on the next file claim with no restart
+- **+ Add Relay** - opens a form with name field, provider dropdown, provider-specific credential fields, max concurrency slider (1–32, default 4; 0 = unlimited), max message size override (0 = use provider default), and a Test button
+- **Edit** per relay - same form; includes Set as Default and Delete (disabled if default or referenced by rules); changing `max_concurrency` or `max_message_bytes` takes effect immediately on the next file claim with no restart
 - Default relay shown with a ★ indicator; cannot be deleted
 
-The **In Flight** counter per relay is served by `GET /api/relays/concurrency` — a lightweight endpoint that reads the current `SemaphoreSlim.CurrentCount` for each relay from the in-memory pool (not a SQL query).
+The **In Flight** counter per relay is served by `GET /api/relays/concurrency` - a lightweight endpoint that reads the current `SemaphoreSlim.CurrentCount` for each relay from the in-memory pool (not a SQL query).
 
-#### Settings — Routing Rules
+#### Settings - Routing Rules
 
 - Drag-to-reorder ordered rule list showing recipient pattern, sender pattern, and target relay per rule
-- **+ Add Rule** — name, recipient pattern, sender pattern (at least one required), relay selector
-- **Simulate** field — enter a from/to address to see which rule would match and which relay would be used
+- **+ Add Rule** - name, recipient pattern, sender pattern (at least one required), relay selector
+- **Simulate** field - enter a from/to address to see which rule would match and which relay would be used
 - Default relay shown at the bottom as the non-editable catch-all with a Change link
 
-#### Settings — API Keys
+#### Settings - API Keys
 
 - Table of all API keys: name, key ID prefix (first 12 chars), created date, last used, message count, revoked status
-- **+ Create New Key** button — prompts for name and optional per-key rate limit; shows full key once with a Copy button; warns it will not be shown again
-- **Revoke** button per key — marks revoked immediately; key rejected on next request
-- **Show revoked** toggle — revoked keys hidden by default but retained for audit
+- **+ Create New Key** button - prompts for name and optional per-key rate limit; shows full key once with a Copy button; warns it will not be shown again
+- **Revoke** button per key - marks revoked immediately; key rejected on next request
+- **Show revoked** toggle - revoked keys hidden by default but retained for audit
 - Per-key message counts and last-used timestamps updated in real time
 
-#### Settings — SMTP Listener
+#### Settings - SMTP Listener
 
 - Inbound ports (comma-separated)
-- Allowed source IPs / CIDRs — text area, one entry per line (e.g. `192.168.1.0/24`, `10.0.0.5/32`); default `127.0.0.1/32`; set to `0.0.0.0/0` to accept from anywhere (warn if set with Require AUTH disabled)
+- Allowed source IPs / CIDRs - text area, one entry per line (e.g. `192.168.1.0/24`, `10.0.0.5/32`); default `127.0.0.1/32`; set to `0.0.0.0/0` to accept from anywhere (warn if set with Require AUTH disabled)
 - Max message size global ceiling (advertised in EHLO SIZE; 0 = no global limit; per-relay limits set on the Relays page)
 - Require AUTH toggle + credential manager (add/remove username + password pairs)
 - TLS certificate file path + passphrase
 - Connection timeout and max concurrent connections
 
-#### Settings — Relay Provider
+#### Settings - Relay Provider
 
 - Provider selector dropdown (Mailgun / SendGrid / Azure Communication Services / SMTP / None)
 - Provider-specific fields appear dynamically based on selection
 - All API keys and passwords stored AES-256 encrypted in the `config` table in SQL Server
-- **Send Test Email** button — runs a full provider test using the current (unsaved) form values; streams results live in an inline log panel (see Section 9)
+- **Send Test Email** button - runs a full provider test using the current (unsaved) form values; streams results live in an inline log panel (see Section 9)
 - Retry policy controls (attempts, delay intervals)
 
-#### Settings — Logging
+#### Settings - Logging
 
 Controls which events are written to the `relay_log` database table. Counters (`relay_counters`) and the Serilog file log are always written regardless of these settings.
 
@@ -1354,39 +1354,39 @@ Controls which events are written to the `relay_log` database table. Counters (`
 |---|---|---|
 | Log successful deliveries | On | Turn off to suppress `Delivered` rows at high volume |
 | Log retry attempts | On | Turn off to hide intermediate retries when success logging is also off |
-| Log denied connections | On | Recommended to keep on — security audit trail |
+| Log denied connections | On | Recommended to keep on - security audit trail |
 
 **Behaviour when "Log successful deliveries" is off:**
 
 - No `relay_log` row is written for `Delivered` events
-- `relay_counters.delivered` is still incremented — Dashboard counters remain accurate
+- `relay_counters.delivered` is still incremented - Dashboard counters remain accurate
 - The throughput sparkline uses the in-memory `relay_counters_minute` ring buffer instead of `relay_log`
-- If a message is retried and eventually succeeds, the intermediate `Retrying` rows are suppressed too (controlled by the retry logging toggle) — no orphaned retry entries without a final delivered row
+- If a message is retried and eventually succeeds, the intermediate `Retrying` rows are suppressed too (controlled by the retry logging toggle) - no orphaned retry entries without a final delivered row
 - `Failed` events are always logged regardless of this setting
 - `Denied` events are always logged regardless of this setting (unless explicitly disabled above)
-- The Message Log will show only failures and denied connections — this is intentional and shown as a banner: **"Success logging is disabled — only failures and denials are shown"**
+- The Message Log will show only failures and denied connections - this is intentional and shown as a banner: **"Success logging is disabled - only failures and denials are shown"**
 
-#### Settings — Storage & Retention
+#### Settings - Storage & Retention
 
 - Current database size with a per-table breakdown (`spool/` directory / `relay_log`)
 - Row counts by status / event type with a colour-coded breakdown chart
 - Retention sliders: delivered queue rows, failed queue rows, log events (with Advanced toggle for per-event-type overrides)
-- **Run Purge Now** button — triggers an immediate out-of-schedule purge with a live row-count progress display
-- **Purge History** table — last 10 purge runs: timestamp, rows deleted per table, duration
+- **Run Purge Now** button - triggers an immediate out-of-schedule purge with a live row-count progress display
+- **Purge History** table - last 10 purge runs: timestamp, rows deleted per table, duration
 
-#### Settings — HTTP API
+#### Settings - HTTP API
 
 - Enable/disable the HTTP API
 - API port (default 8025)
-- Allowed source IPs / CIDRs — same format as SMTP listener; default `127.0.0.1/32`
+- Allowed source IPs / CIDRs - same format as SMTP listener; default `127.0.0.1/32`
 - TLS certificate path + passphrase (enables HTTPS; required warning shown when CIDR is wider than localhost without TLS)
 - Global rate limit per key (requests per minute; per-key overrides set on the API Keys page)
 - Max message size global ceiling for API submissions (0 = no global limit; per-relay limits enforced after routing)
 
-#### Settings — Web UI
+#### Settings - Web UI
 
 - Web UI port (default 8420)
-- Allowed source IPs / CIDRs — default `127.0.0.1/32`; set to `0.0.0.0/0` for access from any machine
+- Allowed source IPs / CIDRs - default `127.0.0.1/32`; set to `0.0.0.0/0` for access from any machine
 - TLS certificate path + passphrase (enables HTTPS; required warning shown when auth is on without TLS)
 - Enable/disable UI password protection (username + bcrypt-hashed password)
 - Session timeout in minutes (default 480 = 8 hours)
@@ -1396,7 +1396,7 @@ Controls which events are written to the `relay_log` database table. Counters (`
 
 - Service uptime, .NET version, OS, Dispatch version
 - Log file location with download link
-- Restart service button (graceful — drains queue before restarting listener)
+- Restart service button (graceful - drains queue before restarting listener)
 - Links to GitHub, documentation, licence
 
 ### 9.3 REST API Endpoints
@@ -1415,12 +1415,12 @@ Controls which events are written to the `relay_log` database table. Counters (`
 | `PUT  /api/routing/rules/{id}` | Update a rule |
 | `PUT  /api/routing/rules/reorder` | Reorder rules (body: array of IDs) |
 | `DELETE /api/routing/rules/{id}` | Delete a rule |
-| `POST /api/routing/simulate` | Simulate routing for a given from/to — returns matched rule and relay |
-| `GET  /health` | Health check — no auth required |
+| `POST /api/routing/simulate` | Simulate routing for a given from/to - returns matched rule and relay |
+| `GET  /health` | Health check - no auth required |
 | `GET  /api/stats` | Counters for the dashboard |
-| `GET  /api/messages` | Paginated message log — see query parameters below |
+| `GET  /api/messages` | Paginated message log - see query parameters below |
 | `GET  /api/messages/{id}` | Full detail for a single log entry including retry history |
-| `POST /api/messages/export` | Start async CSV export — returns `{ jobId }` |
+| `POST /api/messages/export` | Start async CSV export - returns `{ jobId }` |
 | `GET  /api/messages/export/{jobId}` | Poll export progress; returns download URL when complete |
 | `GET  /api/stats` | Dashboard counters (today totals, spool counts) |
 | `GET  /api/stats/throughput` | 60 one-minute delivery buckets for sparkline chart |
@@ -1432,11 +1432,11 @@ Controls which events are written to the `relay_log` database table. Counters (`
 | `POST /api/service/drain` | Wait for all Processing rows to settle; returns when queue is clear or timeout reached |
 | `POST /api/service/restart` | Graceful relay restart (drains queue first) |
 | `GET  /api/logs/download` | Download current log file |
-| `WS   /hub/logs` | SignalR hub — streams live log events to the browser |
+| `WS   /hub/logs` | SignalR hub - streams live log events to the browser |
 
 | `POST /api/config/test-provider` | Run a provider test using supplied (unsaved) credentials; returns a test-run ID |
 | `GET  /api/config/test-provider/{runId}` | Poll result and log lines for a completed or in-progress test run |
-| `WS   /hub/test-provider` | SignalR channel — streams live log lines for an active provider test |
+| `WS   /hub/test-provider` | SignalR channel - streams live log lines for an active provider test |
 
 ---
 
@@ -1444,7 +1444,7 @@ Controls which events are written to the `relay_log` database table. Counters (`
 
 ### 10.1 Overview
 
-Dispatch supports multiple named relay configurations. Every inbound message — whether from SMTP or the HTTP API — is evaluated against an ordered routing rule table to determine which relay to use. If no rule matches, the **default relay** is used.
+Dispatch supports multiple named relay configurations. Every inbound message - whether from SMTP or the HTTP API - is evaluated against an ordered routing rule table to determine which relay to use. If no rule matches, the **default relay** is used.
 
 ```
 Inbound message (from / to)
@@ -1464,7 +1464,7 @@ Inbound message (from / to)
 
 ### 10.2 Named Relays
 
-A **relay** is a named, independently configured provider instance. Each relay has its own credentials, provider type, and settings. Multiple relays of the same provider type are allowed — for example, two Mailgun accounts, one for US and one for EU.
+A **relay** is a named, independently configured provider instance. Each relay has its own credentials, provider type, and settings. Multiple relays of the same provider type are allowed - for example, two Mailgun accounts, one for US and one for EU.
 
 **relay table schema:**
 
@@ -1486,13 +1486,13 @@ CREATE TABLE relays (
 -- e.g. relay:1:mailgun.api_key, relay:1:mailgun.domain, relay:1:mailgun.region
 ```
 
-Provider credentials for each relay are stored in the existing `config` table using the key prefix `relay:{id}:` — for example `relay:3:mailgun.api_key`. This reuses the existing encryption infrastructure without a separate credentials table.
+Provider credentials for each relay are stored in the existing `config` table using the key prefix `relay:{id}:` - for example `relay:3:mailgun.api_key`. This reuses the existing encryption infrastructure without a separate credentials table.
 
 **The default relay:**
 
 - Exactly one relay has `is_default = 1` at all times
-- On first run, a single relay named "Default" is created (provider: None) — the administrator edits it to set their provider
-- The default relay cannot be deleted — only edited or replaced (setting another relay as default demotes the current one automatically)
+- On first run, a single relay named "Default" is created (provider: None) - the administrator edits it to set their provider
+- The default relay cannot be deleted - only edited or replaced (setting another relay as default demotes the current one automatically)
 - The default relay is used when no routing rule matches
 
 ### 10.3 Routing Rules
@@ -1518,7 +1518,7 @@ At least one of `recipient_pattern` or `sender_pattern` must be non-NULL. A rule
 
 ### 10.4 Pattern Syntax
 
-Patterns match against the domain part of the email address (the part after `@`). The full address is never matched — routing is domain-based, not address-based.
+Patterns match against the domain part of the email address (the part after `@`). The full address is never matched - routing is domain-based, not address-based.
 
 | Pattern | Matches | Example |
 |---|---|---|
@@ -1556,7 +1556,7 @@ Fall through → use default relay
 | 10 | `*.acme.com` | `NULL` | Mailgun-EU |
 | 20 | `NULL` | `app.myco.com` | SendGrid-Transactional |
 | 30 | `staging.myco.com` | `NULL` | None (dev) |
-| — | (default) | — | Mailgun-US |
+| - | (default) | - | Mailgun-US |
 
 - `from=noreply@app.myco.com, to=user@billing.acme.com` → rule 10 (recipient `*.acme.com` matches) → **Mailgun-EU**
 - `from=noreply@app.myco.com, to=user@gmail.com` → rule 10 no (gmail ≠ *.acme.com), rule 20 yes (sender matches) → **SendGrid-Transactional**
@@ -1565,7 +1565,7 @@ Fall through → use default relay
 
 ### 10.6 Multi-Recipient Messages
 
-A message with multiple `To` recipients is evaluated once using the **first recipient's domain**. Dispatch does not split a message and send it via different relays per-recipient — that would break threading and MIME integrity. If splitting is needed, the sender should send separate messages per recipient domain.
+A message with multiple `To` recipients is evaluated once using the **first recipient's domain**. Dispatch does not split a message and send it via different relays per-recipient - that would break threading and MIME integrity. If splitting is needed, the sender should send separate messages per recipient domain.
 
 The chosen relay is recorded in the `relay_log` entry so it is visible in the Message Log.
 
@@ -1636,7 +1636,7 @@ var provider = _providerFactory.Build(relay);
 var result   = await provider.SendAsync(message, ct);
 ```
 
-### 10.8 Web UI — Relays Page
+### 10.8 Web UI - Relays Page
 
 A **Relays** page under Settings lists all named relay configurations:
 
@@ -1658,10 +1658,10 @@ Each relay edit form shows the provider-specific credential fields (same as the 
 - Name field
 - Enable / disable toggle
 - **Set as Default** button (demotes current default)
-- **Test** button — runs the same provider test as Section 10 (Provider Testing) against this specific relay
-- **Delete** button — disabled if the relay is the default or is referenced by any routing rule
+- **Test** button - runs the same provider test as Section 10 (Provider Testing) against this specific relay
+- **Delete** button - disabled if the relay is the default or is referenced by any routing rule
 
-### 10.9 Web UI — Routing Rules Page
+### 10.9 Web UI - Routing Rules Page
 
 A **Routing Rules** page under Settings, below Relays:
 
@@ -1684,7 +1684,7 @@ A **Routing Rules** page under Settings, below Relays:
 - Rows are drag-to-reorder; priority numbers are reassigned automatically on drop
 - Each row shows: recipient pattern, sender pattern, target relay, enabled toggle, edit/delete
 - The default relay is shown at the bottom as a non-draggable catch-all
-- **Simulate** button — enter a from/to address and see which rule would match and which relay would be used, without sending anything
+- **Simulate** button - enter a from/to address and see which rule would match and which relay would be used, without sending anything
 
 ### 10.10 REST API Endpoints
 
@@ -1709,7 +1709,7 @@ A **Routing Rules** page under Settings, below Relays:
 | `PUT  /api/routing/rules/{id}` | Update rule patterns, relay, or enabled state |
 | `PUT  /api/routing/rules/reorder` | Reorder rules (body: array of IDs in new priority order) |
 | `DELETE /api/routing/rules/{id}` | Delete a rule |
-| `POST /api/routing/simulate` | Simulate routing for a given from/to — returns matched rule and relay |
+| `POST /api/routing/simulate` | Simulate routing for a given from/to - returns matched rule and relay |
 
 ### 10.11 relay_log Changes
 
@@ -1728,9 +1728,9 @@ The Message Log UI adds a **Relay** column so administrators can see at a glance
 
 ### 11.1 Purpose
 
-Before saving credentials for any upstream provider, the user needs to verify they work — and see exactly what happened if they don't. This section specifies a self-contained test flow with a dedicated live log view, separate from the main message log.
+Before saving credentials for any upstream provider, the user needs to verify they work - and see exactly what happened if they don't. This section specifies a self-contained test flow with a dedicated live log view, separate from the main message log.
 
-### 11.2 UI — Settings: Relay Provider Page
+### 11.2 UI - Settings: Relay Provider Page
 
 The **Relay Provider** settings page is extended with a test panel below the credential fields:
 
@@ -1764,13 +1764,13 @@ The **Relay Provider** settings page is extended with a test panel below the cre
 
 **Behaviour:**
 
-- The credentials used for the test are taken directly from the form fields — they do **not** need to be saved first
+- The credentials used for the test are taken directly from the form fields - they do **not** need to be saved first
 - The **Test recipient** field defaults to the address stored in web UI settings (configurable); the user can override it per-test
 - Clicking **Send Test Email** starts the test, disables the button, and opens the Test Log panel if it is not already visible
 - Log lines stream in real time via SignalR as the test executes
 - On completion the last line shows ✓ SUCCESS or ✗ FAILED in green/red with elapsed time
 - **Clear** wipes the log panel; the test can be re-run any number of times without saving
-- The Save Settings button is independent — the user can test, adjust, re-test, then save
+- The Save Settings button is independent - the user can test, adjust, re-test, then save
 
 ### 11.3 Test Message Content
 
@@ -1780,10 +1780,10 @@ The test sends a real email through the provider. The message is constructed by 
 |---|---|
 | From | `Dispatch Test <dispatch-test@{configured-hostname}>` |
 | To | The address in the Test recipient field |
-| Subject | `Dispatch provider test — {provider name} — {timestamp UTC}` |
+| Subject | `Dispatch provider test - {provider name} - {timestamp UTC}` |
 | Body (plain) | Confirmation that the provider credentials are working, Dispatch version, timestamp |
 | Body (HTML) | Same content in a minimal HTML wrapper |
-| Custom header | `X-Dispatch-Test: true` — allows the recipient to filter test messages |
+| Custom header | `X-Dispatch-Test: true` - allows the recipient to filter test messages |
 
 ### 11.4 REST API
 
@@ -1831,7 +1831,7 @@ Response:
 }
 ```
 
-**SignalR hub — `TestProviderLogLine` event:**
+**SignalR hub - `TestProviderLogLine` event:**
 
 The `/hub/test-provider` hub pushes one event per log line as it is produced:
 
@@ -1875,7 +1875,7 @@ public class ProviderTestService(IRelayProviderFactory factory,
         var provider = factory.BuildFromSettings(request.Provider, request.Settings);
         _runs[run.RunId] = run;
 
-        // Fire and forget — caller gets the runId immediately
+        // Fire and forget - caller gets the runId immediately
         _ = Task.Run(() => ExecuteAsync(run, provider, request.TestRecipient, ct));
 
         return run.RunId;
@@ -1926,7 +1926,7 @@ public class ProviderTestService(IRelayProviderFactory factory,
 }
 ```
 
-**Completed test runs** are held in memory for 30 minutes then evicted (a `Timer`-based cleanup pass). They are never persisted to SQL Server — test runs are ephemeral UI state only.
+**Completed test runs** are held in memory for 30 minutes then evicted (a `Timer`-based cleanup pass). They are never persisted to SQL Server - test runs are ephemeral UI state only.
 
 ### 11.6 Per-Provider Log Detail
 
@@ -1934,8 +1934,8 @@ Each `IRelayProvider.SendAsync()` implementation populates `RelayResult.Provider
 
 | Provider | Detail logged on success | Detail logged on failure |
 |---|---|---|
-| **SendGrid** | `HTTP 202 Accepted — X-Message-Id: {id}` | HTTP status + full response body |
-| **Mailgun** | `HTTP 200 — id: {mailgun-id}, message: Queued` | HTTP status + `message` field from JSON response |
+| **SendGrid** | `HTTP 202 Accepted - X-Message-Id: {id}` | HTTP status + full response body |
+| **Mailgun** | `HTTP 200 - id: {mailgun-id}, message: Queued` | HTTP status + `message` field from JSON response |
 | **Azure Comm.** | `OperationId: {id}, Status: Succeeded` | `ErrorCode`, `ErrorMessage` from SDK exception |
 | **SMTP** | `250 {server response line}` | SMTP error code + message, TLS negotiation detail if TLS failed |
 | **None** | `Discarded (dev mode)` | n/a |
@@ -1961,17 +1961,17 @@ The test deliberately exercises the full code path a live message would take, so
 
 **`appsettings.json` contains exactly two things: the database connection string and the web UI TLS certificate path.**
 
-The TLS cert path is the one exception to the "everything in SQL" rule — ASP.NET Core needs it to start the HTTPS listener before the SQL connection is established, so it cannot live in the database. Everything else is in SQL.
+The TLS cert path is the one exception to the "everything in SQL" rule - ASP.NET Core needs it to start the HTTPS listener before the SQL connection is established, so it cannot live in the database. Everything else is in SQL.
 
-Everything else — listener ports, SMTP auth credentials, spool directory, worker count, retry policy, provider selection, API keys, purge settings, web UI port and password — is stored in a `config` table in SQL Server and managed through the web UI. This means:
+Everything else - listener ports, SMTP auth credentials, spool directory, worker count, retry policy, provider selection, API keys, purge settings, web UI port and password - is stored in a `config` table in SQL Server and managed through the web UI. This means:
 
-- Minimal config file — only two fields, both written by the bootstrap installer
-- Settings changes from the web UI are live immediately — no file reload, no restart
+- Minimal config file - only two fields, both written by the bootstrap installer
+- Settings changes from the web UI are live immediately - no file reload, no restart
 - All sensitive values (API keys, passwords) are encrypted at rest in SQL with a machine-specific key
-- Upgrading never has a "config file migration" problem — SQL schema migrations handle it
+- Upgrading never has a "config file migration" problem - SQL schema migrations handle it
 - The service cannot start without SQL, but once running, all configuration is authoritative from the database
 
-### 12.2 `appsettings.json` — Connection String and TLS Cert
+### 12.2 `appsettings.json` - Connection String and TLS Cert
 
 ```json
 {
@@ -1985,7 +1985,7 @@ Everything else — listener ports, SMTP auth credentials, spool directory, work
 }
 ```
 
-The `WebUi.TlsCertPath` and `WebUi.TlsCertPassword` fields are stored in `appsettings.json` — not in the SQL `config` table — because ASP.NET Core needs them to start the HTTPS listener before SQL is reachable. The cert password is encrypted using the same machine-specific key as all other secrets. All other settings remain in SQL.
+The `WebUi.TlsCertPath` and `WebUi.TlsCertPassword` fields are stored in `appsettings.json` - not in the SQL `config` table - because ASP.NET Core needs them to start the HTTPS listener before SQL is reachable. The cert password is encrypted using the same machine-specific key as all other secrets. All other settings remain in SQL.
 
 **File locations:**
 
@@ -2007,7 +2007,7 @@ CREATE TABLE config (
 );
 ```
 
-Values marked `encrypted = 1` are stored AES-256-GCM encrypted using a random 256-bit key persisted in a portable `.dispatch-key` file (access-restricted: mode 600 on Unix; ACL-locked on Windows, in the ProgramData data dir whose folder ACL the installer also restricts). The key is portable, so a DB backup restores on a different machine when the key file is restored too. If no writable key directory is available it falls back to a PBKDF2 machine-derived key (weaker). Earlier Windows builds used DPAPI (LocalMachine); those legacy values are still readable and migrate to AES on the next save. The encryption/decryption is transparent — the `ConfigRepository` handles it on read/write.
+Values marked `encrypted = 1` are stored AES-256-GCM encrypted using a random 256-bit key persisted in a portable `.dispatch-key` file (access-restricted: mode 600 on Unix; ACL-locked on Windows, in the ProgramData data dir whose folder ACL the installer also restricts). The key is portable, so a DB backup restores on a different machine when the key file is restored too. If no writable key directory is available it falls back to a PBKDF2 machine-derived key (weaker). Earlier Windows builds used DPAPI (LocalMachine); those legacy values are still readable and migrate to AES on the next save. The encryption/decryption is transparent - the `ConfigRepository` handles it on read/write.
 
 **Config keys:**
 
@@ -2082,7 +2082,7 @@ CREATE TABLE config_smtp_credentials (
 
 ### 12.5 Reading Config at Runtime
 
-At startup Dispatch loads the full config table into a `ConfigCache` in memory — one SQL query, all keys. This cache is the source of truth for `IRelayProvider`, `SpoolWorkerPool`, `PurgeWorker`, and all other consumers:
+At startup Dispatch loads the full config table into a `ConfigCache` in memory - one SQL query, all keys. This cache is the source of truth for `IRelayProvider`, `SpoolWorkerPool`, `PurgeWorker`, and all other consumers:
 
 ```csharp
 public class ConfigCache(IConfigRepository repo)
@@ -2104,19 +2104,19 @@ When the web UI saves a setting via `PUT /api/config/{section}`, the endpoint:
 2. Calls `ConfigCache.LoadAsync()` to refresh the in-memory cache
 3. Returns `200 OK`
 
-Workers and services always read from `ConfigCache` — never from `IOptionsMonitor` or `appsettings.json`. There is no file watcher. Settings are live as soon as the cache refreshes, which happens within the same HTTP request that saved them.
+Workers and services always read from `ConfigCache` - never from `IOptionsMonitor` or `appsettings.json`. There is no file watcher. Settings are live as soon as the cache refreshes, which happens within the same HTTP request that saved them.
 
 ### 12.6 Config Bootstrap (First Run)
 
-When Dispatch starts and the `config` table is empty (first run after schema migration), it populates all keys with their default values. This means a freshly installed instance is immediately usable with sensible defaults — the administrator only needs to configure the relay provider.
+When Dispatch starts and the `config` table is empty (first run after schema migration), it populates all keys with their default values. This means a freshly installed instance is immediately usable with sensible defaults - the administrator only needs to configure the relay provider.
 
 ### 12.7 Config and SQL Outage
 
-The `ConfigCache` is loaded at startup. If SQL goes down after startup, the in-memory cache remains valid and all services continue with the last-known settings. Config writes (from the web UI) fail with a visible error while SQL is down — the user is told to try again once SQL recovers. Mail flow is unaffected.
+The `ConfigCache` is loaded at startup. If SQL goes down after startup, the in-memory cache remains valid and all services continue with the last-known settings. Config writes (from the web UI) fail with a visible error while SQL is down - the user is told to try again once SQL recovers. Mail flow is unaffected.
 
-### 12.8 Startup Failure — SQL Unavailable
+### 12.8 Startup Failure - SQL Unavailable
 
-If SQL Server cannot be reached at startup, Dispatch cannot load its config and cannot start. It logs a clear error to the file sink and exits with a non-zero code. The systemd unit (Linux) and Windows Service manager will retry on the configured restart interval. This is the correct behaviour — without config, there is nothing safe to do.
+If SQL Server cannot be reached at startup, Dispatch cannot load its config and cannot start. It logs a clear error to the file sink and exits with a non-zero code. The systemd unit (Linux) and Windows Service manager will retry on the configured restart interval. This is the correct behaviour - without config, there is nothing safe to do.
 
 The connection string in `appsettings.json` is the only dependency Dispatch has at startup. If that file is missing or the connection string is wrong, the bootstrap should be re-run.
 
@@ -2124,18 +2124,18 @@ The connection string in `appsettings.json` is the only dependency Dispatch has 
 
 ## 13. Logging
 
-### 13.1 Log Storage — Database + File
+### 13.1 Log Storage - Database + File
 
 Dispatch stores relay event logs in **two places** with different purposes:
 
 | Store | What | Purpose |
 |---|---|---|
-| `relay_log` (SQL Server) | One row per relay lifecycle event | Web UI Message Log — searchable, filterable, auto-purged |
-| File (rolling daily) | Full Serilog structured output | Diagnostics, crash analysis, support — kept on disk |
+| `relay_log` (SQL Server) | One row per relay lifecycle event | Web UI Message Log - searchable, filterable, auto-purged |
+| File (rolling daily) | Full Serilog structured output | Diagnostics, crash analysis, support - kept on disk |
 | Console | Full Serilog output | Foreground / Docker / journalctl live tail |
 | InMemoryRingBuffer | Last 1,000 events | Real-time SignalR push to the Dashboard |
 
-The `relay_log` table is the primary data source for the web UI Message Log. The file sink captures everything — including internal errors, startup events, and provider library output — for deeper diagnostics. The two stores have independent retention policies.
+The `relay_log` table is the primary data source for the web UI Message Log. The file sink captures everything - including internal errors, startup events, and provider library output - for deeper diagnostics. The two stores have independent retention policies.
 
 ### 13.2 Serilog Sinks
 
@@ -2146,7 +2146,7 @@ The `relay_log` table is the primary data source for the web UI Message Log. The
 | `RelayLogDbSink` (custom) | In `Dispatch.Core` | Writes relay events to `relay_log`; ignores internal diagnostic events |
 | `RingBufferSink` (custom) | In `Dispatch.Core` | In-memory ring, feeds SignalR hub |
 
-The `RelayLogDbSink` filters on the `SourceContext` property — it only writes events emitted by `RelayWorker`, `MessageStore`, and `ProviderTestService`. Internal .NET / ASP.NET Core / SmtpServer library events are written to the file sink only, keeping `relay_log` clean and purpose-focused.
+The `RelayLogDbSink` filters on the `SourceContext` property - it only writes events emitted by `RelayWorker`, `MessageStore`, and `ProviderTestService`. Internal .NET / ASP.NET Core / SmtpServer library events are written to the file sink only, keeping `relay_log` clean and purpose-focused.
 
 ```csharp
 Log.Logger = new LoggerConfiguration()
@@ -2185,7 +2185,7 @@ Every relay lifecycle event written to `relay_log` carries these properties:
 | ProviderMessageId | `<20260611.abc123@mailgun.net>` |
 | DurationMs | 312 |
 | RetryAttempt | 0 |
-| ProviderResponse | HTTP 200 — id: `<...>`, message: Queued |
+| ProviderResponse | HTTP 200 - id: `<...>`, message: Queued |
 | Error | *(provider error message if failed)* |
 | IngestSource | SMTP / API |
 | SourceIp | 192.168.1.45 |
@@ -2212,7 +2212,7 @@ Log rows in `relay_log` are auto-purged by the `PurgeWorker`. Spool files in `sp
 
 ### 14.1 Spool Disk Growth and Back-Pressure
 
-The spool directory grows when the provider is slow or unavailable — messages arrive faster than they are dispatched. Left unchecked this could fill the disk and cause `250 OK` to fail (the one failure mode that loses a message).
+The spool directory grows when the provider is slow or unavailable - messages arrive faster than they are dispatched. Left unchecked this could fill the disk and cause `250 OK` to fail (the one failure mode that loses a message).
 
 **Disk monitoring:**
 
@@ -2221,23 +2221,23 @@ The `PurgeWorker` checks free disk space on every run and on startup. If free sp
 | Free disk remaining | Action |
 |---|---|
 | < 1 GB | 🟡 Warning logged and shown in web UI dashboard |
-| < 500 MB | 🟠 `smtp-accept` flag set to **throttled** — SMTP listener delays `250 OK` by 2 s per message to slow inbound rate |
-| < 200 MB | 🔴 `smtp-accept` flag set to **suspended** — listener returns `452 Insufficient system storage` to senders (RFC 5321 compliant temporary rejection; senders will retry) |
+| < 500 MB | 🟠 `smtp-accept` flag set to **throttled** - SMTP listener delays `250 OK` by 2 s per message to slow inbound rate |
+| < 200 MB | 🔴 `smtp-accept` flag set to **suspended** - listener returns `452 Insufficient system storage` to senders (RFC 5321 compliant temporary rejection; senders will retry) |
 | Free space recovers > 500 MB | Flag automatically cleared; normal operation resumes |
 
-The `452` response is the correct SMTP signal — well-behaved senders (all standard SMTP clients) will queue and retry. No messages are lost.
+The `452` response is the correct SMTP signal - well-behaved senders (all standard SMTP clients) will queue and retry. No messages are lost.
 
 **`FileSystemWatcher` reliability:**
 
-The OS can drop `FileSystemWatcher` events under very high load (this is a known .NET limitation on all platforms). Dispatch defends against this with a fallback sweep: if no `FileSystemWatcher` event has fired for more than 5 seconds and workers are idle, each worker falls back to `Directory.EnumerateFiles(incoming)` directly. This poll interval is not latency-sensitive — it only activates when events are missed under heavy load.
+The OS can drop `FileSystemWatcher` events under very high load (this is a known .NET limitation on all platforms). Dispatch defends against this with a fallback sweep: if no `FileSystemWatcher` event has fired for more than 5 seconds and workers are idle, each worker falls back to `Directory.EnumerateFiles(incoming)` directly. This poll interval is not latency-sensitive - it only activates when events are missed under heavy load.
 
 ```csharp
-// In each worker loop — fallback sweep when doorbell is quiet
+// In each worker loop - fallback sweep when doorbell is quiet
 var signal = await _spool.WaitAsync(ct)
     .AsTask()
     .WaitAsync(TimeSpan.FromSeconds(5), ct)
     .ConfigureAwait(false);
-// Whether we got a signal or timed out — always check for files
+// Whether we got a signal or timed out - always check for files
 var eml = ClaimNextFile();
 ```
 
@@ -2247,19 +2247,19 @@ Size enforcement operates at two layers: a **global ceiling** checked before rou
 
 #### Why two layers
 
-The SMTP `SIZE` extension in the `EHLO` response must be a single static value — it is advertised before any envelope information is known, so Dispatch cannot know at that point which relay will handle the message. The global ceiling is the only safe value to advertise.
+The SMTP `SIZE` extension in the `EHLO` response must be a single static value - it is advertised before any envelope information is known, so Dispatch cannot know at that point which relay will handle the message. The global ceiling is the only safe value to advertise.
 
-Once `MAIL FROM` and `RCPT TO` have been received, the routing engine can be run and the exact relay is known. At that point the per-relay limit is enforced — before `DATA` is transmitted, so the sender never uploads a payload that will be rejected.
+Once `MAIL FROM` and `RCPT TO` have been received, the routing engine can be run and the exact relay is known. At that point the per-relay limit is enforced - before `DATA` is transmitted, so the sender never uploads a payload that will be rejected.
 
 #### Global Ceiling (`listener.max_message_bytes`)
 
-Advertised in the SMTP `EHLO` response as `SIZE={n}`. This is a hard upper bound — no message larger than this will ever be accepted regardless of which relay handles it. Default: `0` (no global limit). Set to a value in bytes to enforce a ceiling, e.g. `26214400` for 25 MB.
+Advertised in the SMTP `EHLO` response as `SIZE={n}`. This is a hard upper bound - no message larger than this will ever be accepted regardless of which relay handles it. Default: `0` (no global limit). Set to a value in bytes to enforce a ceiling, e.g. `26214400` for 25 MB.
 
 The sender reads this value and will not attempt to send a message larger than advertised. This is the primary guard against large uploads.
 
 #### Per-Relay Limit (`relays.max_message_bytes`)
 
-Each named relay has a `max_message_bytes` field. The default is `0` — no limit. Administrators can set a limit in bytes on any relay if they want Dispatch to enforce it before dispatch (e.g. set 10485760 on an Azure relay to reject oversized messages early rather than letting the provider reject them). The table below shows the upstream provider limits as a reference for choosing sensible values:
+Each named relay has a `max_message_bytes` field. The default is `0` - no limit. Administrators can set a limit in bytes on any relay if they want Dispatch to enforce it before dispatch (e.g. set 10485760 on an Azure relay to reject oversized messages early rather than letting the provider reject them). The table below shows the upstream provider limits as a reference for choosing sensible values:
 
 | Provider type | Upstream provider limit (reference only) |
 |---|---|
@@ -2294,8 +2294,8 @@ RCPT TO: <user@acme.com>
   relay.max_message_bytes > 0?
   → yes: check declared SIZE <= relay limit
          if over: 552 5.3.4 Message too large for relay "Azure-Comms"
-         (no DATA phase — sender never uploads the payload)
-  → no (= 0):  pass through — relay has no size limit configured
+         (no DATA phase - sender never uploads the payload)
+  → no (= 0):  pass through - relay has no size limit configured
       │
 DATA → message bytes written to spool/incoming/
       │
@@ -2308,7 +2308,7 @@ The third check (actual vs declared) catches senders that lie in their `SIZE=` d
 
 #### SmtpServer Filter Implementation
 
-SmtpServer's `IMailboxFilter.CanDeliverToAsync` is called once per `RCPT TO` recipient — this is the correct hook for per-relay size enforcement because both `MAIL FROM` (with `SIZE=`) and the first recipient are available:
+SmtpServer's `IMailboxFilter.CanDeliverToAsync` is called once per `RCPT TO` recipient - this is the correct hook for per-relay size enforcement because both `MAIL FROM` (with `SIZE=`) and the first recipient are available:
 
 ```csharp
 public class SizeCheckMailboxFilter(
@@ -2351,7 +2351,7 @@ public class SizeCheckMailboxFilter(
         var declaredSize = ctx.Properties.TryGetValue("DeclaredSize", out var s)
             ? (int)s : 0;
 
-        if (declaredSize == 0) return MailboxFilterResult.Yes;   // no SIZE declared — check after DATA
+        if (declaredSize == 0) return MailboxFilterResult.Yes;   // no SIZE declared - check after DATA
 
         var relay = await routing.ResolveAsync(
             from.AsAddress(),
@@ -2428,13 +2428,13 @@ public async Task<IResult> HandleAsync(SendMessageRequest req, CancellationToken
 
 #### SIZE Advertisement
 
-The `SIZE` value advertised in `EHLO` is always `listener.max_message_bytes` — the global ceiling. It is **not** the minimum across all relay limits, because:
+The `SIZE` value advertised in `EHLO` is always `listener.max_message_bytes` - the global ceiling. It is **not** the minimum across all relay limits, because:
 
 - The per-relay limit is only knowable after `RCPT TO`
 - Advertising the minimum would unfairly cap senders for messages that will route to a high-limit relay
-- The sender's SMTP library uses the advertised `SIZE` to decide whether to even attempt sending — advertising too low causes unnecessary rejections before Dispatch has enough information to route correctly
+- The sender's SMTP library uses the advertised `SIZE` to decide whether to even attempt sending - advertising too low causes unnecessary rejections before Dispatch has enough information to route correctly
 
-With the default of `0` (no global limit), the `SIZE` extension is not advertised in `EHLO` at all — senders see no size restriction from Dispatch's side. Set `listener.max_message_bytes` only if you want a hard ceiling across all relays regardless of routing, e.g. to prevent very large messages entering the spool at all.
+With the default of `0` (no global limit), the `SIZE` extension is not advertised in `EHLO` at all - senders see no size restriction from Dispatch's side. Set `listener.max_message_bytes` only if you want a hard ceiling across all relays regardless of routing, e.g. to prevent very large messages entering the spool at all.
 
 ### 14.3 Provider Hot-Swap Behaviour
 
@@ -2475,20 +2475,20 @@ GET /health
 }
 ```
 
-**Response (degraded — SQL down, mail still flowing):**
+**Response (degraded - SQL down, mail still flowing):**
 ```json
 {
   "status":  "degraded",
-  "message": "SQL Server unavailable — mail flow unaffected; UI log unavailable",
+  "message": "SQL Server unavailable - mail flow unaffected; UI log unavailable",
   ...
 }
 ```
 
-**Response (critical — disk low, SMTP suspended):**
+**Response (critical - disk low, SMTP suspended):**
 ```json
 {
   "status":  "critical",
-  "message": "Disk space critically low — SMTP intake suspended",
+  "message": "Disk space critically low - SMTP intake suspended",
   ...
 }
 ```
@@ -2510,14 +2510,14 @@ On Windows, the spool directory under `C:\ProgramData\Dispatch\spool\` is create
 
 ## 15. Windows Installation
 
-### 15.1 Overview — Two-Part Delivery
+### 15.1 Overview - Two-Part Delivery
 
 Windows installation uses two separate artefacts that run in sequence:
 
 | Artefact | Role |
 |---|---|
-| `DispatchSetup.exe` | **Bootstrap installer** — handles SQL Server detection/install and database setup, then hands off to the MSI |
-| `Dispatch-{version}-x64.msi` | **Application installer** — installs binaries, registers the Windows Service, creates shortcuts |
+| `DispatchSetup.exe` | **Bootstrap installer** - handles SQL Server detection/install and database setup, then hands off to the MSI |
+| `Dispatch-{version}-x64.msi` | **Application installer** - installs binaries, registers the Windows Service, creates shortcuts |
 
 Users always run `DispatchSetup.exe`. The MSI is never run directly in normal usage.
 
@@ -2525,7 +2525,7 @@ Users always run `DispatchSetup.exe`. The MSI is never run directly in normal us
 
 ### 15.2 Bootstrap Installer (`DispatchSetup.exe`)
 
-The bootstrap is a standalone .NET 10 WinForms application (single-file, self-contained, no .NET prerequisite needed — compiled to native via NativeAOT or published as a single-file executable). It presents a simple wizard UI and handles all pre-flight setup before the MSI runs.
+The bootstrap is a standalone .NET 10 WinForms application (single-file, self-contained, no .NET prerequisite needed - compiled to native via NativeAOT or published as a single-file executable). It presents a simple wizard UI and handles all pre-flight setup before the MSI runs.
 
 #### Bootstrap Wizard Flow
 
@@ -2595,8 +2595,8 @@ The bootstrap is a standalone .NET 10 WinForms application (single-file, self-co
 
 On launch, the bootstrap silently attempts to connect to the following candidates in order:
 
-1. `localhost\SQLEXPRESS` — default SQL Server Express named instance
-2. `localhost` — default SQL Server instance
+1. `localhost\SQLEXPRESS` - default SQL Server Express named instance
+2. `localhost` - default SQL Server instance
 3. Any instance advertised by SQL Server Browser on the local machine (via `SqlDataSourceEnumerator`)
 
 If a reachable instance is found, the wizard pre-selects **Connect to an existing SQL Server** and pre-fills the server name. The user can confirm or change it.
@@ -2627,10 +2627,10 @@ SQLEXPR_x64_ENU.exe /Q /ACTION=Install /FEATURES=SQLEngine
 
 When the user chooses **Connect to an existing SQL Server**:
 
-- **Server** — free-text field, accepts `hostname`, `hostname\instance`, `hostname,port`
-- **Auth mode** — Windows Auth (default) or SQL Auth
-- **Username / Password** — shown only when SQL Auth is selected
-- **Test Connection** button — attempts `SELECT 1` and reports success or the exact error message
+- **Server** - free-text field, accepts `hostname`, `hostname\instance`, `hostname,port`
+- **Auth mode** - Windows Auth (default) or SQL Auth
+- **Username / Password** - shown only when SQL Auth is selected
+- **Test Connection** button - attempts `SELECT 1` and reports success or the exact error message
 - The user cannot proceed until Test Connection succeeds
 
 The bootstrap needs `db_creator` rights on the target instance (to create the `DispatchLog` database). After initial setup, Dispatch only needs `db_datawriter` + `db_datareader` on that database. The bootstrap creates a dedicated `dispatch` SQL login with minimal rights after database creation (when SQL Auth is used).
@@ -2658,7 +2658,7 @@ The MSI finds the pre-written `appsettings.json` in `ProgramData` and does not t
 
 ### 15.3 MSI (`Dispatch-{version}-x64.msi`)
 
-Authored with WiX Toolset v6. Targets x64 Windows 10 / Server 2019 and later. The MSI assumes SQL Server and the database are already configured (by the bootstrap) — it does not interact with SQL Server.
+Authored with WiX Toolset v6. Targets x64 Windows 10 / Server 2019 and later. The MSI assumes SQL Server and the database are already configured (by the bootstrap) - it does not interact with SQL Server.
 
 **MSI Actions:**
 
@@ -2673,9 +2673,9 @@ Authored with WiX Toolset v6. Targets x64 Windows 10 / Server 2019 and later. Th
 
 The MSI creates inbound firewall rules for every port Dispatch listens on. Rules are created using the WiX `Firewall` extension (`WixToolset.Firewall.wixext`) and are automatically removed on uninstall.
 
-**All rules use `Scope="any"`** — the Windows Firewall is a port-opener only. Access control (which source IPs are allowed) is enforced at the application layer via CIDR allow-lists configured in the web UI. This means:
+**All rules use `Scope="any"`** - the Windows Firewall is a port-opener only. Access control (which source IPs are allowed) is enforced at the application layer via CIDR allow-lists configured in the web UI. This means:
 
-- Denied connections reach the application and are **logged** with the source IP and reason — visible in the web UI
+- Denied connections reach the application and are **logged** with the source IP and reason - visible in the web UI
 - Allow-lists can be changed at runtime in the web UI without touching firewall rules or restarting anything
 - The model is consistent on Windows and Linux (Linux has no equivalent to WiX firewall rules)
 
@@ -2749,7 +2749,7 @@ The MSI has no access to the SQL config table at install time. To set non-defaul
 | `ADMINUI_PORT` | `8420` | Port for the `Dispatch Admin UI` rule |
 | `API_PORT` | `8025` | Port for the `Dispatch API` rule |
 
-All firewall rules use `Scope="any"` — access control is managed at the application layer. Scope is not configurable at MSI install time.
+All firewall rules use `Scope="any"` - access control is managed at the application layer. Scope is not configurable at MSI install time.
 
 Example silent install with custom ports:
 
@@ -2763,7 +2763,7 @@ msiexec /i Dispatch-1.0.0-x64.msi /quiet /norestart ^
 
 **Upgrade behaviour:**
 
-On upgrade the WiX `MajorUpgrade` sequence removes old firewall rules and recreates them. Custom port properties must be passed again on upgrade — the MSI has no access to the SQL config table.
+On upgrade the WiX `MajorUpgrade` sequence removes old firewall rules and recreates them. Custom port properties must be passed again on upgrade - the MSI has no access to the SQL config table.
 
 **Rule visibility:**
 
@@ -2807,7 +2807,7 @@ Bootstrap detects existing install
           │
           ▼
   Run database schema migration
-  (apply any new SQL scripts — idempotent)
+  (apply any new SQL scripts - idempotent)
           │
           ▼
   Launch MSI upgrade
@@ -2826,7 +2826,7 @@ Bootstrap detects existing install
 
 #### 11.4.2 Queue Drain Before Upgrade
 
-Before stopping the service, the bootstrap calls `POST /api/service/drain` (or reads the queue table directly if the service is not responding). It waits up to 60 seconds for all `Processing` rows to settle to `Delivered` or `Failed`. Any rows still stuck in `Processing` after the timeout are reset to `Pending` so they will be retried when the upgraded service starts. `Pending` rows are untouched — they queue naturally after restart.
+Before stopping the service, the bootstrap calls `POST /api/service/drain` (or reads the queue table directly if the service is not responding). It waits up to 60 seconds for all `Processing` rows to settle to `Delivered` or `Failed`. Any rows still stuck in `Processing` after the timeout are reset to `Pending` so they will be retried when the upgraded service starts. `Pending` rows are untouched - they queue naturally after restart.
 
 #### 11.4.3 Database Schema Migration
 
@@ -2859,13 +2859,13 @@ Each migration script is wrapped in a transaction with a `ROLLBACK` on error, so
 
 | Item | Upgrade behaviour |
 |---|---|
-| `appsettings.json` | **Preserved** — contains only the connection string; MSI never overwrites it |
-| Encryption keys / secrets | **Preserved** — machine-specific key derived from OS; no key material stored in files |
-| Queue data in SQL Server | **Preserved** — only additive schema changes; no destructive migrations |
-| Delivered / failed message history | **Preserved** — purge policy unchanged |
-| Firewall rules | **Recreated** — old rules removed, new rules added by the new MSI (same ports unless overridden) |
-| Windows Service registration | **Preserved** — `ServiceInstall` uses the same service name; WiX handles the update |
-| Log files | **Preserved** — log directory in `ProgramData` is never touched by the MSI |
+| `appsettings.json` | **Preserved** - contains only the connection string; MSI never overwrites it |
+| Encryption keys / secrets | **Preserved** - machine-specific key derived from OS; no key material stored in files |
+| Queue data in SQL Server | **Preserved** - only additive schema changes; no destructive migrations |
+| Delivered / failed message history | **Preserved** - purge policy unchanged |
+| Firewall rules | **Recreated** - old rules removed, new rules added by the new MSI (same ports unless overridden) |
+| Windows Service registration | **Preserved** - `ServiceInstall` uses the same service name; WiX handles the update |
+| Log files | **Preserved** - log directory in `ProgramData` is never touched by the MSI |
 
 #### 11.4.5 Rollback
 
@@ -2877,14 +2877,14 @@ Database schema migrations are **not** automatically rolled back (SQL Server DDL
 2. The service is not started
 3. The user is shown the error with instructions to report it as a bug
 4. The previous binaries are restored by Windows Installer rollback
-5. The user can manually start the old service version — it will work because the partially-applied schema is backwards-compatible by design (all migrations are additive only — no column drops, no renames)
+5. The user can manually start the old service version - it will work because the partially-applied schema is backwards-compatible by design (all migrations are additive only - no column drops, no renames)
 
-**Migration design rule enforced in code review:** every migration script must be additive only. Breaking schema changes (column renames, type changes, drops) must be phased across two releases — add the new structure in release N, remove the old in release N+1 after confirming no old binary reads it.
+**Migration design rule enforced in code review:** every migration script must be additive only. Breaking schema changes (column renames, type changes, drops) must be phased across two releases - add the new structure in release N, remove the old in release N+1 after confirming no old binary reads it.
 
 #### 11.4.6 Silent Upgrade
 
 ```bat
-:: Upgrade non-interactively — reads SQL Server connection from appsettings.json
+:: Upgrade non-interactively - reads SQL Server connection from appsettings.json
 DispatchSetup-1.1.0-x64.exe --silent --upgrade
 
 :: Upgrade with explicit connection (overrides stored connection string)
@@ -2898,10 +2898,10 @@ The `--upgrade` flag tells the bootstrap to skip the SQL Server setup wizard and
 For environments where SQL Server is already present, the full install can be scripted:
 
 ```bat
-:: Step 1 — run bootstrap in unattended mode (skips wizard, uses existing SQL Server)
+:: Step 1 - run bootstrap in unattended mode (skips wizard, uses existing SQL Server)
 DispatchSetup.exe --silent --server "DBSERVER\SQLEXPRESS" --auth windows
 
-:: Step 2 — the bootstrap launches the MSI automatically when done
+:: Step 2 - the bootstrap launches the MSI automatically when done
 :: Or launch the MSI directly after a manual bootstrap run:
 msiexec /i Dispatch-1.0.0-x64.msi /quiet /norestart
 ```
@@ -2911,7 +2911,7 @@ The bootstrap accepts the following CLI flags for unattended mode:
 | Flag | Description |
 |---|---|
 | `--silent` | Skip wizard UI; exit with code 0 on success, non-zero on failure |
-| `--upgrade` | Explicit upgrade mode — skip SQL Server wizard, drain queue, migrate, install MSI |
+| `--upgrade` | Explicit upgrade mode - skip SQL Server wizard, drain queue, migrate, install MSI |
 | `--server <name>` | SQL Server instance to connect to |
 | `--auth windows` | Use Windows Authentication (default) |
 | `--auth sql --user <u> --password <p>` | Use SQL Authentication |
@@ -2926,13 +2926,13 @@ The bootstrap accepts the following CLI flags for unattended mode:
 
 ## 16. Linux Installation
 
-### 16.1 Overview — Two-Part Delivery
+### 16.1 Overview - Two-Part Delivery
 
 Linux installation mirrors the Windows approach: a bootstrap script handles SQL Server detection/install and database setup, then installs the Dispatch service.
 
 | Artefact | Role |
 |---|---|
-| `install.sh` | **Bootstrap script** — interactive wizard in the terminal; handles SQL Server and hands off to service install |
+| `install.sh` | **Bootstrap script** - interactive wizard in the terminal; handles SQL Server and hands off to service install |
 | `Dispatch-{version}-linux-x64.tar.gz` | Application binary + default config; extracted by `install.sh` |
 
 ### 16.2 Bootstrap Script (`install.sh`)
@@ -2957,7 +2957,7 @@ SQL Server Setup
 Choice [1]: _
 ```
 
-**If option 1 — Install SQL Server Express:**
+**If option 1 - Install SQL Server Express:**
 ```
 Downloading Microsoft SQL Server 2025 Express...
 Adding Microsoft package repository...
@@ -2969,7 +2969,7 @@ Starting SQL Server service...  ✓
 SQL Server installed and running.
 ```
 
-**If option 2 — Connect to existing:**
+**If option 2 - Connect to existing:**
 ```
 Server (e.g. myserver or myserver\instance): _
 Authentication:
@@ -3046,7 +3046,7 @@ After a successful connection:
 1. `sqlcmd` creates `DispatchLog` if it does not exist
 2. Embedded schema SQL scripts are applied in order
 3. A dedicated `dispatch` SQL login is created with `db_datawriter` + `db_datareader` rights only
-4. The SQL Server connection string is written to `/etc/dispatch/appsettings.json` (connection string only — no other settings)
+4. The SQL Server connection string is written to `/etc/dispatch/appsettings.json` (connection string only - no other settings)
 
 ### 16.3 systemd Unit
 
@@ -3159,12 +3159,12 @@ Identical migration logic to the Windows bootstrap (see Section 11.4.3). The `in
 
 | Item | Upgrade behaviour |
 |---|---|
-| `/etc/dispatch/appsettings.json` | **Preserved** — contains only the connection string; `install.sh` never overwrites it |
-| Encryption keys / secrets | **Preserved** — derived from `/etc/machine-id` at runtime; no key material stored |
-| Queue data in SQL Server | **Preserved** — additive-only migrations |
-| Log files in `/var/log/dispatch/` | **Preserved** — never touched by the upgrade |
-| systemd unit file | **Replaced** — new unit file installed; `systemctl daemon-reload` run automatically |
-| Binary at `/usr/local/bin/dispatch` | **Replaced** — old binary overwritten atomically |
+| `/etc/dispatch/appsettings.json` | **Preserved** - contains only the connection string; `install.sh` never overwrites it |
+| Encryption keys / secrets | **Preserved** - derived from `/etc/machine-id` at runtime; no key material stored |
+| Queue data in SQL Server | **Preserved** - additive-only migrations |
+| Log files in `/var/log/dispatch/` | **Preserved** - never touched by the upgrade |
+| systemd unit file | **Replaced** - new unit file installed; `systemctl daemon-reload` run automatically |
+| Binary at `/usr/local/bin/dispatch` | **Replaced** - old binary overwritten atomically |
 
 #### 12.6.5 Rollback
 
@@ -3185,7 +3185,7 @@ sudo systemctl start dispatch
 #### 12.6.6 Unattended Upgrade
 
 ```bash
-# Upgrade silently — reads SQL connection string from /etc/dispatch/appsettings.json
+# Upgrade silently - reads SQL connection string from /etc/dispatch/appsettings.json
 curl -sSL https://github.com/yourorg/dispatch/releases/latest/download/install.sh | \
   sudo bash -s -- --upgrade --silent
 
@@ -3200,7 +3200,7 @@ curl -sSL https://github.com/yourorg/dispatch/releases/download/v1.1.0/install.s
 
 ### 17.1 Threat Model
 
-Dispatch is an **internal SMTP relay** — it is not a public mail server and is never intended to be exposed to the internet. Senders are trusted internal applications, devices, and scripts on your network. The threat model is accordingly internal-focused.
+Dispatch is an **internal SMTP relay** - it is not a public mail server and is never intended to be exposed to the internet. Senders are trusted internal applications, devices, and scripts on your network. The threat model is accordingly internal-focused.
 
 **Primary threats:**
 - Unauthorised access to the admin web UI (credential theft, weak session management)
@@ -3212,18 +3212,18 @@ Dispatch is an **internal SMTP relay** — it is not a public mail server and is
 **Not in scope:**
 - Public internet attackers (network perimeter is assumed)
 - DDoS against the SMTP listener (mitigated at the network layer)
-- Spam filtering (Dispatch relays what it receives — senders are trusted internal systems)
+- Spam filtering (Dispatch relays what it receives - senders are trusted internal systems)
 - End-to-end message encryption (TLS in transit only)
 
 ---
 
-### 17.2 TLS — Web UI (Mandatory) and HTTP API (Optional)
+### 17.2 TLS - Web UI (Mandatory) and HTTP API (Optional)
 
-#### Admin Web UI — HTTPS Only
+#### Admin Web UI - HTTPS Only
 
 **The admin web UI is HTTPS-only. There is no plain HTTP option.**
 
-The web UI exposes all credentials, provider API keys, routing rules, and API key management. Transmitting this over plain HTTP — even on an internal network — is unacceptable. A TLS certificate is a required prerequisite before the web UI will serve any content.
+The web UI exposes all credentials, provider API keys, routing rules, and API key management. Transmitting this over plain HTTP - even on an internal network - is unacceptable. A TLS certificate is a required prerequisite before the web UI will serve any content.
 
 **Behaviour without a certificate configured:**
 
@@ -3243,12 +3243,12 @@ The web UI exposes all credentials, provider API keys, routing rules, and API ke
 
 Users will see a browser "Your connection is not private" warning when first accessing the web UI with a self-signed cert. This is expected and documented in the setup notice. Instructions are provided for adding the cert to the OS trust store or replacing it with an internal CA cert.
 
-#### HTTP API — HTTP and HTTPS
+#### HTTP API - HTTP and HTTPS
 
 The HTTP API (port 8025) supports both plain HTTP and HTTPS:
 
 - **HTTP is supported** because many internal senders (legacy apps, printers, scanners, IoT devices, scripts) cannot do HTTPS
-- **HTTPS is supported** for senders that can use it — configured via `api.tls_cert_path` (optional, same cert as web UI or separate)
+- **HTTPS is supported** for senders that can use it - configured via `api.tls_cert_path` (optional, same cert as web UI or separate)
 - API key authentication applies equally to both transports
 - The web UI shows a **yellow advisory** (not a blocker) when the API CIDR is wider than `127.0.0.1/32` without a TLS cert configured: *"API keys may be transmitted in plaintext over HTTP. Configure TLS for the API if your senders support it."*
 
@@ -3272,7 +3272,7 @@ When `webui.require_auth = true`:
 - Session lifetime: **8 hours** idle timeout (configurable via `webui.session_timeout_minutes`); re-login required after expiry
 - Logout: `POST /auth/logout` clears the cookie server-side
 - **Brute-force protection**: 10 failed login attempts within 5 minutes = 15-minute lockout for that source IP (same mechanism as SMTP AUTH, tracked in-memory)
-- The `GET /health` endpoint is exempt from auth — always accessible
+- The `GET /health` endpoint is exempt from auth - always accessible
 
 **Password requirements** (enforced at the web UI password change form):
 - Minimum 12 characters
@@ -3287,7 +3287,7 @@ When `webui.require_auth = true`:
 
 **Key storage:** bcrypt hash with cost factor 12, stored in `api_keys.key_hash`. The full key is shown once on creation and never stored in plaintext.
 
-**Key verification timing:** The verification path always performs a bcrypt compare — even when the `key_id` prefix is not found in the database — to prevent timing-based enumeration of valid key prefixes:
+**Key verification timing:** The verification path always performs a bcrypt compare - even when the `key_id` prefix is not found in the database - to prevent timing-based enumeration of valid key prefixes:
 
 ```csharp
 public async Task<ApiKey?> VerifyAsync(string rawKey)
@@ -3297,7 +3297,7 @@ public async Task<ApiKey?> VerifyAsync(string rawKey)
 
     if (key is null)
     {
-        // Always do a bcrypt compare even when not found — prevents timing oracle
+        // Always do a bcrypt compare even when not found - prevents timing oracle
         BCrypt.Net.BCrypt.Verify(rawKey, _dummyHash);
         return null;
     }
@@ -3306,9 +3306,9 @@ public async Task<ApiKey?> VerifyAsync(string rawKey)
 }
 ```
 
-**Revocation cache invalidation:** API key objects are cached for 30 seconds to avoid bcrypt on every request. When a key is revoked via the UI, `DELETE /api/keys/{id}` calls `ApiKeyCache.Invalidate(keyId)` immediately, removing the entry from the cache before returning `200 OK`. There is no grace period — a revoked key is invalid from the moment the revoke request completes.
+**Revocation cache invalidation:** API key objects are cached for 30 seconds to avoid bcrypt on every request. When a key is revoked via the UI, `DELETE /api/keys/{id}` calls `ApiKeyCache.Invalidate(keyId)` immediately, removing the entry from the cache before returning `200 OK`. There is no grace period - a revoked key is invalid from the moment the revoke request completes.
 
-**Key scope:** all current API keys have send-only scope. Future versions may add read-only keys (log access) — the `api_keys` table has a `scope` column reserved for this (`NULL` = full send access).
+**Key scope:** all current API keys have send-only scope. Future versions may add read-only keys (log access) - the `api_keys` table has a `scope` column reserved for this (`NULL` = full send access).
 
 ---
 
@@ -3324,7 +3324,7 @@ public async Task<ApiKey?> VerifyAsync(string rawKey)
 | API keys | `api_keys.key_hash` | bcrypt, cost factor 12 |
 | SQL connection string | `appsettings.json` | OS file permissions only (see 17.6) |
 
-**Encryption key (all platforms):** a random 256-bit key in a `.dispatch-key` file → AES-256-GCM. The key file is access-restricted (mode 600 on Unix; an inheritance-stripped ACL granting only SYSTEM, Administrators, and the service account on Windows). On Windows it lives in the ProgramData data dir (the content root), whose folder ACL the installer also locks down. Being a portable file (not a machine-bound store), it makes DB backup/restore portable across hosts — restore the key file alongside the database. If no writable key directory is available, it falls back to a PBKDF2-SHA256 key derived from `/etc/machine-id` + a fixed app salt (100,000 iterations) — weaker, surfaced to the operator.
+**Encryption key (all platforms):** a random 256-bit key in a `.dispatch-key` file → AES-256-GCM. The key file is access-restricted (mode 600 on Unix; an inheritance-stripped ACL granting only SYSTEM, Administrators, and the service account on Windows). On Windows it lives in the ProgramData data dir (the content root), whose folder ACL the installer also locks down. Being a portable file (not a machine-bound store), it makes DB backup/restore portable across hosts - restore the key file alongside the database. If no writable key directory is available, it falls back to a PBKDF2-SHA256 key derived from `/etc/machine-id` + a fixed app salt (100,000 iterations) - weaker, surfaced to the operator.
 - **Legacy (older Windows builds):** `System.Security.Cryptography.ProtectedData` (DPAPI, `LocalMachine` scope). Such values are still decrypted on Windows and re-encrypted to AES on the next save.
 
 **Secrets never appear in:** log files, HTTP responses, error messages, exception stack traces, or the Serilog structured output. `ConfigRepository` redacts encrypted values in `GET /api/config` responses.
@@ -3363,7 +3363,7 @@ When `spool.directory` is changed via the web UI, the new path is validated befo
 
 ### 17.7 SQL Injection Prevention
 
-All SQL in Dispatch uses **Dapper with parameterised queries**. Values from user input, config, or log data are always passed as `@parameter` — never string-concatenated into SQL.
+All SQL in Dispatch uses **Dapper with parameterised queries**. Values from user input, config, or log data are always passed as `@parameter` - never string-concatenated into SQL.
 
 The dynamic filter query in `GET /api/messages` builds its `WHERE` clause by appending fixed strings based on which parameters are present (e.g. `AND status IN @statuses`), never by interpolating values. All values are passed in the Dapper parameter object. This is verified in `MessageLogQueryTests` which tests each filter combination with SQL-injection payloads.
 
@@ -3375,7 +3375,7 @@ Inbound SMTP messages are stored as raw RFC 5322 bytes and parsed by MimeKit at 
 
 HTTP API field inputs (`from`, `to`, `subject`, custom `h:` headers) are passed to MimeKit's setter methods which normalise and validate values. MimeKit rejects malformed addresses and strips embedded newlines from header values.
 
-**Blocked `h:` header names** — the following headers submitted via the HTTP API `h:` prefix are silently stripped and not added to the message:
+**Blocked `h:` header names** - the following headers submitted via the HTTP API `h:` prefix are silently stripped and not added to the message:
 
 ```
 Received, DKIM-Signature, DomainKey-Signature, Authentication-Results,
@@ -3388,7 +3388,7 @@ These are either routing headers that should not be forged or internal Dispatch 
 
 ### 17.9 SSRF Prevention
 
-The generic SMTP relay provider accepts an admin-configured hostname. To prevent Server-Side Request Forgery (where an admin — or a compromised config — points Dispatch at an internal service or cloud metadata endpoint):
+The generic SMTP relay provider accepts an admin-configured hostname. To prevent Server-Side Request Forgery (where an admin - or a compromised config - points Dispatch at an internal service or cloud metadata endpoint):
 
 **Blocked hostname patterns (validated before saving and before connecting):**
 
@@ -3410,7 +3410,7 @@ private static readonly string[] BlockedHostnames =
 ];
 ```
 
-DNS resolution is performed at validation time and the resolved IP is checked against the blocked ranges — not just the hostname string — to prevent DNS rebinding attacks.
+DNS resolution is performed at validation time and the resolved IP is checked against the blocked ranges - not just the hostname string - to prevent DNS rebinding attacks.
 
 This validation applies to `relay:{id}:smtp.host` only. Provider SDK endpoints (Mailgun, SendGrid, Azure) are hardcoded in the provider implementations and not configurable by admins.
 
@@ -3420,11 +3420,11 @@ This validation applies to `relay:{id}:smtp.host` only. Provider SDK endpoints (
 
 | Risk | Mitigation |
 |---|---|
-| Open relay — any sender accepted | `listener.allowed_cidrs` defaults to `127.0.0.1/32`; all other sources denied and logged |
+| Open relay - any sender accepted | `listener.allowed_cidrs` defaults to `127.0.0.1/32`; all other sources denied and logged |
 | `0.0.0.0/0` CIDR without AUTH | Warning shown in UI; accepted but flagged |
 | AUTH credential brute-force | 5 failures per source IP = 60 s lockout; tracked in-memory per IP |
 | AUTH credential enumeration | Constant-time comparison for credential checks |
-| Relay amplification | Messages relayed once only — no forwarding loops possible by design (Dispatch is not an MX server) |
+| Relay amplification | Messages relayed once only - no forwarding loops possible by design (Dispatch is not an MX server) |
 
 ---
 
@@ -3461,7 +3461,7 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 ```
 
-Provider error responses (stored in `relay_log.provider_response`) are stored verbatim — these sometimes contain partial account identifiers from the provider. This is intentional for diagnostics but documented as a sensitivity consideration. Administrators should be aware that `relay_log` may contain partial provider account data.
+Provider error responses (stored in `relay_log.provider_response`) are stored verbatim - these sometimes contain partial account identifiers from the provider. This is intentional for diagnostics but documented as a sensitivity consideration. Administrators should be aware that `relay_log` may contain partial provider account data.
 
 ---
 
@@ -3507,11 +3507,11 @@ GitHub Actions handles all CI/CD automation.
 
 ### 18.2 Release Artefacts
 
-- `DispatchSetup-{version}-x64.exe` — **Windows bootstrap installer** (run this; bundles the MSI internally)
-- `Dispatch-{version}-x64.msi` — Windows MSI (for IT admins doing scripted/silent deploys after manual DB setup)
-- `Dispatch-{version}-linux-x64.tar.gz` — Linux self-contained archive (binary + `install.sh`)
-- `install.sh` — Linux bootstrap script (also available standalone for `curl | bash` installs)
-- `SHA256SUMS` — checksums for all release files
+- `DispatchSetup-{version}-x64.exe` - **Windows bootstrap installer** (run this; bundles the MSI internally)
+- `Dispatch-{version}-x64.msi` - Windows MSI (for IT admins doing scripted/silent deploys after manual DB setup)
+- `Dispatch-{version}-linux-x64.tar.gz` - Linux self-contained archive (binary + `install.sh`)
+- `install.sh` - Linux bootstrap script (also available standalone for `curl | bash` installs)
+- `SHA256SUMS` - checksums for all release files
 
 ---
 
@@ -3521,14 +3521,14 @@ GitHub Actions handles all CI/CD automation.
 
 Build projects in this order to avoid circular dependency issues:
 
-1. **Dispatch.Core** — `SpoolDirectory`, `SpoolMessageStore`, `SpoolMeta`, `SpoolWorkerPool`, `RelaySemaphorePool`, `IRelayProvider`, `IRelayProviderFactory`, `RoutingEngine`, `IRoutingRuleRepository`, `IRelayRepository`, `ILogRepository`, `ICounterRepository`, `MinuteCounterRing`, `IConfigRepository`, `IApiKeyRepository`, `ConfigCache`, `RelayLogEntry`, in-memory ring buffer
-2. **Dispatch.Providers** — `NoneProvider`, `SmtpProvider` (MailKit), `SendGridProvider`, `MailgunProvider`, `AzureProvider`
-3. **Dispatch.Web** — ASP.NET Core host (port 8420 web UI + port 8025 API on separate listener), REST endpoints, `ApiMessageHandler`, `ApiKeyMiddleware`, SignalR hub, `EmbeddedFileProvider`, `LogRepository`, `ConfigRepository`, `ApiKeyRepository`
-4. **Dispatch.UI** — React SPA; wire Vite build into Dispatch.Web via MSBuild `EmbeddedResource`
-5. **Dispatch.Service** — `Program.cs`; wire `SpoolWorkerPool` + `PurgeWorker` as `IHostedService`
-6. **Dispatch.Bootstrap.Windows** — WinForms setup wizard (SQL detect/install, schema migration, MSI launch)
-7. **installer/windows** — WiX v6 `.wxs` MSI; WiX Burn chain wrapping `DispatchSetup.exe`
-8. **installer/linux** — systemd unit + `install.sh`
+1. **Dispatch.Core** - `SpoolDirectory`, `SpoolMessageStore`, `SpoolMeta`, `SpoolWorkerPool`, `RelaySemaphorePool`, `IRelayProvider`, `IRelayProviderFactory`, `RoutingEngine`, `IRoutingRuleRepository`, `IRelayRepository`, `ILogRepository`, `ICounterRepository`, `MinuteCounterRing`, `IConfigRepository`, `IApiKeyRepository`, `ConfigCache`, `RelayLogEntry`, in-memory ring buffer
+2. **Dispatch.Providers** - `NoneProvider`, `SmtpProvider` (MailKit), `SendGridProvider`, `MailgunProvider`, `AzureProvider`
+3. **Dispatch.Web** - ASP.NET Core host (port 8420 web UI + port 8025 API on separate listener), REST endpoints, `ApiMessageHandler`, `ApiKeyMiddleware`, SignalR hub, `EmbeddedFileProvider`, `LogRepository`, `ConfigRepository`, `ApiKeyRepository`
+4. **Dispatch.UI** - React SPA; wire Vite build into Dispatch.Web via MSBuild `EmbeddedResource`
+5. **Dispatch.Service** - `Program.cs`; wire `SpoolWorkerPool` + `PurgeWorker` as `IHostedService`
+6. **Dispatch.Bootstrap.Windows** - WinForms setup wizard (SQL detect/install, schema migration, MSI launch)
+7. **installer/windows** - WiX v6 `.wxs` MSI; WiX Burn chain wrapping `DispatchSetup.exe`
+8. **installer/linux** - systemd unit + `install.sh`
 
 ### 19.2 SmtpServer Wiring Pattern
 
@@ -3552,7 +3552,7 @@ await smtpServer.StartAsync(cancellationToken);
 
 The spool directory is the heart of Dispatch. Keep all spool logic in `Dispatch.Core` so it is testable independently of ASP.NET Core or SQL.
 
-**`SpoolDirectory` — path helper and doorbell:**
+**`SpoolDirectory` - path helper and doorbell:**
 
 ```csharp
 public class SpoolDirectory
@@ -3587,7 +3587,7 @@ public class SpoolDirectory
 }
 ```
 
-**`SpoolMessageStore` — the only thing between DATA and 250 OK:**
+**`SpoolMessageStore` - the only thing between DATA and 250 OK:**
 
 ```csharp
 public class SpoolMessageStore(SpoolDirectory spool, ISessionContext ctx) : IMessageStore
@@ -3602,10 +3602,10 @@ public class SpoolMessageStore(SpoolDirectory spool, ISessionContext ctx) : IMes
         var bytes = buffer.ToArray();
         var path  = spool.IncomingPath(id);
 
-        // Write raw bytes — no parsing, no DB, no network call
+        // Write raw bytes - no parsing, no DB, no network call
         await File.WriteAllBytesAsync(path, bytes, ct);
 
-        // Parse just enough to populate the meta (from/to/tags only — not full MIME)
+        // Parse just enough to populate the meta (from/to/tags only - not full MIME)
         // MimeKit.MimeMessage.Load is fast for header-only parsing
         var msg = MimeMessage.Load(new MemoryStream(bytes));
         var tags = msg.Headers
@@ -3633,7 +3633,7 @@ public class SpoolMessageStore(SpoolDirectory spool, ISessionContext ctx) : IMes
 }
 ```
 
-**`SpoolMeta` — retry sidecar (written by the worker, not the receive path):**
+**`SpoolMeta` - retry sidecar (written by the worker, not the receive path):**
 
 ```csharp
 public class SpoolMeta
@@ -3650,12 +3650,12 @@ public class SpoolMeta
     public int?      LastRelayId  { get; set; }             // set after first dispatch attempt
     public string?   LastError    { get; set; }
 
-    // Full load — used by worker after claiming file
+    // Full load - used by worker after claiming file
     public static SpoolMeta Load(string emlPath) =>
         JsonSerializer.Deserialize<SpoolMeta>(
             File.ReadAllText(Path.ChangeExtension(emlPath, ".meta")))!;
 
-    // Peek — reads meta without requiring the .eml; used by relay-aware claim loop
+    // Peek - reads meta without requiring the .eml; used by relay-aware claim loop
     // Returns null if meta doesn't exist yet (file just written, meta not yet created)
     public static SpoolMeta? Peek(string emlPath)
     {
@@ -3667,7 +3667,7 @@ public class SpoolMeta
         }
         catch
         {
-            return null;   // meta corrupt or being written — skip this file
+            return null;   // meta corrupt or being written - skip this file
         }
     }
 
@@ -3678,7 +3678,7 @@ public class SpoolMeta
 }
 ```
 
-**Atomic file claim — multiple workers, no double-delivery:**
+**Atomic file claim - multiple workers, no double-delivery:**
 
 ```csharp
 private string? ClaimNextFile()
@@ -3689,17 +3689,17 @@ private string? ClaimNextFile()
     var dest = _spool.ProcessingPath(Path.GetFileName(next));
     try
     {
-        File.Move(next, dest);   // atomic on same filesystem — first worker wins
+        File.Move(next, dest);   // atomic on same filesystem - first worker wins
         return dest;
     }
     catch (IOException)
     {
-        return null;             // another worker got it — safe to ignore
+        return null;             // another worker got it - safe to ignore
     }
 }
 ```
 
-**`FileSystemWatcher` — supplement to the Channel doorbell:**
+**`FileSystemWatcher` - supplement to the Channel doorbell:**
 
 ```csharp
 // In SpoolWorkerPool.StartAsync()
@@ -3728,7 +3728,7 @@ private void RecoverOrphans()
 }
 ```
 
-**`ILogRepository` — the only SQL touch point in the worker:**
+**`ILogRepository` - the only SQL touch point in the worker:**
 
 ```csharp
 public interface ILogRepository
@@ -3756,7 +3756,7 @@ public interface ILogRepository
 ```
 
 ```csharp
-// Program.cs — serve embedded files
+// Program.cs - serve embedded files
 var embeddedProvider = new EmbeddedFileProvider(
     typeof(Program).Assembly,
     baseNamespace: "Dispatch.Web.wwwroot");
@@ -3767,7 +3767,7 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath  = ""
 });
 
-// SPA fallback — send index.html for unknown routes so React Router works
+// SPA fallback - send index.html for unknown routes so React Router works
 app.MapFallbackToFile("index.html", new StaticFileOptions
 {
     FileProvider = embeddedProvider
@@ -3776,7 +3776,7 @@ app.MapFallbackToFile("index.html", new StaticFileOptions
 
 ### 19.5 Configuration Encryption
 
-`SecureConfig` encrypts/decrypts sensitive values stored in the SQL `config` table (rows where `encrypted = 1`). The connection string in `appsettings.json` is stored in plaintext — it grants access only to a least-privilege `dispatch_app` SQL login, so exposure risk is low and file-level OS permissions provide the primary protection.
+`SecureConfig` encrypts/decrypts sensitive values stored in the SQL `config` table (rows where `encrypted = 1`). The connection string in `appsettings.json` is stored in plaintext - it grants access only to a least-privilege `dispatch_app` SQL login, so exposure risk is low and file-level OS permissions provide the primary protection.
 
 ```csharp
 public static class SecureConfig
@@ -3789,12 +3789,12 @@ public static class SecureConfig
 }
 ```
 
-`ConfigRepository` calls `Encrypt()` before writing any row with `encrypted = 1` and `Decrypt()` transparently after reading. The raw plaintext never touches `appsettings.json`. Never log or surface the decrypted value — only write it to the provider SDK call.
+`ConfigRepository` calls `Encrypt()` before writing any row with `encrypted = 1` and `Decrypt()` transparently after reading. The raw plaintext never touches `appsettings.json`. Never log or surface the decrypted value - only write it to the provider SDK call.
 
 ### 19.6 In-Memory Ring Buffer Sink (Serilog)
 
 ```csharp
-// Custom Serilog sink — keeps last N events in a ConcurrentQueue
+// Custom Serilog sink - keeps last N events in a ConcurrentQueue
 // SignalR hub reads from this on connect to replay recent events
 // New events are pushed to connected clients via IHubContext<LogHub>
 public class RingBufferSink : ILogEventSink
@@ -3815,7 +3815,7 @@ public class RingBufferSink : ILogEventSink
 
 ### 19.7 Routing and Provider Resolution
 
-The `RoutingEngine` is called on every spool file dispatch. Relay configs and routing rules are loaded from SQL via the `IRelayRepository` and `IRoutingRuleRepository` — cache them with a short TTL (e.g. 5 seconds) in the repositories so rule changes propagate quickly without a SQL query per message:
+The `RoutingEngine` is called on every spool file dispatch. Relay configs and routing rules are loaded from SQL via the `IRelayRepository` and `IRoutingRuleRepository` - cache them with a short TTL (e.g. 5 seconds) in the repositories so rule changes propagate quickly without a SQL query per message:
 
 ```csharp
 // SpoolWorkerPool.ProcessAsync()
@@ -3828,13 +3828,13 @@ var provider = _providerFactory.Build(relay);   // new instance per dispatch
 var result   = await provider.SendAsync(message, ct);
 ```
 
-`IRelayProviderFactory.Build(RelayConfig)` reads `relay:{id}:*` keys from the `config` table and constructs the appropriate `IRelayProvider`. Because a new instance is built per dispatch, credential changes and provider type changes take effect immediately on the next message — no restart, no singleton state to worry about.
+`IRelayProviderFactory.Build(RelayConfig)` reads `relay:{id}:*` keys from the `config` table and constructs the appropriate `IRelayProvider`. Because a new instance is built per dispatch, credential changes and provider type changes take effect immediately on the next message - no restart, no singleton state to worry about.
 
 ---
 
 ### 19.8 Bootstrap Installer Implementation (Windows)
 
-`Dispatch.Bootstrap.Windows` is a .NET 10 WinForms project published as a self-contained single-file EXE. It has no .NET runtime prerequisite — use `PublishSingleFile=true` with `SelfContained=true`.
+`Dispatch.Bootstrap.Windows` is a .NET 10 WinForms project published as a self-contained single-file EXE. It has no .NET runtime prerequisite - use `PublishSingleFile=true` with `SelfContained=true`.
 
 **SQL Server detection:**
 
@@ -3850,7 +3850,7 @@ public static async Task<List<string>> DetectLocalInstancesAsync()
             found.Add(candidate);
     }
 
-    // 2. Enumerate via SQL Server Browser (best-effort — Browser may be disabled)
+    // 2. Enumerate via SQL Server Browser (best-effort - Browser may be disabled)
     try
     {
         var table = SqlDataSourceEnumerator.Instance.GetDataSources();
@@ -3863,7 +3863,7 @@ public static async Task<List<string>> DetectLocalInstancesAsync()
                 found.Add(name);
         }
     }
-    catch { /* Browser disabled — ignore */ }
+    catch { /* Browser disabled - ignore */ }
 
     return found;
 }
@@ -4053,7 +4053,7 @@ public class RelaySemaphorePool
         _semaphores[relayId] = newSem;
     }
 
-    // For GET /api/relays/concurrency — reads in-memory state, no SQL
+    // For GET /api/relays/concurrency - reads in-memory state, no SQL
     public IReadOnlyDictionary<int, int> GetInFlightCounts()
     {
         return _semaphores.ToDictionary(
@@ -4113,7 +4113,7 @@ The Dashboard can poll this endpoint every 5 seconds to show the live In Flight 
 | Licence | AGPL-3.0 + Commons Clause |
 | Licence summary | Free to use, modify, and self-host. You may not sell Dispatch or a hosted version of it. |
 | Repository | github.com/yourorg/dispatch |
-| Contribution guide | CONTRIBUTING.md — PR checklist, coding style, test requirements |
+| Contribution guide | CONTRIBUTING.md - PR checklist, coding style, test requirements |
 | Issue templates | Bug report, feature request, provider request |
 | Code of conduct | Contributor Covenant |
 | Release cadence | Semantic versioning; minor releases monthly; patch releases as needed |
@@ -4215,7 +4215,7 @@ public record MigrationResult(int AppliedCount, List<string> Scripts);
 **CLI entry point** (for Linux `install.sh` to call):
 
 ```csharp
-// Dispatch.Service / Program.cs — handle CLI utility flags
+// Dispatch.Service / Program.cs - handle CLI utility flags
 if (args.Contains("--migrate-only"))
 {
     var connStr = configuration.GetConnectionString("DispatchLog")!;
@@ -4261,7 +4261,7 @@ if (args.Contains("--trust-cert"))
 
 ### 19.10 Spool Drain Endpoint
 
-The `/api/service/drain` endpoint is called by the Windows bootstrap and Linux `install.sh` before stopping the service for an upgrade. It waits for `spool/processing/` to empty — meaning all in-flight dispatches have either succeeded or been moved to `failed/`.
+The `/api/service/drain` endpoint is called by the Windows bootstrap and Linux `install.sh` before stopping the service for an upgrade. It waits for `spool/processing/` to empty - meaning all in-flight dispatches have either succeeded or been moved to `failed/`.
 
 ```csharp
 app.MapPost("/api/service/drain", async (
@@ -4283,7 +4283,7 @@ app.MapPost("/api/service/drain", async (
         await Task.Delay(TimeSpan.FromSeconds(2), ct);
     }
 
-    // Timeout — move any stuck processing files back to incoming
+    // Timeout - move any stuck processing files back to incoming
     // so they are retried after the upgraded service starts
     var recovered = 0;
     foreach (var eml in Directory.EnumerateFiles(spool.ProcessingDir, "*.eml"))
@@ -4305,7 +4305,7 @@ app.MapPost("/api/service/drain", async (
 });
 ```
 
-No SQL involved — drain checks the filesystem only. Files moved back to `incoming/` will be picked up automatically when the upgraded service starts and `RecoverOrphans()` runs.
+No SQL involved - drain checks the filesystem only. Files moved back to `incoming/` will be picked up automatically when the upgraded service starts and `RecoverOrphans()` runs.
 
 ### 19.12 Message Log Query Implementation
 
@@ -4361,7 +4361,7 @@ ORDER BY logged_at DESC, id DESC;
 
 The cursor is encoded as `base64(logged_at.ticks + ":" + id)` and returned in the response alongside the rows. The UI passes it back on the next "Load more" click. No `OFFSET`, no `COUNT(*)`.
 
-**Slow-path filters** — subject and tag filters add predicates that cannot use the covering indexes. When these are present, add a note to the response:
+**Slow-path filters** - subject and tag filters add predicates that cannot use the covering indexes. When these are present, add a note to the response:
 
 ```json
 {
@@ -4395,7 +4395,7 @@ public class LogHub : Hub
 
             if (batch.Count > 0)
             {
-                // Send newest 20 only — client keeps its own ring buffer
+                // Send newest 20 only - client keeps its own ring buffer
                 var toSend = batch.TakeLast(20).ToArray();
                 await Clients.All.SendAsync("LogBatch", toSend, ct);
                 batch.Clear();
@@ -4417,7 +4417,7 @@ app.MapPost("/api/messages/export", async (
 {
     var jobId = Guid.NewGuid().ToString("N")[..12];
 
-    // Fire and forget — streams rows to a temp file
+    // Fire and forget - streams rows to a temp file
     jobs.Enqueue(async ct =>
     {
         var path = Path.Combine(Path.GetTempPath(), $"dispatch-export-{jobId}.csv");
@@ -4440,14 +4440,14 @@ app.MapPost("/api/messages/export", async (
 });
 ```
 
-`ILogRepository.StreamAsync()` uses `SqlDataReader` with `CommandBehavior.SequentialAccess` to stream rows without materialising all of them into memory — essential for large exports. The temp file is deleted 10 minutes after the download link is first served.
+`ILogRepository.StreamAsync()` uses `SqlDataReader` with `CommandBehavior.SequentialAccess` to stream rows without materialising all of them into memory - essential for large exports. The temp file is deleted 10 minutes after the download link is first served.
 
 **Throughput aggregation:**
 
 When success logging is **on**, the sparkline reads from `relay_log`:
 
 ```sql
--- 60 one-minute buckets, last 60 minutes — hits IX_relay_log_status_date
+-- 60 one-minute buckets, last 60 minutes - hits IX_relay_log_status_date
 SELECT DATEADD(MINUTE, DATEDIFF(MINUTE, 0, logged_at), 0) AS bucket,
        COUNT(*)                                             AS delivered
 FROM   relay_log
@@ -4485,14 +4485,14 @@ A background timer fires at the top of each minute, resets the slot that just ro
 | Licence | AGPL-3.0 + Commons Clause |
 | Licence summary | Free to use, modify, and self-host. You may not sell Dispatch or a hosted version of it. |
 | Repository | github.com/yourorg/dispatch |
-| Contribution guide | CONTRIBUTING.md — PR checklist, coding style, test requirements |
+| Contribution guide | CONTRIBUTING.md - PR checklist, coding style, test requirements |
 | Issue templates | Bug report, feature request, provider request |
 | Code of conduct | Contributor Covenant |
 | Release cadence | Semantic versioning; minor releases monthly; patch releases as needed |
 
 ---
 
-## Appendix A — Suggested Future Providers
+## Appendix A - Suggested Future Providers
 
 - Postmark
 - SparkPost / Bird
@@ -4502,11 +4502,11 @@ A background timer fires at the top of each minute, resets the slot that just ro
 
 ---
 
-## Appendix B — Suggested Future Features
+## Appendix B - Suggested Future Features
 
 - Per-sender routing rules (route emails from app-a to Mailgun, app-b to SendGrid)
 - Header rewriting (overwrite From, Reply-To before relay)
-- Webhooks — POST to a configurable URL on each delivery or failure event
+- Webhooks - POST to a configurable URL on each delivery or failure event
 - Basic analytics dashboard (open/click tracking via provider APIs)
 - Docker image published to GitHub Container Registry (GHCR)
 - Kubernetes Helm chart

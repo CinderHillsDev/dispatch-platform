@@ -7,7 +7,7 @@ namespace Dispatch.Web.Endpoints;
 
 /// <summary>
 /// Provider-test endpoints (spec §11.4). The test runs the same code path a live message would take,
-/// using the credentials supplied in the request — they do not need to be saved first. Log lines stream
+/// using the credentials supplied in the request - they do not need to be saved first. Log lines stream
 /// live over the <c>/hub/test-provider</c> SignalR hub and can also be polled here.
 /// </summary>
 public static class ProviderTestEndpoints

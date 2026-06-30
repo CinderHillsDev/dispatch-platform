@@ -17,7 +17,7 @@ internal static class ProviderTestSupport
         return new RelayMessage { Message = mime, FromAddress = "sender@example.com", ToAddresses = ["rcpt@dest.com"] };
     }
 
-    // A message with To + Cc headers and an extra envelope recipient (the true Bcc — present in the envelope
+    // A message with To + Cc headers and an extra envelope recipient (the true Bcc - present in the envelope
     // but in no visible header). Used to verify providers split To/Cc/Bcc and never expose the blind copy.
     public static RelayMessage MessageWithCcBcc()
     {

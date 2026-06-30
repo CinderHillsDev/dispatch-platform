@@ -116,7 +116,7 @@ public sealed class SpoolWorkerPool : BackgroundService
 
     /// <summary>
     /// FileSystemWatcher-fallback poll interval (spec §14.1). The OS can drop watcher events under heavy
-    /// load, so the doorbell wait times out and the worker attempts a claim anyway — files are never
+    /// load, so the doorbell wait times out and the worker attempts a claim anyway - files are never
     /// stranded by a missed signal. Not latency-sensitive: it only matters when events are lost.
     /// </summary>
     private static readonly TimeSpan DoorbellTimeout = TimeSpan.FromSeconds(5);
@@ -133,7 +133,7 @@ public sealed class SpoolWorkerPool : BackgroundService
             }
             catch (TimeoutException)
             {
-                // No signal within the window — fall through to the fallback claim attempt below.
+                // No signal within the window - fall through to the fallback claim attempt below.
             }
             catch (OperationCanceledException)
             {
@@ -172,7 +172,7 @@ public sealed class SpoolWorkerPool : BackgroundService
                 c.Semaphore.Release();
             }
 
-            // A file just freed a relay slot — nudge a worker to re-scan for more work.
+            // A file just freed a relay slot - nudge a worker to re-scan for more work.
             _spool.Signal(Path.GetFileName(c.EmlPath));
         }
     }
@@ -225,16 +225,16 @@ public sealed class SpoolWorkerPool : BackgroundService
             var relay = await _routing.ResolveAsync(meta.FromAddress, meta.ToAddresses, ct);
             var sem = GetSemaphoreFor(relay.Id, relay.MaxConcurrency);
 
-            if (!sem.Wait(0)) continue;                                   // relay at capacity — try next file
+            if (!sem.Wait(0)) continue;                                   // relay at capacity - try next file
 
             var dest = _spool.ProcessingPath(Path.GetFileName(candidate));
             try
             {
-                File.Move(candidate, dest);                               // atomic claim — first worker wins
+                File.Move(candidate, dest);                               // atomic claim - first worker wins
             }
             catch (Exception ex) when (ex is IOException or FileNotFoundException)
             {
-                sem.Release();                                            // another worker beat us — move on
+                sem.Release();                                            // another worker beat us - move on
                 continue;
             }
             catch
@@ -310,7 +310,7 @@ public sealed class SpoolWorkerPool : BackgroundService
             await using (var fs = File.OpenRead(emlPath))
                 mime = await MimeMessage.LoadAsync(fs, ct);
 
-            // RFC 5322 requires a Date and providers penalise mail missing Date/Message-Id — add them if the
+            // RFC 5322 requires a Date and providers penalise mail missing Date/Message-Id - add them if the
             // submitting client didn't (using the spool receipt time for Date). Existing values are untouched.
             MessageNormalizer.EnsureRequiredHeaders(
                 mime, new DateTimeOffset(DateTime.SpecifyKind(meta.ReceivedAt, DateTimeKind.Utc)));
@@ -398,7 +398,7 @@ public sealed class SpoolWorkerPool : BackgroundService
             MoveToFailed(emlPath, meta);
             _log.LogError(ex, "Permanent failure for {SpoolId}: {Error}", meta.SpoolId, ex.Message);
             if (_audit is not null)
-                await _audit.Relay($"Delivery failed via relay \"{relay.Name}\" — moved to Retry Queue", ex.Message);
+                await _audit.Relay($"Delivery failed via relay \"{relay.Name}\" - moved to Retry Queue", ex.Message);
         }
     }
 
@@ -447,7 +447,7 @@ public sealed class SpoolWorkerPool : BackgroundService
     {
         DateTime writtenUtc;
         try { writtenUtc = File.GetLastWriteTimeUtc(emlPath); }
-        catch { return; }   // vanished (claimed/deleted by another worker) — nothing to do
+        catch { return; }   // vanished (claimed/deleted by another worker) - nothing to do
 
         if (DateTime.UtcNow - writtenUtc < UnreadableMetaGrace) return;   // still within the mid-write window
 
@@ -464,7 +464,7 @@ public sealed class SpoolWorkerPool : BackgroundService
         }
         catch (Exception ex) when (ex is IOException or FileNotFoundException)
         {
-            // Raced with another worker that claimed/removed it — fine, it's no longer stranded.
+            // Raced with another worker that claimed/removed it - fine, it's no longer stranded.
         }
         catch (Exception ex)
         {

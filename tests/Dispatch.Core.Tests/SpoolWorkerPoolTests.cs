@@ -34,7 +34,7 @@ public class SpoolWorkerPoolTests
         TestData.Seed(t.Spool.IncomingDir, t.Spool);
         var pool = TestData.BuildPool(t.Spool, DelegateProvider.AlwaysSucceeds(),
             new CapturingLogRepository(), new InMemoryCounterRepository(),
-            relay: new RelayConfig { Id = 1, MaxConcurrency = 0 }); // unlimited — isolate the file-move race
+            relay: new RelayConfig { Id = 1, MaxConcurrency = 0 }); // unlimited - isolate the file-move race
 
         var attempts = await Task.WhenAll(
             Enumerable.Range(0, 8).Select(_ => pool.ClaimFileForAvailableRelayAsync(CancellationToken.None)));
@@ -58,7 +58,7 @@ public class SpoolWorkerPoolTests
 
         TestData.Seed(t.Spool.IncomingDir, t.Spool);
         var blocked = await pool.ClaimFileForAvailableRelayAsync(CancellationToken.None);
-        Assert.Null(blocked);                        // relay at capacity — second file skipped
+        Assert.Null(blocked);                        // relay at capacity - second file skipped
 
         pool.Semaphores[1].Release();                // free the slot
         var afterRelease = await pool.ClaimFileForAvailableRelayAsync(CancellationToken.None);
@@ -184,7 +184,7 @@ public class SpoolWorkerPoolTests
     {
         // Spec §14.1 FileSystemWatcher fallback: if a Created event is dropped (here, simulated by
         // disabling the watcher), the worker's bounded doorbell wait times out (~5s) and it still
-        // attempts a claim — so a file added after startup, with no signal, is never stranded.
+        // attempts a claim - so a file added after startup, with no signal, is never stranded.
         using var t = new TempSpool();
         var counters = new InMemoryCounterRepository();
         var pool = TestData.BuildPool(t.Spool, DelegateProvider.AlwaysSucceeds(),
@@ -267,7 +267,7 @@ public class SpoolWorkerPoolTests
         var pool = TestData.BuildPool(t.Spool, DelegateProvider.AlwaysSucceeds(),
             new CapturingLogRepository(), new InMemoryCounterRepository());
 
-        // A recent .eml with no .meta is still mid-write — left alone.
+        // A recent .eml with no .meta is still mid-write - left alone.
         var fresh = Guid.NewGuid();
         File.WriteAllText(t.Spool.IncomingPath(fresh), "raw");
         Assert.Null(await pool.ClaimFileForAvailableRelayAsync(CancellationToken.None));

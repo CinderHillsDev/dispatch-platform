@@ -16,5 +16,5 @@ try:
     s.recv(65536)
     time.sleep(1)
     print("screendump ->", out)
-except Exception as e:  # noqa: BLE001 — best-effort diagnostic
+except Exception as e:  # noqa: BLE001 - best-effort diagnostic
     print("qmp screenshot failed:", e)

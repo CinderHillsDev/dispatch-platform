@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Dispatch.Core.Logging;
 
-/// <summary>Opaque keyset cursor — the (logged_at, id) of the last row returned (spec §9.2).</summary>
+/// <summary>Opaque keyset cursor - the (logged_at, id) of the last row returned (spec §9.2).</summary>
 public sealed record MessageLogCursor(DateTime LoggedAt, long Id);
 
 /// <summary>Filters for the Message Log query. All applied together; values are always parameterised (§17, §19).</summary>
@@ -35,7 +35,7 @@ public sealed class MessageLogRow
     public string SpoolId { get; init; } = "";
     public string FromAddress { get; init; } = "";
     public string ToDomain { get; init; } = "";
-    /// <summary>Raw to_addresses JSON column (mapped by Dapper); not serialised — use <see cref="ToAddresses"/>.</summary>
+    /// <summary>Raw to_addresses JSON column (mapped by Dapper); not serialised - use <see cref="ToAddresses"/>.</summary>
     [JsonIgnore] public string? ToAddressesJson { get; init; }
     /// <summary>Full recipient list, parsed from <see cref="ToAddressesJson"/>, so the log can show real
     /// addresses (and a +N count for multiple recipients) rather than only the domain.</summary>
@@ -96,7 +96,7 @@ public sealed class MessageLogDetail
     public string? XMailer { get; init; }
     public int AttachmentCount { get; init; }
 
-    /// <summary>All relay_log rows for this spool id, oldest first — the retry/attempt timeline (spec §9.2).</summary>
+    /// <summary>All relay_log rows for this spool id, oldest first - the retry/attempt timeline (spec §9.2).</summary>
     public IReadOnlyList<MessageLogAttempt> History { get; init; } = [];
 }
 

@@ -6,7 +6,7 @@ namespace Dispatch.Core.Updates;
 /// <summary>
 /// Authenticates an upgrade bundle before it is applied (spec: web-UI updates). Two independent checks,
 /// both fail-closed: (1) the detached signature over the manifest verifies against the release public key
-/// baked into the app (RSA PKCS#1 v1.5 / SHA-256 — interoperable with <c>openssl dgst -sha256 -sign</c>
+/// baked into the app (RSA PKCS#1 v1.5 / SHA-256 - interoperable with <c>openssl dgst -sha256 -sign</c>
 /// in CI and <c>openssl dgst -verify</c> in the appliance updater), and (2) the payload tarball's SHA-256
 /// matches the digest in the (now-trusted) manifest.
 /// </summary>

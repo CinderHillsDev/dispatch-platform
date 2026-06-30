@@ -92,4 +92,4 @@ See [Retention & purge](/configuration/retention-purge/) for behavior.
 
 ## Bootstrap-only settings
 
-A few items cannot live in the `config` table because they are needed before the database is available, or because they secure the dashboard itself. The SQL connection string, the first-run admin password, the dashboard TLS certificate, and the log directory live in `appsettings.json` instead — see the [Configuration overview](/configuration/overview/).
+A few items cannot live in the `config` table because they are needed before the database is available, or because they secure the dashboard itself. The SQL connection string, the first-run admin password, the dashboard TLS certificate, and the log directory live in `appsettings.json` instead - see the [Configuration overview](/configuration/overview/).

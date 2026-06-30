@@ -1,7 +1,7 @@
 name: Docker
 
 # Builds the container image and runs the full stack (Dispatch + SQL via docker-compose), failing unless
-# the service comes up and serves /health — the container equivalent of the installer smoke tests. Docker is
+# the service comes up and serves /health - the container equivalent of the installer smoke tests. Docker is
 # native on the runner, so this needs no QEMU/nested virtualization. The release workflow builds+pushes the
 # multi-arch image; this proves it actually runs before that.
 on:

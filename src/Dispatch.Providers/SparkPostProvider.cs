@@ -34,6 +34,6 @@ public sealed class SparkPostProvider(RelayConfig config, HttpClient http) : IRe
         try { if (JsonDocument.Parse(json).RootElement.TryGetProperty("results", out var r) && r.TryGetProperty("id", out var m)) id = m.GetString(); }
         catch { /* best-effort */ }
 
-        return RelayResult.Success(id, $"HTTP {status} — SparkPost id: {id}");
+        return RelayResult.Success(id, $"HTTP {status} - SparkPost id: {id}");
     }
 }

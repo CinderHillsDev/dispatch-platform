@@ -15,7 +15,7 @@ public sealed class LocalProvider(string? captureDirectory = null) : IRelayProvi
     public async Task<RelayResult> SendAsync(RelayMessage message, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(captureDirectory))
-            return RelayResult.Success(id: $"local-{Guid.NewGuid():N}", detail: "Discarded (local/dev mode — no external delivery)");
+            return RelayResult.Success(id: $"local-{Guid.NewGuid():N}", detail: "Discarded (local/dev mode - no external delivery)");
 
         Directory.CreateDirectory(captureDirectory);
         var name = (message.SpoolId is { Length: > 0 } id ? id : Guid.NewGuid().ToString("N")) + ".eml";

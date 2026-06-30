@@ -30,7 +30,7 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         var version = await cn.ExecuteScalarAsync<int>("SELECT MAX(version) FROM schema_version");
         Assert.True(version >= 3, $"expected at least migration 3 applied, got {version}");
 
-        // Migration 0003 removed the seeded "Unconfigured" placeholder relay — the first-run wizard creates
+        // Migration 0003 removed the seeded "Unconfigured" placeholder relay - the first-run wizard creates
         // the first real relay (which becomes the catch-all). No placeholder should remain.
         var placeholders = await cn.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM relays WHERE provider = 'Unconfigured' AND is_default = 1");
@@ -142,7 +142,7 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     {
         if (!sql.Available) return;
         var counters = new SqlCounterRepository(sql.Factory);
-        // relayId 0/null has no FK target — must be a no-op, not an exception.
+        // relayId 0/null has no FK target - must be a no-op, not an exception.
         await counters.IncrementAsync(0, CounterField.Denied);
         await counters.IncrementAsync(null, CounterField.Denied);
     }
@@ -302,7 +302,7 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         });
 
         // Every filter value is a Dapper parameter (spec §17), so these payloads are treated as literal
-        // text: they must not error and must not match the real row — and the table must survive.
+        // text: they must not error and must not match the real row - and the table must survive.
         const string drop = "x'; DROP TABLE relay_log; --";
         MessageLogFilter[] hostile =
         [
@@ -471,7 +471,7 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
             FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@" + domain], ToDomain = domain,
             RelayName = "alpha", RoutingRuleName = ruleName, RoutingMatched = true, Provider = "None",
         });
-        // A different message NOT routed by the rule — must be excluded by the rule filter.
+        // A different message NOT routed by the rule - must be excluded by the rule filter.
         await log.InsertAsync(new RelayLogEntry
         {
             Event = "Delivered", Status = "OK", SpoolId = Guid.NewGuid().ToString("N"),

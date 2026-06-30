@@ -10,7 +10,7 @@ namespace Dispatch.Data.Tests;
 /// </summary>
 public class SqlSettingsProviderTests
 {
-    /// <summary>Minimal in-memory <see cref="IConfigRepository"/> — no encryption, no SQL.</summary>
+    /// <summary>Minimal in-memory <see cref="IConfigRepository"/> - no encryption, no SQL.</summary>
     private sealed class MemoryConfig : IConfigRepository
     {
         private readonly Dictionary<string, string> _values = new();

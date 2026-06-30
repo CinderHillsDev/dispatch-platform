@@ -11,7 +11,7 @@ public interface IPurgeSettings
     ValueTask<PurgeOptions> GetAsync(CancellationToken ct = default);
 }
 
-/// <summary>Default that returns the static <see cref="PurgeOptions"/> — used in tests and when no config store is wired.</summary>
+/// <summary>Default that returns the static <see cref="PurgeOptions"/> - used in tests and when no config store is wired.</summary>
 public sealed class OptionsPurgeSettings(PurgeOptions options) : IPurgeSettings
 {
     public ValueTask<PurgeOptions> GetAsync(CancellationToken ct = default) => ValueTask.FromResult(options);

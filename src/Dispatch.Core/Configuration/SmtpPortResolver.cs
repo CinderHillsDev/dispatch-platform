@@ -20,7 +20,7 @@ public static class SmtpPortResolver
             (canBind(p) ? result : dropped).Add(p);
 
         foreach (var p in dropped)
-            warn?.Invoke($"SMTP port {p} is unavailable (already in use or insufficient privilege) — skipping");
+            warn?.Invoke($"SMTP port {p} is unavailable (already in use or insufficient privilege) - skipping");
 
         // Fall back to 2525 only when port 25 was wanted but couldn't be bound, or nothing bound at all.
         if ((dropped.Contains(25) || result.Count == 0)

@@ -61,7 +61,7 @@ public class ProviderTestApiTests(WebTestHost host)
         Assert.NotNull(started);
         Assert.StartsWith("tr_", started!.RunId);
 
-        // Poll until the run reaches a terminal status (Local provider — no external call).
+        // Poll until the run reaches a terminal status (Local provider - no external call).
         RunResponse? run = null;
         for (var i = 0; i < 50 && (run is null || run.Status == "Running"); i++)
         {

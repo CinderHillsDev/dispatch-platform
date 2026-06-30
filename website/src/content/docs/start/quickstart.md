@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Install Dispatch, point an app at it, and send your first message — whatever way you deploy.
+description: Install Dispatch, point an app at it, and send your first message - whatever way you deploy.
 sidebar:
   order: 2
 ---
@@ -10,14 +10,14 @@ schema is created automatically on first start.
 
 ## 1. Install Dispatch
 
-Pick whichever fits — full steps in [Deployment](/deployment/overview/):
+Pick whichever fits - full steps in [Deployment](/deployment/overview/):
 
-- **[Virtual appliance](/deployment/appliance/)** — import a prebuilt VM (Hyper-V / VMware / KVM /
+- **[Virtual appliance](/deployment/appliance/)** - import a prebuilt VM (Hyper-V / VMware / KVM /
   Proxmox) and power on. Nothing to install; SQL + Dispatch are already inside.
-- **[Linux](/deployment/linux/)** — `install.sh` sets up a systemd service (and SQL Server Express,
+- **[Linux](/deployment/linux/)** - `install.sh` sets up a systemd service (and SQL Server Express,
   if you want it).
-- **[Windows](/deployment/windows/)** — a single-file installer (Windows Service + SQL + firewall).
-- **[Docker](/deployment/docker/)** — handy for trying it locally or on container hosts.
+- **[Windows](/deployment/windows/)** - a single-file installer (Windows Service + SQL + firewall).
+- **[Docker](/deployment/docker/)** - handy for trying it locally or on container hosts.
 
 ## 2. Open the dashboard
 
@@ -28,7 +28,7 @@ test.
 ## 3. Add a relay and test it
 
 Go to **Settings → Relay Provider**, choose your provider, and enter its credentials. Click
-**Send Test Email** to verify it works — watch the result appear live in the relay log. See
+**Send Test Email** to verify it works - watch the result appear live in the relay log. See
 [Relay providers](/providers/overview/) for per-provider settings.
 
 ## 4. Send mail
@@ -50,5 +50,5 @@ curl -X POST http://<host>:8025/api/v1/messages \
 ## Just testing? Use the Local Inbox
 
 Want to see what your app sends without delivering anything externally? Set the relay to **Local**
-and every message is captured to the [Local Inbox](/sending/local-inbox/) for inspection — a built-in
+and every message is captured to the [Local Inbox](/sending/local-inbox/) for inspection - a built-in
 mail trap for development and CI.

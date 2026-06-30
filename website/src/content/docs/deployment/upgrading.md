@@ -46,5 +46,5 @@ Drain waits up to **60 seconds** for queued messages to complete.
 
 ## Back up first
 
-Automatic rollback is **not** implemented. Take a database backup before upgrading production — see
+Automatic rollback is **not** implemented. Take a database backup before upgrading production - see
 [Backup & restore](/operations/backup-restore/).

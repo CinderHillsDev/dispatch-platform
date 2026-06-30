@@ -9,7 +9,7 @@ Azure Communication Services (ACS) Email is an HTTP-based email provider. Add it
 
 ## How it works
 
-Dispatch sends through ACS using the official Azure SDK. All standard message capabilities are supported — see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
+Dispatch sends through ACS using the official Azure SDK. All standard message capabilities are supported - see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
 
 ## Settings
 
@@ -20,6 +20,6 @@ Dispatch sends through ACS using the official Azure SDK. All standard message ca
 
 ## Notes
 
-- Unlike most providers, **ACS has no domain concept** — you define an explicit **MailFrom** list. Each sender you intend to use must be a configured MailFrom address.
+- Unlike most providers, **ACS has no domain concept** - you define an explicit **MailFrom** list. Each sender you intend to use must be a configured MailFrom address.
 - You can define **multiple MailFrom addresses** on a single relay.
 - When you send a **test email** from the dashboard, the From field is a dropdown of the MailFrom addresses configured for that relay. Pick one, send, and watch the relay log live to confirm delivery.

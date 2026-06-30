@@ -17,8 +17,8 @@ internal static class ProviderHttp
 
     /// <summary>To/Cc/Bcc recipients for structured-JSON providers. To/Cc are taken from the visible message
     /// headers (intersected with the actual envelope so we never deliver beyond it); Bcc is every envelope
-    /// recipient not named in a visible header — so blind recipients are delivered without being exposed in
-    /// the To/Cc the others see. Providers that post raw MIME (Mailgun, SES, SparkPost) don't need this — the
+    /// recipient not named in a visible header - so blind recipients are delivered without being exposed in
+    /// the To/Cc the others see. Providers that post raw MIME (Mailgun, SES, SparkPost) don't need this - the
     /// envelope carries the real recipients and the MIME headers (which omit Bcc) are sent verbatim.</summary>
     public sealed record RecipientSet(IReadOnlyList<string> To, IReadOnlyList<string> Cc, IReadOnlyList<string> Bcc);
 
@@ -59,7 +59,7 @@ internal static class ProviderHttp
     }
 
     /// <summary>Extracts the message's attachments (decoded) so structured-JSON providers can forward them.
-    /// Providers that send raw MIME (SES, SparkPost) don't need this — attachments ride along in the MIME.</summary>
+    /// Providers that send raw MIME (SES, SparkPost) don't need this - attachments ride along in the MIME.</summary>
     public static IReadOnlyList<OutgoingAttachment> Attachments(RelayMessage m)
     {
         var list = new List<OutgoingAttachment>();

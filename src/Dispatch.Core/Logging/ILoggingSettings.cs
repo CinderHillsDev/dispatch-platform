@@ -12,7 +12,7 @@ public interface ILoggingSettings
     ValueTask<bool> LogDeniedAsync(CancellationToken ct = default);
 }
 
-/// <summary>Default that logs everything — used in tests and when no config store is wired.</summary>
+/// <summary>Default that logs everything - used in tests and when no config store is wired.</summary>
 public sealed class AlwaysLogSettings : ILoggingSettings
 {
     public ValueTask<bool> LogDeliveredAsync(CancellationToken ct = default) => ValueTask.FromResult(true);

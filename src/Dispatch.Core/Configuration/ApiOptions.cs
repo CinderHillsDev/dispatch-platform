@@ -15,11 +15,11 @@ public sealed class ApiOptions
     public bool TlsEnabled { get; set; }
     public int TlsPort { get; set; } = 8026;
 
-    /// <summary>Shared TLS cert (PFX) path + password — also used by the SMTP listener's STARTTLS.</summary>
+    /// <summary>Shared TLS cert (PFX) path + password - also used by the SMTP listener's STARTTLS.</summary>
     public string TlsCertPath { get; set; } = "";
     public string TlsCertPassword { get; set; } = "";
 
-    /// <summary>Source-IP allow-list (closed model — see <see cref="ConfigDefaults"/>): an empty list denies
+    /// <summary>Source-IP allow-list (closed model - see <see cref="ConfigDefaults"/>): an empty list denies
     /// all. The ingestion API is additionally gated by API keys. Operators manage ranges in Access Control.</summary>
     public string[] AllowedCidrs { get; set; } = [];
     public long MaxMessageBytes { get; set; } = 0;

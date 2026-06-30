@@ -1,6 +1,6 @@
 ---
 title: Message features
-description: Recipients, CC/BCC, attachments, custom headers, and tags — supported across all providers.
+description: Recipients, CC/BCC, attachments, custom headers, and tags - supported across all providers.
 sidebar:
   order: 4
 ---
@@ -22,7 +22,7 @@ total message size is bounded by a global and per-relay limit (default 25 MiB); 
 is also capped to the active provider's maximum.
 
 Over the HTTP API, attachments use **`multipart/form-data`** with one repeatable `attachment` file
-field per file — the same convention as Mailgun:
+field per file - the same convention as Mailgun:
 
 ```bash
 curl -X POST https://host:8025/api/v1/messages \
@@ -34,12 +34,12 @@ curl -X POST https://host:8025/api/v1/messages \
 ```
 
 The `application/json` body has **no** attachment field (matching Mailgun, which is multipart-only for
-files) — switch to `multipart/form-data` when you need to attach files. Over SMTP, attachments travel
+files) - switch to `multipart/form-data` when you need to attach files. Over SMTP, attachments travel
 in the MIME message as usual.
 
 ## Custom headers
 
-Set arbitrary headers — `h:<Name>` fields (multipart), the `headers` object (JSON), or simply include
+Set arbitrary headers - `h:<Name>` fields (multipart), the `headers` object (JSON), or simply include
 them in the raw SMTP message. Raw-MIME providers (Mailgun, Amazon SES, generic SMTP) preserve them
 verbatim.
 
@@ -52,5 +52,5 @@ message log. Tags are Dispatch metadata, not email headers.
 
 Every message is logged with its recipients, subject, the relay and routing rule used, the provider's
 response and message ID, duration, ingest source (SMTP / API / dashboard test), source IP, attachment
-count, and more — all searchable and filterable in the dashboard. See
+count, and more - all searchable and filterable in the dashboard. See
 [Health & metrics](/operations/health-metrics/) for aggregate stats.

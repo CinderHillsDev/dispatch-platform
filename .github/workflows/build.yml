@@ -80,5 +80,21 @@ jobs:
           path: TestResults/**/*.trx
           if-no-files-found: ignore
 
+  # Keep em dashes out of the tree: they break Windows PowerShell parsing (a mis-decoded em-dash byte
+  # becomes a smart-quote string delimiter) and the project standardizes on ASCII '-'.
+  no-em-dash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Reject em dashes (use ASCII '-')
+        run: |
+          matches=$(grep -rlIP '\x{2014}' . --exclude-dir=.git --exclude-dir=node_modules || true)
+          if [ -n "$matches" ]; then
+            echo "::error::Em dash (U+2014) found - replace with an ASCII hyphen '-'. Files:"
+            echo "$matches"
+            exit 1
+          fi
+          echo "OK: no em dashes."
+
   # NOTE: tagged releases (refs/tags/v*) are handled by release.yml, which builds the signed Windows
   # installer + Linux tarball and publishes a GitHub Release. This workflow only runs build + tests.

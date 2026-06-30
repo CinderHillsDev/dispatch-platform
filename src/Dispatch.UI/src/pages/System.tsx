@@ -24,7 +24,7 @@ export function System() {
     setBusy(true); setMsg(null);
     try {
       await api.system.restart();
-      setMsg("Restart requested — draining queue, then the service will restart.");
+      setMsg("Restart requested - draining queue, then the service will restart.");
     } catch (e) {
       setMsg(`Error: ${(e as Error).message}`);
     } finally {
@@ -60,7 +60,7 @@ export function System() {
       <div className="panel" style={{ maxWidth: 620 }}>
         <h2>Restart</h2>
         <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
-          Graceful restart — drains the in-flight spool (up to 60s), then exits so the service manager
+          Graceful restart - drains the in-flight spool (up to 60s), then exits so the service manager
           (systemd / Windows Service) starts the new process. Settings that apply "on restart" take effect then.
         </p>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -72,7 +72,7 @@ export function System() {
       <div className="panel" style={{ maxWidth: 620 }}>
         <h2>About</h2>
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-          Dispatch SMTP Relay — AGPL-3.0 + Commons Clause.{" "}
+          Dispatch SMTP Relay - AGPL-3.0 + Commons Clause.{" "}
           <a href="https://github.com/chrismuench/Dispatch-SMTP-Relay" target="_blank" rel="noreferrer">GitHub</a>
         </p>
       </div>

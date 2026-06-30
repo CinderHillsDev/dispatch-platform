@@ -10,7 +10,7 @@ namespace Dispatch.Data;
 /// uses AES-256-GCM with a random 256-bit key persisted as <c>.dispatch-key</c> in the directory set via
 /// <see cref="UseKeyDirectory"/> (mode 600 on Unix; an inheritance-stripped ACL granting only SYSTEM,
 /// Administrators, and the service account on Windows). Because the key lives in a portable file rather than a
-/// machine-bound store, a database backup can be restored on a different host by also restoring the key file —
+/// machine-bound store, a database backup can be restored on a different host by also restoring the key file -
 /// so disaster recovery and migration work the same on Windows, Linux, and macOS. An exfiltrated <c>config</c>
 /// table still can't be decrypted without that host-local key file. If no key directory is set (or it's
 /// unwritable) it falls back to a machine-derived key (weaker; surfaced via <see cref="UsedMachineKeyFallback"/>).
@@ -33,7 +33,7 @@ public static class SecureConfig
     public static void UseKeyDirectory(string dir) => _keyDir = dir;
 
     /// <summary>True once at-rest encryption has fallen back to the (non-secret) machine-derived key because no
-    /// writable key directory was available — a weaker posture the host should surface to the operator.</summary>
+    /// writable key directory was available - a weaker posture the host should surface to the operator.</summary>
     public static bool UsedMachineKeyFallback { get; private set; }
 
     public static string Encrypt(string plaintext) => EncryptWith(Key.Value, plaintext);
@@ -48,7 +48,7 @@ public static class SecureConfig
         catch (Exception ex) when (OperatingSystem.IsWindows()
                                    && ex is CryptographicException or FormatException or ArgumentException)
         {
-            // Not an AES blob we can open — likely a legacy DPAPI value from an older Windows build.
+            // Not an AES blob we can open - likely a legacy DPAPI value from an older Windows build.
             // Re-encrypts to AES on the next save.
             return Encoding.UTF8.GetString(
                 ProtectedData.Unprotect(Convert.FromBase64String(ciphertext), AppSalt, DataProtectionScope.LocalMachine));
@@ -76,7 +76,7 @@ public static class SecureConfig
     }
 
     /// <summary>AES-256-GCM decrypt with an explicit key. Throws <see cref="CryptographicException"/> if the
-    /// key is wrong or the blob is tampered/too short (GCM authentication) — never returns wrong plaintext.</summary>
+    /// key is wrong or the blob is tampered/too short (GCM authentication) - never returns wrong plaintext.</summary>
     internal static string DecryptWith(byte[] key, string ciphertext)
     {
         var blob = Convert.FromBase64String(ciphertext);
@@ -103,7 +103,7 @@ public static class SecureConfig
         UsedMachineKeyFallback = true;
         Console.Error.WriteLine(
             "SECURITY WARNING: at-rest encryption is using a machine-derived key because no writable key " +
-            "directory was available. Stored secrets (provider credentials, TLS password) are weakly protected — " +
+            "directory was available. Stored secrets (provider credentials, TLS password) are weakly protected - " +
             "an attacker with the config DB and the host machine-id could decrypt them. Set DISPATCH_KEY_DIR to a " +
             "persistent, writable, private directory so a random key file is used instead.");
         var machine = TryReadMachineId() ?? Environment.MachineName;
@@ -123,7 +123,7 @@ public static class SecureConfig
             }
             Directory.CreateDirectory(dir);
             var key = RandomNumberGenerator.GetBytes(32);
-            // Create restricted, then write — keep the private key off other users. ProgramData is readable by
+            // Create restricted, then write - keep the private key off other users. ProgramData is readable by
             // all users by default on Windows, so an explicit ACL matters there as much as mode 600 on Unix.
             using (File.Create(path)) { }
             if (OperatingSystem.IsWindows())
@@ -146,7 +146,7 @@ public static class SecureConfig
     }
 
     /// <summary>Lock the key file down to SYSTEM, Administrators, and the running service account, with
-    /// inheritance disabled — so other local users on a Windows box can't read it out of ProgramData.</summary>
+    /// inheritance disabled - so other local users on a Windows box can't read it out of ProgramData.</summary>
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static void RestrictWindowsAcl(string path)
     {

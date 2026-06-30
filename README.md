@@ -2,14 +2,14 @@
 
 # Dispatch SMTP Relay
 
-**Open-source .NET SMTP relay — forward mail from your apps to any cloud provider**
+**Open-source .NET SMTP relay - forward mail from your apps to any cloud provider**
 
 [![Build](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions/workflows/build.yml/badge.svg)](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions)
 [![License: AGPL v3 + Commons Clause](https://img.shields.io/badge/License-AGPL_v3_%2B_Commons_Clause-blue.svg)](LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/chrismuench/Dispatch-SMTP-Relay)](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)](https://chrismuench.github.io/Dispatch-SMTP-Relay/deployment/overview/)
 
-Point your applications and devices at Dispatch over **SMTP** (the standard ports **25** and **587** by default — it falls back to **2525** only if 25 is already taken) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers — Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services — or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
+Point your applications and devices at Dispatch over **SMTP** (the standard ports **25** and **587** by default - it falls back to **2525** only if 25 is already taken) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services - or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
 
 ### 📚 **[Read the documentation →](https://chrismuench.github.io/Dispatch-SMTP-Relay/)**
 
@@ -38,26 +38,26 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
                          Configure · Monitor · Debug
 ```
 
-- **`250 OK` before anything else** — Dispatch writes the message to a local spool file and acknowledges the sender immediately. SQL Server is written to only *after* the provider accepts the message.
-- **The spool directory is the queue** — `.eml` files survive restarts, crashes, and SQL outages. If SQL is down, mail still flows.
-- **One place for credentials** — rotate an API key once, not in every app.
-- **Test before you commit** — verify provider credentials with a live relay log, or capture mail to the **Local Inbox** without delivering anything.
+- **`250 OK` before anything else** - Dispatch writes the message to a local spool file and acknowledges the sender immediately. SQL Server is written to only *after* the provider accepts the message.
+- **The spool directory is the queue** - `.eml` files survive restarts, crashes, and SQL outages. If SQL is down, mail still flows.
+- **One place for credentials** - rotate an API key once, not in every app.
+- **Test before you commit** - verify provider credentials with a live relay log, or capture mail to the **Local Inbox** without delivering anything.
 
 ## Features
 
-- **Two ways in** — SMTP (STARTTLS, optional AUTH) and a Mailgun-compatible HTTP/HTTPS API with per-key tokens.
-- **A dozen providers** — Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services, generic SMTP — plus **Local** capture mode. CC/BCC, attachments, and custom headers everywhere.
-- **[Local Inbox](https://chrismuench.github.io/Dispatch-SMTP-Relay/sending/local-inbox/)** — a built-in mail trap: capture and inspect what your app sends, without delivering anything. Great for development and CI.
-- **Durable spool** — instant `250 OK`, auto-retry with back-off, retry-from-UI for failures.
-- **Smart routing** — send by sender/recipient domain to different relays, with a catch-all default and a simulate tool.
-- **Live dashboard** — real-time counters, a searchable message log with sandboxed HTML preview, reports, and one-click provider testing.
-- **Secure by default** — HTTPS-only dashboard, a shared TLS cert for SMTP + the API, bcrypt-hashed passwords & API keys, encrypted secrets at rest, CIDR allow-lists so it's never an open relay.
-- **Observability** — unauthenticated `/health` and Prometheus `/metrics` (dashboard-port, allow-list-gated).
-- **Deploy anywhere** — Windows & Linux installers (bundled SQL), a multi-arch Docker image, or a ready-to-import virtual appliance for Hyper-V, VMware, KVM & Proxmox.
+- **Two ways in** - SMTP (STARTTLS, optional AUTH) and a Mailgun-compatible HTTP/HTTPS API with per-key tokens.
+- **A dozen providers** - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services, generic SMTP - plus **Local** capture mode. CC/BCC, attachments, and custom headers everywhere.
+- **[Local Inbox](https://chrismuench.github.io/Dispatch-SMTP-Relay/sending/local-inbox/)** - a built-in mail trap: capture and inspect what your app sends, without delivering anything. Great for development and CI.
+- **Durable spool** - instant `250 OK`, auto-retry with back-off, retry-from-UI for failures.
+- **Smart routing** - send by sender/recipient domain to different relays, with a catch-all default and a simulate tool.
+- **Live dashboard** - real-time counters, a searchable message log with sandboxed HTML preview, reports, and one-click provider testing.
+- **Secure by default** - HTTPS-only dashboard, a shared TLS cert for SMTP + the API, bcrypt-hashed passwords & API keys, encrypted secrets at rest, CIDR allow-lists so it's never an open relay.
+- **Observability** - unauthenticated `/health` and Prometheus `/metrics` (dashboard-port, allow-list-gated).
+- **Deploy anywhere** - Windows & Linux installers (bundled SQL), a multi-arch Docker image, or a ready-to-import virtual appliance for Hyper-V, VMware, KVM & Proxmox.
 
 ## Quickstart
 
-The fastest way to try Dispatch is Docker Compose — it brings up Dispatch **and** its database together:
+The fastest way to try Dispatch is Docker Compose - it brings up Dispatch **and** its database together:
 
 ```bash
 git clone https://github.com/chrismuench/Dispatch-SMTP-Relay.git
@@ -68,7 +68,7 @@ docker compose up -d --build
 
 Then open **https://localhost:8420**, set the admin password, add a relay, and point your apps at `localhost:25` (SMTP) or `localhost:8025` (HTTP API).
 
-> **Tip:** Dispatch listens on the standard SMTP ports **25** and **587**. Install it on a host with **no other SMTP software** (Postfix, Sendmail, Exim, …) so those ports are free — otherwise Dispatch falls back to **2525**.
+> **Tip:** Dispatch listens on the standard SMTP ports **25** and **587**. Install it on a host with **no other SMTP software** (Postfix, Sendmail, Exim, …) so those ports are free - otherwise Dispatch falls back to **2525**.
 
 ➡️ Full guide: **[Quickstart](https://chrismuench.github.io/Dispatch-SMTP-Relay/start/quickstart/)** · **[How it works](https://chrismuench.github.io/Dispatch-SMTP-Relay/start/how-it-works/)**
 
@@ -88,7 +88,7 @@ Everything lives on the docs site: **https://chrismuench.github.io/Dispatch-SMTP
 
 ## Security
 
-Safe by default: the dashboard is HTTPS-only, secrets are encrypted at rest (AES-256-GCM with a portable, access-restricted key file on every platform — so a database backup can be restored on another machine by also restoring the key file), passwords and API keys are bcrypt-hashed, and SMTP + the API are closed to anything outside private ranges so a fresh install is never an open relay. Full details: **[Security docs](https://chrismuench.github.io/Dispatch-SMTP-Relay/security/)**. Please report vulnerabilities privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new).
+Safe by default: the dashboard is HTTPS-only, secrets are encrypted at rest (AES-256-GCM with a portable, access-restricted key file on every platform - so a database backup can be restored on another machine by also restoring the key file), passwords and API keys are bcrypt-hashed, and SMTP + the API are closed to anything outside private ranges so a fresh install is never an open relay. Full details: **[Security docs](https://chrismuench.github.io/Dispatch-SMTP-Relay/security/)**. Please report vulnerabilities privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new).
 
 ## Building from source
 
@@ -108,8 +108,8 @@ ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). **Adding a provider:** implement `IRelayProvider` in `Dispatch.Providers` (see `SendGridProvider.cs`), wire it into `RelayProviderFactory`, add the UI fields and tests. Good first issues are [labelled in the tracker](https://github.com/chrismuench/Dispatch-SMTP-Relay/issues?q=label%3A%22good+first+issue%22).
+Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). **Adding a provider:** implement `IRelayProvider` in `Dispatch.Providers` (see `SendGridProvider.cs`), wire it into `RelayProviderFactory`, add the UI fields and tests. Good first issues are [labelled in the tracker](https://github.com/chrismuench/Dispatch-SMTP-Relay/issues?q=label%3A%22good+first+issue%22).
 
 ## Licence
 
-AGPL-3.0 with Commons Clause — see [LICENSE](LICENSE). You may use, self-host, modify, and contribute back; you may **not** sell Dispatch, charge for a hosted version, or ship it inside a paid product. See the [licence FAQ](https://chrismuench.github.io/Dispatch-SMTP-Relay/project/license/).
+AGPL-3.0 with Commons Clause - see [LICENSE](LICENSE). You may use, self-host, modify, and contribute back; you may **not** sell Dispatch, charge for a hosted version, or ship it inside a paid product. See the [licence FAQ](https://chrismuench.github.io/Dispatch-SMTP-Relay/project/license/).

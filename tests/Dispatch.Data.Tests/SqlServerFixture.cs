@@ -9,7 +9,7 @@ namespace Dispatch.Data.Tests;
 /// Spins up an isolated, uniquely-named database on the SQL server pointed to by the
 /// <c>DISPATCH_TEST_SQL</c> environment variable, applies migrations, and drops it on dispose.
 /// When the env var is unset the fixture is <see cref="Available"/> = false and tests early-return,
-/// so the suite stays green without a database — UNLESS <c>DISPATCH_REQUIRE_SQL</c> is set (CI), in which
+/// so the suite stays green without a database - UNLESS <c>DISPATCH_REQUIRE_SQL</c> is set (CI), in which
 /// case a missing connection string is a hard failure so the integration tests can never silently skip.
 /// Before applying migrations it waits for the server to accept connections (SQL Edge can take tens of
 /// seconds to become ready in CI), so a slow-starting container surfaces as a wait, not a flaky failure.
@@ -32,7 +32,7 @@ public sealed class SqlServerFixture : IAsyncLifetime
             // every integration test and reporting a false green.
             if (IsTruthy(Environment.GetEnvironmentVariable("DISPATCH_REQUIRE_SQL")))
                 throw new InvalidOperationException(
-                    "DISPATCH_REQUIRE_SQL is set but DISPATCH_TEST_SQL is not — the SQL integration tests cannot run.");
+                    "DISPATCH_REQUIRE_SQL is set but DISPATCH_TEST_SQL is not - the SQL integration tests cannot run.");
             return;
         }
 

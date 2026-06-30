@@ -10,15 +10,15 @@ it, the dashboard shows a one-time first-run setup screen instead.
 
 Three ways to install, from most to least automated:
 
-### 1. Bundle (`windows/bundle/Bundle.wxs`) — recommended
+### 1. Bundle (`windows/bundle/Bundle.wxs`) - recommended
 
 A WiX **Burn bundle** (`DispatchSetup.exe`) that chains, in order:
 
-1. **SQL Server Express** — `sql-express/InstallSqlExpress.exe` runs `InstallSqlExpress.ps1`, which downloads
+1. **SQL Server Express** - `sql-express/InstallSqlExpress.exe` runs `InstallSqlExpress.ps1`, which downloads
    and silently installs SQL Server Express as the named instance **`DISPATCHSQL`**, creates the
    **`DispatchLog`** database, and grants `NT AUTHORITY\SYSTEM` sysadmin (the service runs as LocalSystem and
    connects over shared memory with Windows auth). Skipped if the instance already exists.
-2. **Dispatch MSI** (`Dispatch.wxs`) — installs the binaries + Windows service + firewall rules and writes
+2. **Dispatch MSI** (`Dispatch.wxs`) - installs the binaries + Windows service + firewall rules and writes
    `%ProgramData%\Dispatch\appsettings.json` pointing at the local instance (via the `WriteAppSettings`
    custom action). The admin password is set on first run in the dashboard.
 
@@ -73,6 +73,6 @@ builds the embedded UI and publishes); a prebuilt self-contained tarball is futu
 ## Validation status
 
 The Windows artifacts (PowerShell bootstrap, WiX MSI/bundle, the net472 launcher) and the Linux
-`--install-sql` path were authored on macOS and **must be validated on the target OS** — they cannot be
+`--install-sql` path were authored on macOS and **must be validated on the target OS** - they cannot be
 built or executed here. The Linux `install.sh` passes `bash -n` syntax checks. The SQL-Express bootstrap and
 bundle-chaining approach mirror the proven FluxDeploy installer.

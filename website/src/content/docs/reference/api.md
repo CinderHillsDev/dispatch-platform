@@ -1,6 +1,6 @@
 ---
 title: HTTP API reference
-description: Precise reference for the Dispatch HTTP ingestion API — endpoints, payloads, responses, and examples.
+description: Precise reference for the Dispatch HTTP ingestion API - endpoints, payloads, responses, and examples.
 sidebar:
   order: 1
 ---
@@ -59,13 +59,13 @@ Submit a message for delivery. Accepts either `multipart/form-data` or `applicat
 
 | Status | Meaning |
 | --- | --- |
-| `202 Accepted` | queued — body: `{ "id": "spl_...", "message": "Queued. Thank you." }` |
+| `202 Accepted` | queued - body: `{ "id": "spl_...", "message": "Queued. Thank you." }` |
 | `400 Bad Request` | validation error |
 | `401 Unauthorized` | missing or invalid API key |
 | `413 Payload Too Large` | message exceeds `api.max_message_bytes` |
 | `429 Too Many Requests` | rate limit exceeded |
 
-### Example — multipart with attachment
+### Example - multipart with attachment
 
 ```bash
 curl -X POST http://localhost:8025/api/v1/messages \
@@ -79,7 +79,7 @@ curl -X POST http://localhost:8025/api/v1/messages \
   -F attachment=@./report.pdf
 ```
 
-### Example — JSON
+### Example - JSON
 
 ```bash
 curl -X POST http://localhost:8025/api/v1/messages \

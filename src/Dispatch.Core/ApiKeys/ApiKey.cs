@@ -15,5 +15,5 @@ public sealed class ApiKey
     public int RateLimitPerMinute { get; init; }
 }
 
-/// <summary>Returned once on creation — the only time the plaintext key is available (spec §7.6).</summary>
+/// <summary>Returned once on creation - the only time the plaintext key is available (spec §7.6).</summary>
 public sealed record ApiKeyCreated(ApiKey Key, string PlaintextKey);

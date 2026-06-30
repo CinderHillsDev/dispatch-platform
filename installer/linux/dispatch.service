@@ -17,7 +17,7 @@ RestartSec=5
 # Bind the privileged SMTP ports (25, 587) as the unprivileged 'dispatch' user. Without this the
 # listener can't bind them and falls back to 2525. AmbientCapabilities grants the capability to the
 # process; CapabilityBoundingSet limits it to just this one (and it must be in the bounding set for the
-# ambient grant to take). NoNewPrivileges stays true — ambient caps are granted by systemd at exec and
+# ambient grant to take). NoNewPrivileges stays true - ambient caps are granted by systemd at exec and
 # are unaffected by it.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE

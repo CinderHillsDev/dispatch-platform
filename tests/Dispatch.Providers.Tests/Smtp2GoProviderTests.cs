@@ -52,7 +52,7 @@ public class Smtp2GoProviderTests
     [Fact]
     public async Task Http_200_with_error_in_body_is_permanent_failure()
     {
-        // SMTP2GO returns 200 even when it rejects the message — the error lives in data.error.
+        // SMTP2GO returns 200 even when it rejects the message - the error lives in data.error.
         var handler = new StubHttpHandler(HttpStatusCode.OK,
             "{\"data\":{\"error\":\"Sender not verified\",\"error_code\":\"E_ApiResponseCodes.NON_VALIDATING_IN_PAYLOAD\",\"field_validation_errors\":{\"field\":\"sender\"}}}");
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>

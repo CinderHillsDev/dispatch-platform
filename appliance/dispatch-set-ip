@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# dispatch-set-ip — set a static IP (or revert to DHCP) on the Dispatch appliance, the easy way.
+# dispatch-set-ip - set a static IP (or revert to DHCP) on the Dispatch appliance, the easy way.
 # Auto-detects the primary network interface, writes a netplan file, and applies it. Baked into the
 # appliance at /usr/local/sbin/dispatch-set-ip.
 #
@@ -82,11 +82,11 @@ YAML
 fi
 
 chmod 600 "$NETPLAN_FILE"
-echo "Wrote $NETPLAN_FILE — applying..."
+echo "Wrote $NETPLAN_FILE - applying..."
 netplan apply
 sleep 2
 
 ip_now="$(ip -o -4 addr show "$NIC" 2>/dev/null | awk '{print $4}' | head -1)"
 echo
-echo "Done. $NIC is now: ${ip_now:-(no IPv4 yet — check link/DHCP)}"
+echo "Done. $NIC is now: ${ip_now:-(no IPv4 yet - check link/DHCP)}"
 echo "Dashboard: https://${ip_now%%/*}:8420"

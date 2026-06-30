@@ -6,7 +6,7 @@ namespace Dispatch.Providers;
 
 /// <summary>
 /// Bird (formerly SparkPost/MessageBird) upstream relay via the Channels API (spec §8). Structured JSON send
-/// to a workspace's email channel — the channel defines the sender. Settings: AccessKey, WorkspaceId,
+/// to a workspace's email channel - the channel defines the sender. Settings: AccessKey, WorkspaceId,
 /// ChannelId. Auth via <c>Authorization: AccessKey &lt;token&gt;</c>. Returns 202 with { id }.
 /// Note: attachments are not forwarded (Bird takes hosted media URLs, not inline bytes).
 /// </summary>
@@ -52,6 +52,6 @@ public sealed class BirdProvider(RelayConfig config, HttpClient http) : IRelayPr
         try { if (JsonDocument.Parse(json).RootElement.TryGetProperty("id", out var m)) id = m.GetString(); }
         catch { /* best-effort */ }
 
-        return RelayResult.Success(id, $"HTTP {status} — Bird id: {id}");
+        return RelayResult.Success(id, $"HTTP {status} - Bird id: {id}");
     }
 }

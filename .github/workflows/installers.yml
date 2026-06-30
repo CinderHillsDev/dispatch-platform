@@ -55,7 +55,7 @@ jobs:
         run: dotnet publish src/Dispatch.Service -c Release -r win-x64 --self-contained true -o installer/windows/publish
 
       # Guard against a framework-dependent regression: the runner has .NET, so an install+smoke test would
-      # still pass with a broken FDD build — but a clean customer box would fail with "You must install .NET".
+      # still pass with a broken FDD build - but a clean customer box would fail with "You must install .NET".
       # Assert the .NET runtime is actually bundled, which a self-contained publish guarantees.
       - name: Assert publish is self-contained (bundles the .NET runtime)
         shell: pwsh
@@ -95,7 +95,7 @@ jobs:
 
       # CI installer builds are intentionally unsigned (signing happens only on tagged releases via
       # release.yml + Azure Artifact Signing). This artifact proves the WiX sources + launcher compile.
-      # DispatchSetup.exe is the single distributable file — it embeds Dispatch.msi and chains SQL Express.
+      # DispatchSetup.exe is the single distributable file - it embeds Dispatch.msi and chains SQL Express.
       # (The MSI is still built above to prove the WiX sources compile and to embed in the bundle.)
       - name: Upload installer artifact
         uses: actions/upload-artifact@v6
@@ -192,7 +192,7 @@ jobs:
           $hdr  = @{ 'X-Dispatch-Request' = '1' }
           $sess = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 
-          # First-run: set the admin password (allowed without auth when none exists) — this also signs us in.
+          # First-run: set the admin password (allowed without auth when none exists) - this also signs us in.
           Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Post -Uri "$base/api/auth/password" -Body '{"password":"Zq7-Marsh-Pylon-Vex!"}' | Out-Null
 
           # Tighten the SMTP allow-list to a range that excludes loopback (the PUT reloads the cache live).
@@ -243,7 +243,7 @@ jobs:
         run: ./installer/windows/functional-smoke.ps1
 
   # Builds the self-contained Linux tarball and uploads it as a workflow artifact (downloadable from
-  # the Actions run page). This needs NO tag and creates NO release — releases are only for permanent
+  # the Actions run page). This needs NO tag and creates NO release - releases are only for permanent
   # public download links. Grab "dispatch-linux-tarball" from the run to test install.sh --prebuilt.
   linux-tarball:
     runs-on: ubuntu-latest
@@ -281,7 +281,7 @@ jobs:
             [ -f "publish/linux/$f" ] || missing="$missing $f"
           done
           if [ -n "$missing" ]; then
-            echo "Publish is NOT self-contained (missing:$missing) — would require a separately-installed .NET runtime." >&2
+            echo "Publish is NOT self-contained (missing:$missing) - would require a separately-installed .NET runtime." >&2
             exit 1
           fi
           echo "OK: self-contained .NET runtime is bundled."
@@ -305,8 +305,8 @@ jobs:
           if-no-files-found: error
 
       # Real end-to-end check (mirrors the Windows full-install smoke): install the just-built self-contained
-      # tarball exactly as a user would — install.sh --prebuilt --install-sql, which installs SQL Server
-      # locally and provisions the DispatchLog DB — then confirm the systemd service starts and serves
+      # tarball exactly as a user would - install.sh --prebuilt --install-sql, which installs SQL Server
+      # locally and provisions the DispatchLog DB - then confirm the systemd service starts and serves
       # /health. Runs on installer-path pushes and manual dispatch so a service that won't start (or a broken
       # SQL bootstrap) fails CI instead of the customer.
       - name: Full install + smoke
@@ -357,9 +357,9 @@ jobs:
           if command -v shellcheck >/dev/null 2>&1; then
             shellcheck -S warning installer/linux/install.sh || true
           else
-            echo "shellcheck not installed — syntax check only"
+            echo "shellcheck not installed - syntax check only"
           fi
 
-      # The end-to-end install + "service actually runs" smoke lives in the linux-tarball job below — it
+      # The end-to-end install + "service actually runs" smoke lives in the linux-tarball job below - it
       # installs the real self-contained tarball (install.sh --prebuilt) against a SQL container and checks
       # /health, mirroring the Windows full-install smoke. This job stays a fast lint of install.sh.

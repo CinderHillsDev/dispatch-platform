@@ -4,7 +4,7 @@
 // Why a post-build pass: Starlight applies `base` to all the links IT controls (sidebar, nav, asset
 // URLs), but root-relative links written inside Markdown bodies (e.g. `/start/quickstart/`) are left
 // untouched, and Astro's `markdown.rehypePlugins` don't reliably reach Starlight's content pipeline.
-// Rewriting the final HTML is bulletproof and keeps the Markdown source base-less — so moving to a
+// Rewriting the final HTML is bulletproof and keeps the Markdown source base-less - so moving to a
 // custom domain (CNAME) is a config-only change: set `base: '/'` and these rewrites become no-ops.
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';

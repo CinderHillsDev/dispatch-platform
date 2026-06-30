@@ -1,5 +1,5 @@
 ---
-// Custom landing page (the site's first/home page). Standalone — does not use the Starlight layout —
+// Custom landing page (the site's first/home page). Standalone - does not use the Starlight layout -
 // so it keeps the existing Tailwind design. All links are base-relative via import.meta.env.BASE_URL,
 // so moving to a custom domain (base '/') needs no edits here.
 import dashboard from '../assets/dashboard.png';
@@ -11,20 +11,20 @@ const gh = 'https://github.com/chrismuench/Dispatch-SMTP-Relay';
 const features = [
   {
     title: 'A dozen providers',
-    body: 'Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure — or any SMTP smart host. CC/BCC, attachments, and custom headers everywhere.',
+    body: 'Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure - or any SMTP smart host. CC/BCC, attachments, and custom headers everywhere.',
   },
   {
     title: 'Two ways in',
     body: 'Accept mail over SMTP (25 / 587 / 2525, with STARTTLS) or a Mailgun-compatible HTTP/HTTPS API with per-key tokens.',
   },
   {
-    title: '📥 Local Inbox — for developers',
-    body: 'Test what your app actually sends without delivering anything. Point it at Dispatch, set the relay to Local, and inspect every message — subject, headers, To/Cc/Bcc, rendered HTML & text, and attachments — right in the dashboard. A built-in mail trap, no third-party service.',
+    title: '📥 Local Inbox - for developers',
+    body: 'Test what your app actually sends without delivering anything. Point it at Dispatch, set the relay to Local, and inspect every message - subject, headers, To/Cc/Bcc, rendered HTML & text, and attachments - right in the dashboard. A built-in mail trap, no third-party service.',
     accent: true,
   },
   {
     title: 'Durable spool',
-    body: 'Instant 250 OK to a local queue — mail keeps flowing even if the database is down. Auto-retry with back-off; retry failures from the UI.',
+    body: 'Instant 250 OK to a local queue - mail keeps flowing even if the database is down. Auto-retry with back-off; retry failures from the UI.',
   },
   {
     title: 'Smart routing',
@@ -53,7 +53,7 @@ const features = [
     <title>Dispatch SMTP Relay</title>
     <meta
       name="description"
-      content="Self-hosted .NET SMTP relay — forward mail from your apps to a dozen providers, capture mail locally for testing, with a durable spool and a live dashboard."
+      content="Self-hosted .NET SMTP relay - forward mail from your apps to a dozen providers, capture mail locally for testing, with a durable spool and a live dashboard."
     />
     <link rel="icon" href={docs('favicon.svg')} type="image/svg+xml" />
     <script src="https://cdn.tailwindcss.com" is:inline></script>
@@ -67,7 +67,7 @@ const features = [
         </h1>
         <p class="mt-5 mx-auto max-w-2xl text-lg leading-relaxed text-gray-400">
           A self-hosted SMTP relay for your apps and devices. Point everything at Dispatch and it
-          forwards mail to any provider — with a durable queue and a live dashboard.
+          forwards mail to any provider - with a durable queue and a live dashboard.
         </p>
         <div class="mt-8 flex flex-wrap justify-center gap-3">
           <a

@@ -19,7 +19,7 @@ docker compose up -d --build
 ```
 
 The dashboard comes up at **https://localhost:8420** with a self-signed certificate (accept the browser
-warning). The default login password is in `docker-compose.yml` — **change it after your first login**.
+warning). The default login password is in `docker-compose.yml` - **change it after your first login**.
 
 ## Run from GHCR
 
@@ -35,7 +35,7 @@ docker run -d --name dispatch \
 ```
 
 Only two settings are passed in: the **SQL connection string** and the **first-run admin password**.
-Everything else is seeded into the SQL config table and managed from the dashboard — see
+Everything else is seeded into the SQL config table and managed from the dashboard - see
 [Configuration](/configuration/overview/). The `DispatchLog` schema is created and migrated
 automatically on first start.
 
@@ -51,11 +51,11 @@ automatically on first start.
 
 | Volume | Purpose |
 |---|---|
-| `dispatch-spool` (`/app/.dispatch-spool`) | Durable message queue — persists in-flight and captured mail across restarts |
+| `dispatch-spool` (`/app/.dispatch-spool`) | Durable message queue - persists in-flight and captured mail across restarts |
 
 ## Allow-lists
 
 The default source-IP allow-lists are container-aware: the dashboard and API allow all connections and
 are gated by the password and API keys, while the SMTP listener accepts only loopback and private
-(RFC1918) ranges so it isn't an open relay. Tighten these in **Settings** — see
+(RFC1918) ranges so it isn't an open relay. Tighten these in **Settings** - see
 [Security](/security/).

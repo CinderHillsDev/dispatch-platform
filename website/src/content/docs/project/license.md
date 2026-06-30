@@ -1,12 +1,12 @@
 ---
 title: License
-description: Dispatch SMTP Relay is licensed under AGPL-3.0 with the Commons Clause — what you can and cannot do.
+description: Dispatch SMTP Relay is licensed under AGPL-3.0 with the Commons Clause - what you can and cannot do.
 sidebar:
   order: 2
 ---
 
 Dispatch is licensed under **AGPL-3.0 with the Commons Clause**. The short version: you can freely use,
-self-host, and modify Dispatch — you just can't sell it or sell a hosted version of it. This page
+self-host, and modify Dispatch - you just can't sell it or sell a hosted version of it. This page
 explains the common scenarios in plain language; it is **not legal advice**, and the
 [LICENSE](https://github.com/chrismuench/Dispatch-SMTP-Relay/blob/main/LICENSE) text governs.
 
@@ -17,7 +17,7 @@ explains the common scenarios in plain language; it is **not legal advice**, and
 - **Self-host it**, on internal or public servers.
 - **Modify the source freely.** Note that under the AGPL, if you run a modified version as a network
   service for others, you must offer those users the corresponding source of your modifications.
-- **Contribute changes back** — contributions are accepted under the same licence.
+- **Contribute changes back** - contributions are accepted under the same licence.
 
 ## What you cannot do
 

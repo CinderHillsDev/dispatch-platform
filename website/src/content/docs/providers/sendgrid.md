@@ -9,7 +9,7 @@ SendGrid is an HTTP-based email provider. Add it from the dashboard's **Relays**
 
 ## How it works
 
-Dispatch sends through SendGrid's Web API v3 using the official SendGrid SDK. All standard message capabilities are supported — see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
+Dispatch sends through SendGrid's Web API v3 using the official SendGrid SDK. All standard message capabilities are supported - see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
 
 ## Settings
 

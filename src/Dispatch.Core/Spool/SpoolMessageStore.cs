@@ -16,7 +16,7 @@ namespace Dispatch.Core.Spool;
 /// <summary>
 /// The ONLY work performed between SMTP DATA completion and <c>250 OK</c> (spec §6.4, §19.3):
 /// write raw bytes to spool/incoming/, write a small .meta sidecar, ring the doorbell.
-/// No database, no network — the only failure mode that blocks 250 OK is a full disk.
+/// No database, no network - the only failure mode that blocks 250 OK is a full disk.
 /// </summary>
 public sealed class SpoolMessageStore : MessageStore
 {
@@ -54,7 +54,7 @@ public sealed class SpoolMessageStore : MessageStore
         // loop detection, and so downstream raw-MIME providers forward a conformant message.
         var receivedHeader = BuildReceivedHeader(context, id, to.FirstOrDefault());
 
-        // Disk write — the hot path. Stream the message straight to the spool file segment-by-segment so we
+        // Disk write - the hot path. Stream the message straight to the spool file segment-by-segment so we
         // never hold the whole body as an extra in-memory byte[] (bounded only by the SMTP SIZE ceiling).
         long size;
         await using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
@@ -65,7 +65,7 @@ public sealed class SpoolMessageStore : MessageStore
             size = fs.Length;
         }
 
-        // Minimal header scan for X-Dispatch-Tag and a From fallback — not a full MIME parse.
+        // Minimal header scan for X-Dispatch-Tag and a From fallback - not a full MIME parse.
         string[]? tags = null;
         string? xMailer = null;
         var attachmentCount = 0;
@@ -95,12 +95,12 @@ public sealed class SpoolMessageStore : MessageStore
         }
 
         // Mail-loop defence (RFC 5321 §6.3): too many Received headers means the message is bouncing between
-        // relays — drop it permanently rather than spool and amplify the loop.
+        // relays - drop it permanently rather than spool and amplify the loop.
         if (receivedCount > MaxReceivedHeaders)
         {
-            _log.LogWarning("Rejecting {SpoolId} from {From}: {Count} Received headers — mail loop", id, from, receivedCount);
+            _log.LogWarning("Rejecting {SpoolId} from {From}: {Count} Received headers - mail loop", id, from, receivedCount);
             try { File.Delete(path); } catch { /* best-effort cleanup */ }
-            return new SmtpResponse(SmtpReplyCode.TransactionFailed, "Too many Received headers — mail loop detected");
+            return new SmtpResponse(SmtpReplyCode.TransactionFailed, "Too many Received headers - mail loop detected");
         }
 
         var meta = new SpoolMeta

@@ -1,12 +1,12 @@
 -- Performance tuning for relay_log (spec §19). Two access paths were unindexed and scanned the table:
 --
---  1. Lookup by spool_id — used by the message-detail attempt history (GetByIdAsync), the by-spool
+--  1. Lookup by spool_id - used by the message-detail attempt history (GetByIdAsync), the by-spool
 --     lookup (GetBySpoolIdAsync, also the Local Inbox "Show delivery log"), and the public by-spool
 --     status endpoint. Both ascending (history) and descending (latest row) orderings are needed, so the
 --     composite (spool_id, logged_at, id) serves either direction with a seek instead of a scan.
 --
 --  2. Per-API-key message list (RecentByApiKeyAsync / GET /api/v1/messages) filters api_key_id and orders
---     by logged_at DESC. A filtered index (api_key_id IS NOT NULL) keeps it tiny — the vast majority of
+--     by logged_at DESC. A filtered index (api_key_id IS NOT NULL) keeps it tiny - the vast majority of
 --     rows are SMTP ingest with a NULL api_key_id and are excluded from the index entirely.
 --
 -- Other access paths are already covered: the unfiltered/date-range list orders by (logged_at DESC, id

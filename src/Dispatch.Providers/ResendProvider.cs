@@ -50,6 +50,6 @@ public sealed class ResendProvider(RelayConfig config, HttpClient http) : IRelay
         try { if (JsonDocument.Parse(json).RootElement.TryGetProperty("id", out var m)) id = m.GetString(); }
         catch { /* best-effort */ }
 
-        return RelayResult.Success(id, $"HTTP {status} — Resend id: {id}");
+        return RelayResult.Success(id, $"HTTP {status} - Resend id: {id}");
     }
 }

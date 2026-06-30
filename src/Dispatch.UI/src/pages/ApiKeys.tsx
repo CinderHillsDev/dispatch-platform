@@ -65,7 +65,7 @@ export function ApiKeys() {
                 </td>
               </tr>
             ))}
-            {visible.length === 0 && <tr><td colSpan={5} className="center">No API keys yet — click “Create key”.</td></tr>}
+            {visible.length === 0 && <tr><td colSpan={5} className="center">No API keys yet - click “Create key”.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -118,7 +118,7 @@ function CreatedKeyModal({ created, onClose }: { created: ApiKeyCreated; onClose
   return (
     <Modal title="API key created" onClose={onClose}>
       <div style={{ display: "grid", gap: 12 }}>
-        <p style={{ margin: 0 }}><span className="badge error">Copy it now — it won't be shown again.</span></p>
+        <p style={{ margin: 0 }}><span className="badge error">Copy it now - it won't be shown again.</span></p>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <code style={{ flex: 1, padding: "8px 10px", background: "rgba(0,0,0,0.25)", borderRadius: 6, wordBreak: "break-all" }}>{created.key}</code>
           <button onClick={copy}>{copied ? "Copied" : "Copy"}</button>

@@ -1,5 +1,5 @@
 ==============================================================================
- Dispatch SMTP Relay — Hyper-V appliance
+ Dispatch SMTP Relay - Hyper-V appliance
 ==============================================================================
 
 This zip contains:
@@ -33,7 +33,7 @@ This zip contains:
   3. If you didn't choose to start it during the import:
        Start-VM -Name "Dispatch SMTP Relay"
 
-  4. Find the VM's IP (Hyper-V Manager, or `ip a` on the VM console — the VM
+  4. Find the VM's IP (Hyper-V Manager, or `ip a` on the VM console - the VM
      uses DHCP), then browse to:
        https://<vm-ip>:8420
      It uses a self-signed certificate, so accept the browser warning, and
@@ -64,6 +64,6 @@ This zip contains:
  Notes
 ------------------------------------------------------------------------------
   * First boot configures SQL Server Express + Dispatch; allow a few minutes.
-  * The appliance is self-contained — no separate .NET runtime needed.
+  * The appliance is self-contained - no separate .NET runtime needed.
   * Full docs: https://chrismuench.github.io/Dispatch-SMTP-Relay/
 ==============================================================================

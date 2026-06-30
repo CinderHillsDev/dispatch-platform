@@ -70,7 +70,7 @@ select, input, button {
 }
 button { cursor: pointer; }
 button:hover { border-color: var(--blue); }
-/* Hide the up/down spinners on number inputs — they read as clutter and most values are typed. */
+/* Hide the up/down spinners on number inputs - they read as clutter and most values are typed. */
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type=number] { -moz-appearance: textfield; appearance: textfield; }

@@ -59,7 +59,7 @@ function Layout() {
   );
 }
 
-// Shown (in place of the page, inside the layout) when a route component throws — far friendlier than
+// Shown (in place of the page, inside the layout) when a route component throws - far friendlier than
 // React Router's default error screen.
 function RouteError() {
   const err = useRouteError();

@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-# Dispatch SMTP Relay — SQL Server Express bootstrap (adapted from the FluxDeploy installer pattern).
+# Dispatch SMTP Relay - SQL Server Express bootstrap (adapted from the FluxDeploy installer pattern).
 # Downloads + silently installs SQL Server Express as a named instance, then creates the DispatchLog
 # database and grants the service account (LocalSystem) sysadmin so the service can connect with
 # Windows auth. Idempotent: skips install if the instance already exists. Invoked by the WiX bundle
@@ -43,7 +43,7 @@ if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
     $setupExe = Get-ChildItem $extractDir -Filter 'SETUP.EXE' -Recurse -EA SilentlyContinue | Select-Object -First 1
     if (-not $setupExe) { Log 'ERROR: SETUP.EXE not found'; exit 1 }
 
-    # SQL 2025 changed the extraction layout — make sure MediaInfo.xml is two levels above SETUP.EXE.
+    # SQL 2025 changed the extraction layout - make sure MediaInfo.xml is two levels above SETUP.EXE.
     $expectedMediaInfo = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($setupExe.DirectoryName, '..', '..', 'MediaInfo.xml'))
     if (-not (Test-Path $expectedMediaInfo)) {
         $foundMediaInfo = Get-ChildItem $extractDir -Filter 'MediaInfo.xml' -Recurse -EA SilentlyContinue | Select-Object -First 1
@@ -56,7 +56,7 @@ if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
 
     Log 'Installing SQL Server Express...'
     # Grant BUILTIN\ADMINISTRATORS and NT AUTHORITY\SYSTEM sysadmin so the Dispatch service (LocalSystem)
-    # can connect with Windows auth. TCP disabled — the service connects over shared memory locally.
+    # can connect with Windows auth. TCP disabled - the service connects over shared memory locally.
     $installArgs = '/Q /IACCEPTSQLSERVERLICENSETERMS /ACTION=Install /FEATURES=SQLENGINE ' +
         "/INSTANCENAME=$instance " +
         '/SQLSVCACCOUNT="NT AUTHORITY\SYSTEM" ' +

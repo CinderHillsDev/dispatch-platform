@@ -9,7 +9,7 @@ Maileroo is an HTTP-based email provider. Add it from the dashboard's **Relays**
 
 ## How it works
 
-Dispatch sends through Maileroo's REST API (JSON). All standard message capabilities are supported — see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
+Dispatch sends through Maileroo's REST API (JSON). All standard message capabilities are supported - see [message features](/sending/message-features/) for the full list (multiple To recipients, CC, BCC, text + HTML bodies, custom headers, and attachments).
 
 ## Settings
 
@@ -19,6 +19,6 @@ Dispatch sends through Maileroo's REST API (JSON). All standard message capabili
 
 ## Notes
 
-- Find your **Sending Key** in the Maileroo dashboard — it is Maileroo's name for the API key.
+- Find your **Sending Key** in the Maileroo dashboard - it is Maileroo's name for the API key.
 - Verify your sending domain in Maileroo before relaying production mail.
 - After saving, send a **test email** from the dashboard and watch the relay log live to confirm delivery.

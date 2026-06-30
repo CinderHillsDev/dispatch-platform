@@ -46,8 +46,8 @@ export function Dashboard() {
           }}
         >
           {s.intake === "Suspended"
-            ? "⚠ Spool disk critically low — SMTP intake is SUSPENDED. Inbound mail is being rejected (senders will retry). Free disk space to resume."
-            : "⚠ Spool disk low — SMTP intake is THROTTLED. Inbound mail is being delayed to slow the arrival rate. Free disk space to resume normal operation."}
+            ? "⚠ Spool disk critically low - SMTP intake is SUSPENDED. Inbound mail is being rejected (senders will retry). Free disk space to resume."
+            : "⚠ Spool disk low - SMTP intake is THROTTLED. Inbound mail is being delayed to slow the arrival rate. Free disk space to resume normal operation."}
         </div>
       )}
 
@@ -60,7 +60,7 @@ export function Dashboard() {
       </div>
 
       <div className="panel">
-        <h2>Throughput — delivered per minute (last 60)</h2>
+        <h2>Throughput - delivered per minute (last 60)</h2>
         <div style={{ height: 120 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={spark}>
@@ -123,7 +123,7 @@ function Card({ label, value, tone }: { label: string; value?: number; tone?: "g
   return (
     <div className="card">
       <div className="label">{label}</div>
-      <div className={`value ${tone ?? ""}`}>{value ?? "—"}</div>
+      <div className={`value ${tone ?? ""}`}>{value ?? "-"}</div>
     </div>
   );
 }

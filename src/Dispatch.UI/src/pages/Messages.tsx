@@ -11,7 +11,7 @@ function badgeClass(status: string) {
   return "badge error";
 }
 
-// Truncating cell style (relies on the global `white-space: nowrap` on td) — keeps wide text columns
+// Truncating cell style (relies on the global `white-space: nowrap` on td) - keeps wide text columns
 // bounded so the table fits the page without a horizontal scrollbar; full value shown via title=.
 const cap = (w: number): React.CSSProperties => ({ maxWidth: w, overflow: "hidden", textOverflow: "ellipsis" });
 
@@ -246,10 +246,10 @@ export function Messages() {
                   <td style={cap(200)} title={r.fromAddress}>{r.fromAddress}</td>
                   <td style={cap(190)}><Recipients to={r.toAddresses} domain={r.toDomain} /></td>
                   <td style={cap(200)} title={r.subject ?? undefined}>{r.subject ?? <span className="muted">(none)</span>}</td>
-                  <td style={cap(140)} title={r.relayName ?? undefined}>{r.relayName ?? "—"}</td>
-                  <td>{r.provider ?? "—"}</td>
+                  <td style={cap(140)} title={r.relayName ?? undefined}>{r.relayName ?? "-"}</td>
+                  <td>{r.provider ?? "-"}</td>
                   <td>{r.ingestSource}</td>
-                  <td>{r.durationMs != null ? `${r.durationMs} ms` : "—"}</td>
+                  <td>{r.durationMs != null ? `${r.durationMs} ms` : "-"}</td>
                 </tr>
               ))}
             </tbody>
@@ -357,7 +357,7 @@ function Recipients({ to, domain }: { to: string[]; domain: string }) {
   );
 }
 
-const Dash = () => <span className="muted">—</span>;
+const Dash = () => <span className="muted">-</span>;
 
 function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
   return (

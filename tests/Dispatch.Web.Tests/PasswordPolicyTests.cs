@@ -17,8 +17,8 @@ public class PasswordPolicyTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData("Ab1cdef")]        // 7 chars — too short
-    [InlineData("Abcdef12345")]    // 11 chars — just under the 12-char minimum
+    [InlineData("Ab1cdef")]        // 7 chars - too short
+    [InlineData("Abcdef12345")]    // 11 chars - just under the 12-char minimum
     public void Rejects_short_passwords(string? password)
     {
         var error = AuthEndpoints.ValidatePassword(password);

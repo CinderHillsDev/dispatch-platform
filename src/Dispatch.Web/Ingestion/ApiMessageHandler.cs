@@ -39,7 +39,7 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
         }
         catch (Exception ex) when (ex is FormatException or ParseException or System.Text.Json.JsonException or ArgumentException)
         {
-            // ArgumentException covers e.g. an invalid custom-header name ("h:" field) from MimeKit — surface
+            // ArgumentException covers e.g. an invalid custom-header name ("h:" field) from MimeKit - surface
             // it as a 400 rather than letting it become a 500.
             return Results.BadRequest(new { error = $"Invalid request: {ex.Message}" });
         }
@@ -181,7 +181,7 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
         return msg;
     }
 
-    // Trace/routing headers the relay owns or that would forge provenance / leak blind recipients — callers
+    // Trace/routing headers the relay owns or that would forge provenance / leak blind recipients - callers
     // must not inject them through the custom-header channel.
     private static readonly HashSet<string> BlockedHeaders = new(StringComparer.OrdinalIgnoreCase)
     {

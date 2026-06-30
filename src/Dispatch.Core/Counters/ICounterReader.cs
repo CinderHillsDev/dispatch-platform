@@ -1,6 +1,6 @@
 namespace Dispatch.Core.Counters;
 
-/// <summary>Today's aggregate counters for the dashboard (spec §9.2 — read from <c>relay_counters</c>).</summary>
+/// <summary>Today's aggregate counters for the dashboard (spec §9.2 - read from <c>relay_counters</c>).</summary>
 public sealed record CounterTotals(long Received, long Delivered, long Failed, long Retried, long Denied);
 
 /// <summary>Today's aggregate counters for a single relay.</summary>

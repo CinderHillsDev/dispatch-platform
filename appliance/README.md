@@ -1,6 +1,6 @@
-# Dispatch SMTP Relay — virtual appliance
+# Dispatch SMTP Relay - virtual appliance
 
-A ready-to-run **Ubuntu 24.04 LTS** virtual machine with Dispatch and SQL Server Express pre-installed. Import it, power it on, and the dashboard comes up — no .NET, SQL, or command line needed.
+A ready-to-run **Ubuntu 24.04 LTS** virtual machine with Dispatch and SQL Server Express pre-installed. Import it, power it on, and the dashboard comes up - no .NET, SQL, or command line needed.
 
 Each release ships the same image in three formats (plus one-command import helpers):
 
@@ -10,15 +10,15 @@ Each release ships the same image in three formats (plus one-command import help
 | **VMware** (vSphere/ESXi/Workstation/Fusion) | `dispatch-appliance-<ver>-x64.ova` | native OVF import |
 | **KVM/libvirt & Proxmox** | `dispatch-appliance-<ver>-x64.qcow2` | `import-libvirt.sh` / `import-proxmox.sh` |
 
-All are **Gen2/UEFI**, ~4 GB RAM recommended (SQL Server needs ~2 GB). They boot on DHCP, but a relay your apps point at should have a **static IP** — set one after first boot (see [Static IP](#static-ip)).
+All are **Gen2/UEFI**, ~4 GB RAM recommended (SQL Server needs ~2 GB). They boot on DHCP, but a relay your apps point at should have a **static IP** - set one after first boot (see [Static IP](#static-ip)).
 
 ## Hyper-V
 
-**Guided menu** (elevated **Administrator**, or a member of the **Hyper-V Administrators** group — the script checks for one), after unzipping the `.vhdx`:
+**Guided menu** (elevated **Administrator**, or a member of the **Hyper-V Administrators** group - the script checks for one), after unzipping the `.vhdx`:
 ```powershell
 .\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx
 ```
-Run with no networking flags, it walks you through it: it lists the host's **virtual switches** to pick from, your **storage volumes** (with free space) to choose where the VM lives, an optional **VLAN ID**, and memory/CPU — then confirms before creating.
+Run with no networking flags, it walks you through it: it lists the host's **virtual switches** to pick from, your **storage volumes** (with free space) to choose where the VM lives, an optional **VLAN ID**, and memory/CPU - then confirms before creating.
 
 **Unattended** (pass `-SwitchName` to skip the menu):
 ```powershell
@@ -30,7 +30,7 @@ Either way it creates a Gen2 VM, sets the **Microsoft UEFI CA** Secure Boot temp
 
 ## VMware (vSphere / ESXi / Workstation / Fusion)
 
-Deploy the OVA: vSphere Client → **Deploy OVF Template** → select `dispatch-appliance-<ver>-x64.ova` (or `File → Open` in Workstation/Fusion). The descriptor sets EFI firmware and a 64-bit Ubuntu guest; accept the defaults. (You can switch the SCSI/NIC to PVSCSI/VMXNET3 after import for performance — the image has the in-kernel drivers.)
+Deploy the OVA: vSphere Client → **Deploy OVF Template** → select `dispatch-appliance-<ver>-x64.ova` (or `File → Open` in Workstation/Fusion). The descriptor sets EFI firmware and a 64-bit Ubuntu guest; accept the defaults. (You can switch the SCSI/NIC to PVSCSI/VMXNET3 after import for performance - the image has the in-kernel drivers.)
 
 ## KVM / libvirt
 
@@ -57,25 +57,25 @@ Then browse to the dashboard:
 https://<vm-ip>:8420
 ```
 
-(The VM gets its IP via DHCP — see it in Hyper-V Manager or with `ip a` on the console.) It's a self-signed certificate, so accept the browser warning. **Set the admin password on the first login.**
+(The VM gets its IP via DHCP - see it in Hyper-V Manager or with `ip a` on the console.) It's a self-signed certificate, so accept the browser warning. **Set the admin password on the first login.**
 
-Default ports: SMTP **25** and **587**, ingestion API **8025**, dashboard **8420** — change them in the dashboard. (The appliance binds the standard SMTP ports out of the box; it falls back to **2525** only if 25 is somehow already in use.)
+Default ports: SMTP **25** and **587**, ingestion API **8025**, dashboard **8420** - change them in the dashboard. (The appliance binds the standard SMTP ports out of the box; it falls back to **2525** only if 25 is somehow already in use.)
 
 ## Logins (there are two)
 
 | | Username | Password | Change it |
 |---|---|---|---|
 | **OS** (console / SSH) | `ubuntu` | `dispatch` | forced on first login; later `passwd` |
-| **Dashboard** (web UI) | — (single admin) | set on first visit to `:8420` | **System → About → Change password** |
+| **Dashboard** (web UI) | - (single admin) | set on first visit to `:8420` | **System → About → Change password** |
 
 SSH is enabled with password auth (`ssh ubuntu@<vm-ip>`). The dashboard password is stored only as a bcrypt hash.
 
 ## Static IP
 
-It boots on DHCP, but a relay your apps point at should have a fixed address — set one early. A baked-in helper, **`dispatch-set-ip`**, pins an address for you — it auto-detects the NIC, writes the netplan file (mode 600), applies it, and prints the new dashboard URL:
+It boots on DHCP, but a relay your apps point at should have a fixed address - set one early. A baked-in helper, **`dispatch-set-ip`**, pins an address for you - it auto-detects the NIC, writes the netplan file (mode 600), applies it, and prints the new dashboard URL:
 
 ```bash
-# interactive — just answer the prompts:
+# interactive - just answer the prompts:
 sudo dispatch-set-ip
 
 # or in one line (DNS defaults to 1.1.1.1,8.8.8.8):
@@ -91,12 +91,12 @@ Pass `-i <nic>` to target a specific interface (see `ip a`); run `dispatch-set-i
 
 - Service: `systemctl status dispatch` · logs: `journalctl -u dispatch -f` and `/var/log/dispatch/`.
 - SQL: `systemctl status mssql-server`.
-- Config (connection string only): `/var/lib/dispatch/appsettings.json` — everything else is in the dashboard.
+- Config (connection string only): `/var/lib/dispatch/appsettings.json` - everything else is in the dashboard.
 
 ## Security notes
 
-- Every appliance generates its **own** SQL SA password, at-rest encryption key (`.dispatch-key`), dashboard TLS cert, SSH host keys, and machine-id on first boot — nothing secret is shared across downloads.
-- The **OS login** (`ubuntu`/`dispatch`) is a known default but **must be changed on first login** — do so immediately, especially before exposing the VM beyond a trusted LAN.
+- Every appliance generates its **own** SQL SA password, at-rest encryption key (`.dispatch-key`), dashboard TLS cert, SSH host keys, and machine-id on first boot - nothing secret is shared across downloads.
+- The **OS login** (`ubuntu`/`dispatch`) is a known default but **must be changed on first login** - do so immediately, especially before exposing the VM beyond a trusted LAN.
 - The dashboard admin password is set by **you** on first login and is stored only as a bcrypt hash in the database.
 - The appliance bundles **SQL Server Express**, which is free; its use is governed by Microsoft's SQL Server Express license terms.
 

@@ -5,8 +5,8 @@ using MailKit.Security;
 
 namespace Dispatch.Providers.Tests;
 
-// SmtpProvider needs a live SMTP server to exercise SendAsync, but its two pure decision functions —
-// TLS-mode parsing and transient/permanent error classification — are unit-testable and security/retry relevant.
+// SmtpProvider needs a live SMTP server to exercise SendAsync, but its two pure decision functions -
+// TLS-mode parsing and transient/permanent error classification - are unit-testable and security/retry relevant.
 public class SmtpProviderTests
 {
     [Theory]

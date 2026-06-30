@@ -8,7 +8,7 @@ namespace Dispatch.Web.Auth;
 /// Enforces the dashboard's access controls on the web port (spec §17). In order: a <c>webui.allowed_cidrs</c>
 /// source-IP allow-list (403 outside it), then mandatory auth on <c>/api/*</c> (except the auth endpoints) and
 /// the SignalR hubs under <c>/hub/*</c>; static SPA assets and <c>/health</c> stay open so the login / first-run
-/// screen can load. The ingestion API (separate port) is unaffected — it uses API keys — but the dashboard hubs
+/// screen can load. The ingestion API (separate port) is unaffected - it uses API keys - but the dashboard hubs
 /// are never exposed there: a <c>/hub/*</c> request on any non-web port is 404'd so the live relay-event stream
 /// (which carries sender/recipient/subject metadata) can't be harvested anonymously. All settings are read live
 /// from the <see cref="ConfigCache"/> (§12.5), so allow-list edits take effect without a restart.
@@ -50,7 +50,7 @@ public sealed class WebAuthMiddleware(ConfigCache config) : IMiddleware
 
         // CSRF defence-in-depth (spec §17): cookie auth is primarily protected by SameSite=Strict, but for
         // state-changing dashboard calls we also require the SPA's custom header. A cross-site page can't set
-        // a custom header without a CORS preflight, which this app never grants — so a forged cross-origin
+        // a custom header without a CORS preflight, which this app never grants - so a forged cross-origin
         // POST/PUT/DELETE is rejected even if SameSite is relaxed/unsupported. The SPA always sends it (lib/api.ts).
         if (isApi && IsMutating(ctx.Request.Method) && !ctx.Request.Headers.ContainsKey(CsrfHeader))
         {

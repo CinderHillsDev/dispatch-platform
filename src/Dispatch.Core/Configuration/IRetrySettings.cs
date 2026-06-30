@@ -22,7 +22,7 @@ public sealed record RetryPolicy(int MaxRetries, double[] DelaysSeconds)
     }
 }
 
-/// <summary>Default that returns the static <see cref="RetryOptions"/> — used in tests and when no config store is wired.</summary>
+/// <summary>Default that returns the static <see cref="RetryOptions"/> - used in tests and when no config store is wired.</summary>
 public sealed class OptionsRetrySettings(RetryOptions options) : IRetrySettings
 {
     private readonly RetryPolicy _policy = new(options.MaxRetries, options.EffectiveDelaysSeconds);

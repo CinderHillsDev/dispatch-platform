@@ -7,7 +7,7 @@ sidebar:
 
 Download `dispatch-{version}-linux.tar.gz` from the
 [latest release](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest). It's one
-universal, self-contained bundle (x64 + arm64, no .NET SDK required) — `install.sh` auto-detects your
+universal, self-contained bundle (x64 + arm64, no .NET SDK required) - `install.sh` auto-detects your
 CPU architecture.
 
 ## Install

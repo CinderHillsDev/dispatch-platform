@@ -4,7 +4,7 @@ using MimeKit;
 
 namespace Dispatch.Providers.Tests;
 
-// Direct unit tests for the shared provider helpers — SplitRecipients is the single point that keeps blind
+// Direct unit tests for the shared provider helpers - SplitRecipients is the single point that keeps blind
 // (Bcc) recipients out of the visible To/Cc across every structured provider, so its branches are tested here.
 public class ProviderHttpTests
 {

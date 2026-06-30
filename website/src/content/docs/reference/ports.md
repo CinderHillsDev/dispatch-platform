@@ -15,4 +15,4 @@ sidebar:
 
 All listeners bind `0.0.0.0` (all interfaces) and are filtered by their
 [CIDR allow-lists](/security/). The `/health` and `/metrics` endpoints are served on the dashboard
-port only — see [Health & metrics](/operations/health-metrics/).
+port only - see [Health & metrics](/operations/health-metrics/).

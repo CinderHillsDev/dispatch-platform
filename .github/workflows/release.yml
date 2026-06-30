@@ -14,7 +14,7 @@ name: Release
 #   Variables: AZURE_SIGNING_ENDPOINT (e.g. https://eus.codesigning.azure.net/),
 #              AZURE_SIGNING_ACCOUNT, AZURE_CERT_PROFILE
 #   Secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   (federated/OIDC service principal)
-# Until AZURE_SIGNING_ACCOUNT is set, the release still publishes — just unsigned.
+# Until AZURE_SIGNING_ACCOUNT is set, the release still publishes - just unsigned.
 
 on:
   push:
@@ -185,7 +185,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: windows
-          # DispatchSetup.exe is the single distributable — it embeds the (signed) MSI and chains SQL Express.
+          # DispatchSetup.exe is the single distributable - it embeds the (signed) MSI and chains SQL Express.
           path: installer/windows/DispatchSetup.exe
           if-no-files-found: error
 
@@ -238,9 +238,9 @@ jobs:
           chmod +x "staging/${stage}/install.sh" \
             "staging/${stage}/bin-x64/Dispatch.Service" "staging/${stage}/bin-arm64/Dispatch.Service"
           cat > "staging/${stage}/README.txt" <<EOF
-          Dispatch SMTP Relay ${ver} — Linux (universal: x64 + arm64, self-contained; no .NET SDK required).
+          Dispatch SMTP Relay ${ver} - Linux (universal: x64 + arm64, self-contained; no .NET SDK required).
 
-          install.sh auto-detects your CPU arch (uses bin-x64 or bin-arm64) — no flags needed:
+          install.sh auto-detects your CPU arch (uses bin-x64 or bin-arm64) - no flags needed:
             sudo ./install.sh --install-sql --sa-password '<StrongSaPassw0rd!>' --admin-password '<DashboardPassword!>'
 
           On arm64, --install-sql runs Azure SQL Edge in a container (SQL Server is amd64-only).
@@ -275,7 +275,7 @@ jobs:
           if [ -n "$SIGNING_KEY" ]; then
             keyfile="$(mktemp)"; printf '%s' "$SIGNING_KEY" > "$keyfile"
           else
-            echo "::warning::DISPATCH_UPDATE_SIGNING_KEY not set — upgrade bundles will be UNSIGNED and the updater will reject them."
+            echo "::warning::DISPATCH_UPDATE_SIGNING_KEY not set - upgrade bundles will be UNSIGNED and the updater will reject them."
           fi
           mkdir -p bundles
           for arch in x64 arm64; do

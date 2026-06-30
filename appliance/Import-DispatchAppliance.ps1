@@ -89,7 +89,7 @@ function Select-Storage([string]$Default) {
 
 # --- preflight ----------------------------------------------------------------------------------
 # Managing Hyper-V needs either an elevated Administrator session or membership in the local "Hyper-V
-# Administrators" group (well-known SID S-1-5-32-578) — the latter can run the cmdlets WITHOUT elevation.
+# Administrators" group (well-known SID S-1-5-32-578) - the latter can run the cmdlets WITHOUT elevation.
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 $isAdmin     = $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
 $isHyperVAdm = $principal.IsInRole([Security.Principal.SecurityIdentifier]::new("S-1-5-32-578"))
@@ -103,7 +103,7 @@ $VhdxPath = (Resolve-Path $VhdxPath).Path
 # Guided menu when no switch was specified (or -Interactive): collect name, switch, VLAN, storage, sizing.
 $useMenu = $Interactive -or (-not $SwitchName)
 if ($useMenu) {
-  Write-Host "=== Dispatch SMTP Relay — Hyper-V import ==="
+  Write-Host "=== Dispatch SMTP Relay - Hyper-V import ==="
   $Name       = Read-WithDefault "VM name" $Name
   $SwitchName = Select-VmSwitch
   $VlanId     = Read-VlanId
@@ -132,7 +132,7 @@ if ($useMenu) {
 }
 
 # --- create -------------------------------------------------------------------------------------
-# Everything for this VM lives under one folder named after it: <chosen storage>\<VM name>\ — holding both
+# Everything for this VM lives under one folder named after it: <chosen storage>\<VM name>\ - holding both
 # the VM config (New-VM -Path) and the copied VHDX. This keeps each VM self-contained (matching the Hyper-V
 # wizard's "store the VM in a different location") and the original appliance VHDX stays pristine.
 $destDir  = Join-Path $VmPath $Name

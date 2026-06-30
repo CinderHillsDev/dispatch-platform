@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
-  Dispatch SMTP Relay — Windows installer (scripted).
+  Dispatch SMTP Relay - Windows installer (scripted).
 
 .DESCRIPTION
   Publishes the service, writes config to %ProgramData%\Dispatch, registers a Windows Service, and
   opens the firewall. The SQL connection string and the dashboard admin password are supplied at
-  install time (the admin password is required — you'll be prompted if it isn't passed).
+  install time (the admin password is required - you'll be prompted if it isn't passed).
 
   Run from an elevated PowerShell:
     .\install.ps1 -SqlConnection "Server=...;Database=DispatchLog;User Id=sa;Password=...;TrustServerCertificate=True;Encrypt=True"
@@ -35,7 +35,7 @@ if (-not $AdminPassword) {
 if (-not $Source) { $Source = (Resolve-Path "$PSScriptRoot\..\..").Path }
 
 # Require elevation: this installs a Windows service, writes to Program Files, sets ACLs, and opens firewall
-# ports — all of which need Administrator. Fail fast with a clear message instead of a confusing mid-run error.
+# ports - all of which need Administrator. Fail fast with a clear message instead of a confusing mid-run error.
 # (The DispatchSetup.exe bundle auto-elevates via UAC because its chain is per-machine; this script does not.)
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
@@ -55,7 +55,7 @@ dotnet publish "$Source\src\Dispatch.Service" -c Release -o $InstallDir
 Write-Host "==> Writing config to $DataDir"
 New-Item -ItemType Directory -Force "$DataDir\spool", "$DataDir\logs" | Out-Null
 # Lock the data dir down: ProgramData is world-readable by default. Convert inherited ACEs to explicit, then
-# remove ONLY BUILTIN\Users (S-1-5-32-545) and Authenticated Users (S-1-5-11) — leaving SYSTEM + Administrators
+# remove ONLY BUILTIN\Users (S-1-5-32-545) and Authenticated Users (S-1-5-11) - leaving SYSTEM + Administrators
 # (the service runs as LocalSystem) untouched so it can never be locked out. Protects the connection string,
 # spool (message bodies), the .dispatch-key encryption key, and logs together.
 & icacls "$DataDir" /inheritance:d /T /C | Out-Null
@@ -88,7 +88,7 @@ foreach ($p in @($HttpPort, $ApiPort) + ($SmtpPorts -split ',' | ForEach-Object 
 
 Start-Service Dispatch
 
-# Tell the user exactly where the dashboard lives — on this box and from another machine on the LAN.
+# Tell the user exactly where the dashboard lives - on this box and from another machine on the LAN.
 # The IPv4 lookup is best-effort; if it fails we still print the localhost URL.
 $lan = $null
 try {

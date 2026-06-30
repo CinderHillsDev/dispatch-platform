@@ -4,7 +4,7 @@ Thanks for your interest in improving Dispatch.
 
 ## Development setup
 
-See **[Building & running locally](README.md#building--running-locally)** in the README — in short:
+See **[Building & running locally](README.md#building--running-locally)** in the README - in short:
 `docker compose up -d`, build the UI into `Dispatch.Web/wwwroot`, then
 `ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service`.
 
@@ -28,10 +28,10 @@ stays green without a database. CI runs them against a SQL service container.
 
 See the [Project Structure](README.md#project-structure) section. Key boundaries:
 
-- **Dispatch.Core** — pure domain (spool pipeline, worker pool, routing, interfaces). No SQL, no ASP.NET.
-- **Dispatch.Data** — SQL implementations of the Core repository interfaces.
-- **Dispatch.Web** — HTTP/SignalR endpoints, ingestion, auth, embedded UI.
-- **Dispatch.Service** — the host that composes everything.
+- **Dispatch.Core** - pure domain (spool pipeline, worker pool, routing, interfaces). No SQL, no ASP.NET.
+- **Dispatch.Data** - SQL implementations of the Core repository interfaces.
+- **Dispatch.Web** - HTTP/SignalR endpoints, ingestion, auth, embedded UI.
+- **Dispatch.Service** - the host that composes everything.
 
 ## Conventions
 

@@ -65,7 +65,7 @@ function AclSection({ title, intro, initial, onSave, risky }: {
   };
 
   // Three states under the closed model: empty (blocks everything), explicit allow-all (open to the
-  // internet — a relay risk on the SMTP listener), or a restricted set of ranges.
+  // internet - a relay risk on the SMTP listener), or a restricted set of ranges.
   const pill = empty
     ? { cls: "badge denied", text: "Closed · all sources blocked" }
     : allowAll
@@ -92,7 +92,7 @@ function AclSection({ title, intro, initial, onSave, risky }: {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, minHeight: 34 }}>
         {empty && (
           <span style={{ fontSize: 13, color: "var(--amber)", alignSelf: "center", fontStyle: "italic" }}>
-            No ranges — all connections are blocked.
+            No ranges - all connections are blocked.
           </span>
         )}
         {list.map((c) => (

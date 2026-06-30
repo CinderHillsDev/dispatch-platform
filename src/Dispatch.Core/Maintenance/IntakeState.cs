@@ -3,13 +3,13 @@ namespace Dispatch.Core.Maintenance;
 /// <summary>Graduated intake back-pressure level driven by spool free disk space (spec §14.1).</summary>
 public enum IntakeLevel
 {
-    /// <summary>Plenty of free disk — accept normally.</summary>
+    /// <summary>Plenty of free disk - accept normally.</summary>
     Normal = 0,
 
-    /// <summary>Disk low — accept but delay each MAIL FROM by <see cref="IntakeState.ThrottleDelay"/> to slow the inbound rate.</summary>
+    /// <summary>Disk low - accept but delay each MAIL FROM by <see cref="IntakeState.ThrottleDelay"/> to slow the inbound rate.</summary>
     Throttled = 1,
 
-    /// <summary>Disk critically low — reject inbound so senders queue and retry (RFC 5321 4xx).</summary>
+    /// <summary>Disk critically low - reject inbound so senders queue and retry (RFC 5321 4xx).</summary>
     Suspended = 2,
 }
 

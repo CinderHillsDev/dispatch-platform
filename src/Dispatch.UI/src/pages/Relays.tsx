@@ -6,7 +6,7 @@ import { TestResultView } from "../TestResultView";
 import { Modal } from "../Modal";
 import { ActionsMenu } from "../ActionsMenu";
 
-// One-click SMTP presets — pick a provider and host/port/TLS are filled in; just add credentials. Almost
+// One-click SMTP presets - pick a provider and host/port/TLS are filled in; just add credentials. Almost
 // every provider offers SMTP, so this covers the long tail without a native integration for each.
 const SMTP_PRESETS: Record<string, { Host: string; Port: string; TlsMode: string }> = {
   "Amazon SES (us-east-1)": { Host: "email-smtp.us-east-1.amazonaws.com", Port: "587", TlsMode: "StartTls" },
@@ -68,7 +68,7 @@ export function Relays() {
                 </td>
               </tr>
             ))}
-            {list.length === 0 && <tr><td colSpan={4} className="center">No relays yet — click “Add relay”.</td></tr>}
+            {list.length === 0 && <tr><td colSpan={4} className="center">No relays yet - click “Add relay”.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -124,7 +124,7 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
       await api.relays.update(id, { name: finalName, provider, enabled: true, maxConcurrency: 4, settings: values });
       setCreatedId(id);
       await onAdded();
-      // Azure rejects any sender that isn't a verified MailFrom — default the test From to the first one defined.
+      // Azure rejects any sender that isn't a verified MailFrom - default the test From to the first one defined.
       const sug = provider === "AzureCommunication" ? azureMailFromSuggestions(values["MailFrom"]) : [];
       if (sug.length > 0) setTestFrom(sug[0]);
       setStep("test");
@@ -190,7 +190,7 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
       {step === "test" && (
         <div style={{ display: "grid", gap: 10 }}>
           <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-            Relay created 🎉 Send a quick test to confirm it delivers — or just finish.
+            Relay created 🎉 Send a quick test to confirm it delivers - or just finish.
           </p>
           <Lbl label="From address">
             <FromField suggestions={provider === "AzureCommunication" ? azureMailFromSuggestions(values["MailFrom"]) : []}
@@ -198,8 +198,8 @@ function AddRelayModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
           </Lbl>
           <p className="muted" style={{ fontSize: 12, margin: "-4px 0 0" }}>
             {provider === "AzureCommunication" && azureMailFromSuggestions(values["MailFrom"]).length > 0
-              ? <>Azure only accepts mail from a <strong>verified MailFrom</strong> — pick one of the senders you defined.</>
-              : <>Most providers only accept mail from a domain you've <strong>verified</strong> with them — use an address on that domain or the test will be rejected.</>}
+              ? <>Azure only accepts mail from a <strong>verified MailFrom</strong> - pick one of the senders you defined.</>
+              : <>Most providers only accept mail from a domain you've <strong>verified</strong> with them - use an address on that domain or the test will be rejected.</>}
           </p>
           <Lbl label="Send a test to">
             <input type="email" placeholder="you@example.com" value={testTo} onChange={(e) => setTestTo(e.target.value)} style={{ width: "100%" }} />
@@ -226,7 +226,7 @@ function TestRelayModal({ relay, onClose }: { relay: RelayListItem; onClose: () 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
 
-  // Azure rejects any sender that isn't a verified MailFrom — load the relay's defined senders so the From
+  // Azure rejects any sender that isn't a verified MailFrom - load the relay's defined senders so the From
   // becomes a dropdown of valid choices (the list page doesn't carry settings, so fetch the detail).
   useEffect(() => {
     if (relay.provider !== "AzureCommunication") return;
@@ -257,8 +257,8 @@ function TestRelayModal({ relay, onClose }: { relay: RelayListItem; onClose: () 
         </Lbl>
         <p className="muted" style={{ fontSize: 12, margin: "-6px 0 0" }}>
           {fromSuggestions.length > 0
-            ? <>Azure only accepts mail from a <strong>verified MailFrom</strong> — pick one of the senders you defined.</>
-            : <>Most providers only accept mail from a domain you've <strong>verified</strong> with them — use an address on that domain.</>}
+            ? <>Azure only accepts mail from a <strong>verified MailFrom</strong> - pick one of the senders you defined.</>
+            : <>Most providers only accept mail from a domain you've <strong>verified</strong> with them - use an address on that domain.</>}
         </p>
         <Lbl label="Send test to"><input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="you@example.com" style={{ width: "100%" }} /></Lbl>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -272,7 +272,7 @@ function TestRelayModal({ relay, onClose }: { relay: RelayListItem; onClose: () 
 }
 
 // The "From" input for a test send. For Azure with verified MailFroms defined, it becomes a dropdown of those
-// addresses (Azure rejects any other sender) — otherwise a free-text email box. `suggestions` drives the choice.
+// addresses (Azure rejects any other sender) - otherwise a free-text email box. `suggestions` drives the choice.
 function FromField({ suggestions, value, onChange }: {
   suggestions: string[]; value: string; onChange: (v: string) => void;
 }) {
@@ -340,12 +340,12 @@ function RelayEditor({ relay, onChanged, setMsg }: {
       </select>
       {provider === "Unconfigured" && (
         <p className="muted" style={{ marginTop: -4, marginBottom: 12, fontSize: 12 }}>
-          This relay has no provider yet — mail to it will fail until you choose one (or pick “Local” for development).
+          This relay has no provider yet - mail to it will fail until you choose one (or pick “Local” for development).
         </p>
       )}
       {provider === "Local" && (
         <p className="muted" style={{ marginTop: -4, marginBottom: 12, fontSize: 12 }}>
-          Local / developer mode — never delivers externally. Captured messages appear in the Local Inbox.
+          Local / developer mode - never delivers externally. Captured messages appear in the Local Inbox.
         </p>
       )}
 
@@ -360,7 +360,7 @@ function RelayEditor({ relay, onChanged, setMsg }: {
               if (p) setValues({ ...values, Host: p.Host, Port: p.Port, TlsMode: p.TlsMode });
             }}
           >
-            <option value="">— pick a provider to fill host/port —</option>
+            <option value="">- pick a provider to fill host/port -</option>
             {Object.keys(SMTP_PRESETS).map((k) => <option key={k} value={k}>{k}</option>)}
           </select>
         </div>
@@ -372,7 +372,7 @@ function RelayEditor({ relay, onChanged, setMsg }: {
           {f.options
             ? (
               <select style={{ width: "100%" }} value={values[f.name] ?? ""} onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}>
-                <option value="">{f.required ? "— select —" : "(default)"}</option>
+                <option value="">{f.required ? "- select -" : "(default)"}</option>
                 {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             )
@@ -383,7 +383,7 @@ function RelayEditor({ relay, onChanged, setMsg }: {
                 placeholder={f.secret && secretHasValue(f.name) ? "•••••••• (unchanged)" : f.placeholder}
                 value={values[f.name] ?? ""}
                 onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
-                // Provider credentials, not the user's login — suppress browser/password-manager save+autofill.
+                // Provider credentials, not the user's login - suppress browser/password-manager save+autofill.
                 autoComplete={f.secret ? "new-password" : "off"}
                 spellCheck={false}
                 data-1p-ignore

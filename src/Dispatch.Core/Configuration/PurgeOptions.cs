@@ -21,7 +21,7 @@ public sealed class PurgeOptions
     public int AuditSecurityRetentionDays { get; set; } = 7;
 
     /// <summary>Weekly JSONL archive files written by the Express size-pressure purge are deleted after this
-    /// many days (0 = keep forever — the default, since they're emergency exports).</summary>
+    /// many days (0 = keep forever - the default, since they're emergency exports).</summary>
     public int ArchiveRetentionDays { get; set; }
 
     public LogRetention Log { get; set; } = new();

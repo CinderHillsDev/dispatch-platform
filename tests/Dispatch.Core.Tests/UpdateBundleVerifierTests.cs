@@ -30,7 +30,7 @@ public class UpdateBundleVerifierTests
     public void Embedded_public_key_verifies_an_openssl_signature()
     {
         // sample.manifest.json(.sig) were produced by `openssl dgst -sha256 -sign` with the private key
-        // matching the embedded public key — proving the CI signer and the in-app verifier interoperate.
+        // matching the embedded public key - proving the CI signer and the in-app verifier interoperate.
         var manifest = ReadResource("sample.manifest.json");
         var sig = ReadResource("sample.manifest.json.sig");
         Assert.True(UpdateBundleVerifier.Default().VerifyManifestSignature(manifest, sig));

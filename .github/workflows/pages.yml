@@ -5,7 +5,7 @@ name: Pages
 # Enable once in repo Settings → Pages → Source = "GitHub Actions".
 on:
   push:
-    # TODO(after merge): drop the feature branch — main is the canonical Pages source.
+    # TODO(after merge): drop the feature branch - main is the canonical Pages source.
     branches: [main, feat/relay-engine-web-providers]
     paths:
       - website/**

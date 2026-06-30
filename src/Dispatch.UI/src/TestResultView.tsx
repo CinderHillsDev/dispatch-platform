@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { type TestResult } from "./lib/api";
 
-// Verbose result of a relay/provider send test — surfaces the provider's own response (incl. the raw
+// Verbose result of a relay/provider send test - surfaces the provider's own response (incl. the raw
 // error body on failure) so operators can troubleshoot. Shared by the add-relay wizard, the row "Send
 // test" modal, and the first-run wizard.
 export function TestResultView({ result }: { result: TestResult }) {
