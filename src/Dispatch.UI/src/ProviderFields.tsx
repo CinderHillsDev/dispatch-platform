@@ -20,7 +20,11 @@ export function ProviderFieldsInput({ fields, values, onChange }: {
             )
             : (
               <input type={f.secret ? "password" : "text"} placeholder={f.placeholder}
-                value={values[f.name] ?? ""} onChange={(e) => set(f.name, e.target.value)} style={{ width: "100%" }} />
+                value={values[f.name] ?? ""} onChange={(e) => set(f.name, e.target.value)} style={{ width: "100%" }}
+                // These are provider credentials, not the user's login — don't let the browser or password
+                // managers offer to save/autofill them. "new-password" suppresses autofill of saved logins.
+                autoComplete={f.secret ? "new-password" : "off"} spellCheck={false}
+                data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" />
             )}
           {f.help && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{f.help}</div>}
         </label>

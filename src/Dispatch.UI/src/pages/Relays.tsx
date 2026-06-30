@@ -383,6 +383,13 @@ function RelayEditor({ relay, onChanged, setMsg }: {
                 placeholder={f.secret && secretHasValue(f.name) ? "•••••••• (unchanged)" : f.placeholder}
                 value={values[f.name] ?? ""}
                 onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
+                // Provider credentials, not the user's login — suppress browser/password-manager save+autofill.
+                autoComplete={f.secret ? "new-password" : "off"}
+                spellCheck={false}
+                data-1p-ignore
+                data-lpignore="true"
+                data-bwignore
+                data-form-type="other"
               />
             )}
           {f.help && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>{f.help}</div>}
