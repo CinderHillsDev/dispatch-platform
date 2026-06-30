@@ -12,17 +12,17 @@
   storage volumes and prompts for the VLAN, memory, and CPU. Pass -SwitchName for fully unattended use.
 
 .EXAMPLE
-  # Guided menu (pick switch + storage, optional VLAN):
-  .\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx
+  # Guided menu - finds the .vhdx next to this script automatically:
+  .\Import-DispatchAppliance.ps1
 
 .EXAMPLE
-  # Unattended:
-  .\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx -Name "Dispatch" -MemoryGB 6 `
-      -SwitchName "External" -VlanId 20 -VmPath "D:\Hyper-V" -Start
+  # Unattended (pass -SwitchName to skip the menu; -VhdxPath only if it's not next to the script):
+  .\Import-DispatchAppliance.ps1 -Name "Dispatch" -MemoryGB 6 -SwitchName "External" -VlanId 20 -VmPath "D:\Hyper-V" -Start
 #>
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory = $true)] [string] $VhdxPath,
+  # Optional: defaults to the .vhdx sitting next to this script (the zip ships them together).
+  [string] $VhdxPath,
   [string] $Name = "Dispatch SMTP Relay",
   [int]    $MemoryGB = 4,
   [int]    $CpuCount = 2,
@@ -77,14 +77,7 @@ function Read-VlanId {
 }
 
 function Select-Storage([string]$Default) {
-  Write-Host ""
-  Write-Host "Storage volumes:"
-  Get-Volume -ErrorAction SilentlyContinue |
-    Where-Object { $_.DriveLetter -and $_.Size -gt 0 } | Sort-Object DriveLetter | ForEach-Object {
-      Write-Host ("  {0}:  {1:N0} GB free of {2:N0} GB  {3}" -f $_.DriveLetter, ($_.SizeRemaining / 1GB), ($_.Size / 1GB), $_.FileSystemLabel)
-    }
-  Write-Host "  (The appliance disk is ~6-10 GB thin-provisioned; SQL + logs grow it over time.)"
-  return (Read-WithDefault "VM storage folder" $Default)
+  return (Read-WithDefault "Where should the VM be stored?" $Default)
 }
 
 # --- preflight ----------------------------------------------------------------------------------
@@ -97,6 +90,13 @@ if (-not ($isAdmin -or $isHyperVAdm)) {
   throw "This needs an elevated Administrator session or membership in the 'Hyper-V Administrators' group. Re-run as administrator, or have an admin add you to that group."
 }
 
+# Default to the .vhdx shipped alongside this script (the appliance zip contains both). Only one is expected.
+if (-not $VhdxPath) {
+  $found = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter *.vhdx -File -ErrorAction SilentlyContinue)
+  if ($found.Count -eq 1) { $VhdxPath = $found[0].FullName; Write-Host "Using VHDX: $VhdxPath" }
+  elseif ($found.Count -eq 0) { throw "No .vhdx found next to this script. Unzip dispatch-appliance.vhdx.zip here first, or pass -VhdxPath." }
+  else { throw "Multiple .vhdx files found next to this script; pass -VhdxPath to pick one." }
+}
 if (-not (Test-Path -LiteralPath $VhdxPath -PathType Leaf)) { throw "VHDX file not found: $VhdxPath" }
 $VhdxPath = (Resolve-Path -LiteralPath $VhdxPath).Path
 if ([System.IO.Path]::GetExtension($VhdxPath) -notin @('.vhdx', '.vhd')) {

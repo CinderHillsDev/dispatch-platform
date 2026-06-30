@@ -18,12 +18,13 @@ This zip contains:
 ------------------------------------------------------------------------------
  Quick start (guided menu)
 ------------------------------------------------------------------------------
-  1. Unzip this file to a folder.
+  1. Unzip this file to a folder (the .vhdx and this script land together).
   2. Open PowerShell in that folder and run:
 
-       .\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx
+       .\Import-DispatchAppliance.ps1
 
-     With no networking flags it walks you through it:
+     It finds the dispatch-appliance.vhdx next to it automatically, then walks
+     you through it:
        - pick one of the host's virtual switches,
        - choose the storage volume/folder for the VM (shows free space),
        - optionally set a VLAN ID,
@@ -45,8 +46,7 @@ This zip contains:
   Pass -SwitchName to skip the menu; add any of -VlanId / -VmPath / -MemoryGB /
   -CpuCount / -Start:
 
-    .\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx `
-        -SwitchName "External" -VlanId 20 -VmPath "D:\Hyper-V" -MemoryGB 6 -Start
+    .\Import-DispatchAppliance.ps1 -SwitchName "External" -VlanId 20 -VmPath "D:\Hyper-V" -MemoryGB 6 -Start
 
 ------------------------------------------------------------------------------
  Manual import (no script)

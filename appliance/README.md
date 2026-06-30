@@ -16,13 +16,13 @@ All are **Gen2/UEFI**, ~4 GB RAM recommended (SQL Server needs ~2 GB). They boot
 
 **Guided menu** (elevated **Administrator**, or a member of the **Hyper-V Administrators** group - the script checks for one), after unzipping the `.vhdx`:
 ```powershell
-.\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx
+.\Import-DispatchAppliance.ps1
 ```
 Run with no networking flags, it walks you through it: it lists the host's **virtual switches** to pick from, your **storage volumes** (with free space) to choose where the VM lives, an optional **VLAN ID**, and memory/CPU - then confirms before creating.
 
 **Unattended** (pass `-SwitchName` to skip the menu):
 ```powershell
-.\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx -SwitchName "External" -VlanId 20 -VmPath "D:\Hyper-V" -MemoryGB 6 -Start
+.\Import-DispatchAppliance.ps1 -SwitchName "External" -VlanId 20 -VmPath "D:\Hyper-V" -MemoryGB 6 -Start
 ```
 Either way it creates a Gen2 VM, sets the **Microsoft UEFI CA** Secure Boot template (required for Linux), disables Dynamic Memory, attaches the switch (tagging the VLAN if given), and optionally starts it.
 

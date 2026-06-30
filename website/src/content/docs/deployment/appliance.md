@@ -28,14 +28,14 @@ storage volumes (with free space) to choose where the VM lives, an optional **VL
 memory/CPU, then confirms before creating:
 
 ```powershell
-.\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx
+.\Import-DispatchAppliance.ps1
 ```
 
 For **unattended** import, pass `-SwitchName` (skips the menu) plus any of `-VlanId`, `-VmPath`,
 `-MemoryGB`, `-CpuCount`, `-Start`:
 
 ```powershell
-.\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx -SwitchName "External" -VlanId 20 -VmPath "D:\Hyper-V" -Start
+.\Import-DispatchAppliance.ps1 -SwitchName "External" -VlanId 20 -VmPath "D:\Hyper-V" -Start
 ```
 
 Either way it creates a Gen2 VM, sets the **Microsoft UEFI CA** Secure Boot template (required for
