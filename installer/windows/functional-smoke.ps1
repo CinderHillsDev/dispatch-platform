@@ -22,6 +22,8 @@
     12. Audit log               — operations produce audit rows
     13. Retention purges        — real data: backdated files are deleted at 1-day retention and KEPT at
                                   0 (0 = keep forever); log/audit purges honour 0 too; recorded in history
+    14. Storage usage           — /storage breakdown reflects real rows/files (per-event + spool dirs)
+    15. Read-only endpoints      — health/stats/system/spool/metrics all answer
     14. Read-only endpoints     — health/stats/system/spool/metrics all answer
 
   Run after the service is up (serving /health).
@@ -238,13 +240,16 @@ finally {
 }
 
 # === 7. Routing rules + simulate ================================================================
+# Routing rules match on the recipient DOMAIN (exact / *.domain / *), so the rule + simulate use a
+# unique domain rather than a local-part pattern.
+$routeDomain = "route-$tok.test"
 $r2 = DPost '/api/relays' '{"name":"smoke-route","provider":"Local"}'
-$rule = DPost '/api/routing/rules' "{""name"":""smoke-rule-$tok"",""recipientPattern"":""route-$tok@*"",""relayId"":$($r2.id),""priority"":100}"
+$rule = DPost '/api/routing/rules' "{""name"":""smoke-rule-$tok"",""recipientPattern"":""$routeDomain"",""relayId"":$($r2.id),""priority"":100}"
 try {
-    $hit = DPost '/api/routing/simulate' "{""from"":""s@local.test"",""to"":""route-$tok@x.test""}"
+    $hit = DPost '/api/routing/simulate' "{""from"":""s@local.test"",""to"":""user@$routeDomain""}"
     if ([int]$hit.relayId -ne [int]$r2.id) { throw "rule should route to relay $($r2.id), simulate chose $($hit.relayId)" }
     if (-not $hit.matched)                 { throw "simulate should report matched=true for the rule recipient" }
-    $miss = DPost '/api/routing/simulate' '{"from":"s@local.test","to":"someone-else@x.test"}'
+    $miss = DPost '/api/routing/simulate' '{"from":"s@local.test","to":"someone-else@unmatched.test"}'
     if ([int]$miss.relayId -ne [int]$relay.id) { throw "non-matching recipient should fall to the default relay $($relay.id), got $($miss.relayId)" }
     Write-Host "OK: routing rule matched in simulate; non-match fell through to the default relay"
 }
@@ -353,7 +358,17 @@ DPut '/api/settings' $restore | Out-Null
 if (@(DGet '/api/purge/history').Count -lt 1) { throw "a manual purge should appear in purge history" }
 Write-Host "OK: purges recorded in history; retention thresholds restored"
 
-# === 14. Read-only / observability endpoints all answer =========================================
+# === 14. Storage usage breakdown reflects real data =============================================
+$st = DGet '/api/storage'
+if (-not $st.database.connected) { throw "storage: database should report connected" }
+$deliveredUse = $st.database.relayLog.byEvent | Where-Object { $_.event -eq 'Delivered' } | Select-Object -First 1
+if (-not $deliveredUse -or [int]$deliveredUse.rows -lt 1) { throw "storage: expected Delivered rows in the message-log breakdown" }
+if ([long]$st.database.relayLog.tableBytes -le 0) { throw "storage: relay_log table size should be > 0" }
+if ($null -eq $st.spool.captured.files) { throw "storage: spool.captured.files missing" }
+if ($null -eq $st.spool.failed.bytes)   { throw "storage: spool.failed.bytes missing" }
+Write-Host "OK: storage usage — Delivered rows=$($deliveredUse.rows), relay_log=$([math]::Round($st.database.relayLog.tableBytes/1KB))KB, captured files=$($st.spool.captured.files)"
+
+# === 15. Read-only / observability endpoints all answer =========================================
 foreach ($p in '/api/stats', '/api/stats/relays', '/api/stats/throughput', '/api/system', '/api/spool', '/health') {
     DGet $p | Out-Null
 }
