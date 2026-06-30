@@ -110,7 +110,7 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
             if (rows.Count == 0) return 0;
 
             // Archive before deleting; if archiving throws, keep the rows.
-            await archive(rows.Select(r => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>((IDictionary<string, object>)r)).ToList(), ct);
+            await archive(rows.Select(r => SqlLogMaintenance.ToRow((IDictionary<string, object>)r)).ToList(), ct);
 
             var ids = rows.Select(r => Convert.ToInt64(((IDictionary<string, object>)r)["id"])).ToArray();
             return await cn.ExecuteAsync(new CommandDefinition(

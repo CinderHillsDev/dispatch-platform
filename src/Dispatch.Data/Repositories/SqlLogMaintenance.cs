@@ -63,10 +63,14 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
         if (rows.Count == 0) return 0;
 
         // Archive first; if that throws, the rows are NOT deleted (the safety net must not lose data).
-        await archive(rows.Select(r => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>((IDictionary<string, object>)r)).ToList(), ct);
+        await archive(rows.Select(r => ToRow((IDictionary<string, object>)r)).ToList(), ct);
 
         var ids = rows.Select(r => Convert.ToInt64(((IDictionary<string, object>)r)["id"])).ToArray();
         return await cn.ExecuteAsync(new CommandDefinition(
             "DELETE FROM relay_log WHERE id IN @ids;", new { ids }, cancellationToken: ct));
     }
+
+    // Materializes a Dapper row into a nullable-friendly read-only dictionary for archiving/serialization.
+    internal static IReadOnlyDictionary<string, object?> ToRow(IDictionary<string, object> row) =>
+        row.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
 }
