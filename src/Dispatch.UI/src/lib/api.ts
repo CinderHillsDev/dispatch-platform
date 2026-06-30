@@ -201,7 +201,9 @@ export interface SystemInfo {
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  // no-store: this is a live admin dashboard — every GET (and the manual "Refresh" button, which re-requests
+  // the same URL) must hit the server, never a cached response, or refresh appears to do nothing.
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
