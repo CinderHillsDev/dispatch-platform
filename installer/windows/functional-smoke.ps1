@@ -24,6 +24,8 @@
                                   0 (0 = keep forever); log/audit purges honour 0 too; recorded in history
     14. Storage usage           — /storage breakdown reflects real rows/files (per-event + spool dirs)
     15. Read-only endpoints      — health/stats/system/spool/metrics all answer
+    16. Size-pressure archive    — forces Express size-pressure; oldest rows exported to weekly JSONL
+                                  before deletion (destructive, runs last)
     14. Read-only endpoints     — health/stats/system/spool/metrics all answer
 
   Run after the service is up (serving /health).
@@ -381,5 +383,25 @@ foreach ($p in '/api/stats', '/api/stats/relays', '/api/stats/throughput', '/api
 $metrics = Invoke-WebRequest -SkipCertificateCheck -WebSession $sess -Uri "$Dashboard/metrics"
 if ([int]$metrics.StatusCode -ne 200) { throw "/metrics did not return 200 (got $($metrics.StatusCode))" }
 Write-Host "OK: stats / system / spool / health / metrics all answer"
+
+# === 16. Size-pressure ARCHIVES then deletes (Express only) — DESTRUCTIVE, runs last ============
+# Force size-pressure by dropping the trigger below current usage, then confirm the oldest rows are
+# exported to weekly JSONL *before* being deleted (the emergency purge never silently loses history).
+# This wipes the message-log/audit on the CI box, so it is intentionally the final step.
+if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
+    $archiveDir = Join-Path $spoolDir 'archive'
+    Get-ChildItem -LiteralPath $archiveDir -Filter *.jsonl -EA SilentlyContinue | Remove-Item -Force -EA SilentlyContinue
+    $rowsBefore = [int](DGet '/api/messages?event=Delivered&pageSize=1').total
+    Invoke-PurgeAfter '{"retention":{"sizeTriggerGb":0.001,"sizeTargetGb":0.0005}}'   # ~1 MB trigger → always over
+    Start-Sleep -Seconds 2
+    $archives = @(Get-ChildItem -LiteralPath $archiveDir -Filter 'relay_log-*.jsonl' -EA SilentlyContinue)
+    if ($archives.Count -lt 1) { throw "size-pressure should have written a relay_log JSONL archive before deleting" }
+    if ((Get-Content -LiteralPath $archives[0].FullName -TotalCount 1) -notmatch '"event"') { throw "archived JSONL row should carry the row fields" }
+    $rowsAfter = [int](DGet '/api/messages?event=Delivered&pageSize=1').total
+    if ($rowsAfter -ge $rowsBefore) { throw "size-pressure should have deleted message-log rows ($rowsBefore -> $rowsAfter)" }
+    DPut '/api/settings' '{"retention":{"sizeTriggerGb":9.5,"sizeTargetGb":9.0}}' | Out-Null   # restore
+    Write-Host "OK: size-pressure archived $($archives.Count) JSONL file(s) then deleted rows ($rowsBefore -> $rowsAfter)"
+}
+else { Write-Host "SKIP: spool dir not locally accessible — size-pressure archive test not exercised" }
 
 Write-Host "FUNCTIONAL SMOKE PASSED"
