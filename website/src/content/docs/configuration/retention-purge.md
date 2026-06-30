@@ -28,7 +28,9 @@ Setting any retention to **`0` means "keep forever"** — that data type is neve
 
 ## Size-based safety
 
-In addition to age-based purging, Dispatch watches the database file size. When the file reaches **9.5 GB** it purges the oldest log rows down to **9.0 GB**. This keeps the database comfortably below the **SQL Server Express 10 GB limit**, so the service never wedges on a full database.
+In addition to age-based purging, Dispatch watches the database file size **on SQL Server Express only** — Express caps each database's data files at **10 GB**. When the file approaches the cap it purges the oldest message-log rows to free space, keeping the service from wedging on a full database. This is a safety net, so it runs even when a retention is set to "keep forever".
+
+If you point Dispatch at your **own SQL Server** (Standard/Enterprise/Azure — see [Connections](/configuration/) ) there is no 10 GB cap, so this size-based purge never runs; only your age-based retention applies.
 
 ## Spool disk protection
 

@@ -35,6 +35,15 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
         return await cn.ExecuteScalarAsync<long>(new CommandDefinition(sql, cancellationToken: ct));
     }
 
+    public async Task<bool> IsSizeCappedEditionAsync(CancellationToken ct = default)
+    {
+        // EngineEdition 4 = Express (the only edition with the 10 GB per-database data-file cap). 2/3 =
+        // Standard/Enterprise, 5/8 = Azure SQL DB/MI — none capped, so size-pressure must not run there.
+        const string sql = "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT);";
+        await using var cn = await factory.OpenAsync(ct);
+        return await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, cancellationToken: ct)) == 4;
+    }
+
     public async Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default)
     {
         var sql = $"DELETE TOP ({batchSize}) FROM relay_log WHERE id IN (SELECT TOP ({batchSize}) id FROM relay_log ORDER BY logged_at ASC, id ASC);";

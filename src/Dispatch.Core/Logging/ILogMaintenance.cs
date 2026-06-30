@@ -10,6 +10,11 @@ public interface ILogMaintenance
     /// <summary>Approximate database size in bytes (for size-pressure purge).</summary>
     Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default);
 
+    /// <summary>True only when the database is a SQL Server Express edition, which caps each database's data
+    /// files at 10 GB. The size-pressure purge applies only here; a Standard/Enterprise/Azure/external server
+    /// has no such cap, so size-pressure is skipped entirely.</summary>
+    Task<bool> IsSizeCappedEditionAsync(CancellationToken ct = default);
+
     /// <summary>Deletes the oldest N relay_log rows. Returns rows deleted.</summary>
     Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default);
 }

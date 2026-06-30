@@ -106,6 +106,10 @@ public sealed class PurgeWorker(
 
     private async Task<int> RunSizePressureAsync(PurgeOptions o, CancellationToken ct)
     {
+        // The 10 GB data-file cap only exists on SQL Server Express. On Standard/Enterprise/Azure or an
+        // operator's own external server there is no cap, so the size-pressure purge never runs there.
+        if (!await logs.IsSizeCappedEditionAsync(ct)) return 0;
+
         var size = await logs.GetDatabaseSizeBytesAsync(ct);
         var trigger = (long)(o.SizePressure.TriggerGb * BytesPerGb);
         // Operators set a single size limit; purge down to a 0.5 GB buffer below it so we don't thrash at the cap.
