@@ -245,6 +245,16 @@ export interface ReportDaily { date: string; received: number; delivered: number
 export interface ReportRelay { relayId: number; relayName: string; received: number; delivered: number; failed: number; retried: number; denied: number; }
 export interface ReportData { from: string; to: string; summary: ReportSummary; daily: ReportDaily[]; relays: ReportRelay[]; }
 
+export interface UpdateInfo {
+  currentVersion: string;
+  arch: string;
+  selfManaged: boolean;
+  state: string;            // Idle | Staged | Applying | Succeeded | Failed | RolledBack
+  message: string;
+  stagedVersion: string | null;
+  updatedAtUtc: string | null;
+}
+
 export const api = {
   stats: () => getJson<Stats>("/api/stats"),
   throughput: () => getJson<number[]>("/api/stats/throughput"),
@@ -346,6 +356,19 @@ export const api = {
   },
 
   storage: () => getJson<StorageUsage>("/api/storage"),
+
+  updates: {
+    status: () => getJson<UpdateInfo>("/api/updates/status"),
+    upload: async (file: File): Promise<{ ok: boolean; message: string; version?: string }> => {
+      const fd = new FormData();
+      fd.append("package", file);
+      // No Content-Type header: the browser sets the multipart boundary. X-Dispatch-Request is the CSRF guard.
+      const res = await fetch("/api/updates/upload", { method: "POST", headers: { "X-Dispatch-Request": "1" }, body: fd });
+      const data = await res.json().catch(() => ({} as { message?: string }));
+      if (!res.ok) throw new Error(data.message ?? `Upload failed (${res.status})`);
+      return data as { ok: boolean; message: string; version?: string };
+    },
+  },
 
   system: {
     about: () => getJson<SystemInfo>("/api/system"),
