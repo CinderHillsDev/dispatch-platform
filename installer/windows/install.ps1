@@ -87,4 +87,25 @@ foreach ($p in @($HttpPort, $ApiPort) + ($SmtpPorts -split ',' | ForEach-Object 
 }
 
 Start-Service Dispatch
-Write-Host "`nDispatch is installed and running. Dashboard: http://localhost:$HttpPort"
+
+# Tell the user exactly where the dashboard lives — on this box and from another machine on the LAN.
+# The IPv4 lookup is best-effort; if it fails we still print the localhost URL.
+$lan = $null
+try {
+  $lan = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+    Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' -and $_.PrefixOrigin -ne 'WellKnown' } |
+    Select-Object -First 1 -ExpandProperty IPAddress)
+} catch { }
+Write-Host ""
+Write-Host "=========================================================================="
+Write-Host " Dispatch SMTP Relay is installed and running."
+Write-Host ""
+Write-Host " Open the dashboard to finish setup (set/confirm the admin password):"
+Write-Host "   On this server:        https://localhost:$HttpPort"
+if ($lan) {
+  Write-Host "   From another machine:  https://${lan}:$HttpPort"
+}
+Write-Host ""
+Write-Host " The dashboard uses a self-signed certificate, so your browser will warn"
+Write-Host " once on first visit - that is expected; continue past it."
+Write-Host "=========================================================================="

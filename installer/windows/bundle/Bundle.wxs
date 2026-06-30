@@ -28,8 +28,15 @@
           Compressed="yes">
 
     <BootstrapperApplication>
-      <!-- hyperlinkLicense theme with an empty LicenseUrl shows the install UI with no license link. -->
-      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" LicenseUrl="" SuppressOptionsUI="yes" />
+      <!-- hyperlinkLicense theme with an empty LicenseUrl shows the install UI with no license link.
+           LaunchTarget makes the success page show a checked "Launch" button that opens the dashboard in
+           the default browser (via `start`), so after clicking Finish the user lands on the dashboard instead
+           of being left wondering where the app is. We shell through cmd.exe /c start because LaunchTarget runs
+           an executable, not a URL; LaunchHidden keeps the transient cmd window from flashing. -->
+      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" LicenseUrl="" SuppressOptionsUI="yes"
+                                              LaunchTarget="[SystemFolder]cmd.exe"
+                                              LaunchArguments="/c start &quot;&quot; &quot;https://localhost:8420/&quot;"
+                                              LaunchHidden="yes" />
     </BootstrapperApplication>
 
     <!-- Skip the SQL Express step if the DISPATCHSQL instance already exists. -->
