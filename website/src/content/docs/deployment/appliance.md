@@ -12,11 +12,13 @@ per-VM secrets. Grab the files from the
 **2 vCPU / 4 GB RAM**. It boots on DHCP, but a relay your apps point at should have a **static IP**
 (see below). All images are Gen2/UEFI.
 
-| Hypervisor | File | Helper |
+A **separate download per hypervisor** - each a single zip (unzip once) with that format's image, a `README.txt`, and the import helper:
+
+| Hypervisor | Download (one zip) | Contains |
 |---|---|---|
-| **Hyper-V** | `dispatch-appliance-<ver>-x64.vhdx.zip` | `Import-DispatchAppliance.ps1` |
-| **VMware** (vSphere/ESXi/Workstation/Fusion) | `dispatch-appliance-<ver>-x64.ova` | native OVF import |
-| **KVM/libvirt & Proxmox** | `dispatch-appliance-<ver>-x64.qcow2` | `import-libvirt.sh` / `import-proxmox.sh` |
+| **Hyper-V** | `dispatch-appliance-hyperv` | `dispatch-appliance.vhdx` + `Import-DispatchAppliance.ps1` + `README.txt` |
+| **VMware** (vSphere/ESXi/Workstation/Fusion) | `dispatch-appliance-vmware` | `dispatch-appliance.ova` + `README.txt` |
+| **KVM/libvirt & Proxmox** | `dispatch-appliance-kvm` | `dispatch-appliance.qcow2` + `import-libvirt.sh` / `import-proxmox.sh` + `README.txt` |
 
 ## Import it
 

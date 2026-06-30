@@ -75,34 +75,36 @@ jobs:
             done < ./*.mf )
           echo "OVA structure + checksums valid"
 
-      - name: Package + checksum
+      # One self-contained download per hypervisor: each artifact downloads as a single zip (GitHub wraps
+      # it) holding that format's image + its README + helper - so the user unzips ONCE, no nested zip.
+      - name: Stage per-type downloads + checksums
         run: |
-          # Bundle the one-command import helpers alongside the images.
-          cp appliance/Import-DispatchAppliance.ps1 appliance/import-libvirt.sh appliance/import-proxmox.sh .
-          cp appliance/hyperv-README.txt README.txt
-          # The Hyper-V download is self-contained: VHDX + import helper + instructions in one zip.
-          zip -9 dispatch-appliance.vhdx.zip dispatch-appliance.vhdx Import-DispatchAppliance.ps1 README.txt
-          sha256sum dispatch-appliance.vhdx.zip | tee dispatch-appliance.vhdx.zip.sha256
-          # The OVA and compressed qcow2 are already containers; just checksum them.
-          sha256sum dispatch-appliance.ova    | tee dispatch-appliance.ova.sha256
-          sha256sum dispatch-appliance.qcow2  | tee dispatch-appliance.qcow2.sha256
+          mkdir -p out/hyperv out/vmware out/kvm
+          # Hyper-V: raw VHDX (GitHub compresses the artifact) + import helper + instructions.
+          mv dispatch-appliance.vhdx out/hyperv/
+          cp appliance/Import-DispatchAppliance.ps1 out/hyperv/
+          cp appliance/hyperv-README.txt out/hyperv/README.txt
+          ( cd out/hyperv && sha256sum dispatch-appliance.vhdx > dispatch-appliance.vhdx.sha256 )
+          # VMware: the OVA + instructions.
+          mv dispatch-appliance.ova out/vmware/
+          cp appliance/vmware-README.txt out/vmware/README.txt
+          ( cd out/vmware && sha256sum dispatch-appliance.ova > dispatch-appliance.ova.sha256 )
+          # KVM / Proxmox: qcow2 + import helpers + instructions.
+          mv dispatch-appliance.qcow2 out/kvm/
+          cp appliance/import-libvirt.sh appliance/import-proxmox.sh out/kvm/
+          cp appliance/kvm-README.txt out/kvm/README.txt
+          ( cd out/kvm && sha256sum dispatch-appliance.qcow2 > dispatch-appliance.qcow2.sha256 )
 
       # Upload before the boot smoke so the artifacts are available even if the smoke fails.
-      - name: Upload appliance artifacts
+      - name: Upload Hyper-V appliance
         uses: actions/upload-artifact@v6
-        with:
-          name: dispatch-appliance
-          path: |
-            dispatch-appliance.vhdx.zip
-            dispatch-appliance.vhdx.zip.sha256
-            dispatch-appliance.ova
-            dispatch-appliance.ova.sha256
-            dispatch-appliance.qcow2
-            dispatch-appliance.qcow2.sha256
-            Import-DispatchAppliance.ps1
-            import-libvirt.sh
-            import-proxmox.sh
-          if-no-files-found: error
+        with: { name: dispatch-appliance-hyperv, path: out/hyperv/*, if-no-files-found: error }
+      - name: Upload VMware appliance
+        uses: actions/upload-artifact@v6
+        with: { name: dispatch-appliance-vmware, path: out/vmware/*, if-no-files-found: error }
+      - name: Upload KVM/Proxmox appliance
+        uses: actions/upload-artifact@v6
+        with: { name: dispatch-appliance-kvm, path: out/kvm/*, if-no-files-found: error }
 
       - name: Boot smoke (UEFI) - service comes up on first boot
         run: |
@@ -116,7 +118,7 @@ jobs:
           # Boot the image as qcow2 (rules out QEMU's vhdx driver - Hyper-V reads the vhdx itself) and attach
           # it as an explicit virtio-blk device with bootindex=0, so OVMF (empty NVRAM) actually boots it.
           # -vga std + a QMP socket let us screenshot the VGA console (firmware/GRUB output goes there, not serial).
-          qemu-img convert -O qcow2 dispatch-appliance.vhdx boot.qcow2
+          qemu-img convert -O qcow2 out/hyperv/dispatch-appliance.vhdx boot.qcow2
           # shellcheck disable=SC2086
           sudo qemu-system-x86_64 -machine q35 $ACCEL -m 4096 -smp 2 -no-reboot \
             -drive if=pflash,format=raw,readonly=on,file="$code" \

@@ -2,13 +2,13 @@
 
 A ready-to-run **Ubuntu 24.04 LTS** virtual machine with Dispatch and SQL Server Express pre-installed. Import it, power it on, and the dashboard comes up - no .NET, SQL, or command line needed.
 
-Each release ships the same image in three formats (plus one-command import helpers):
+There's a **separate download per hypervisor** - each is a single zip (unzip once) with that format's image, its README, and the import helper:
 
-| Hypervisor | File | Helper |
+| Hypervisor | Download (one zip) | Contains |
 |---|---|---|
-| **Hyper-V** | `dispatch-appliance-<ver>-x64.vhdx.zip` | `Import-DispatchAppliance.ps1` |
-| **VMware** (vSphere/ESXi/Workstation/Fusion) | `dispatch-appliance-<ver>-x64.ova` | native OVF import |
-| **KVM/libvirt & Proxmox** | `dispatch-appliance-<ver>-x64.qcow2` | `import-libvirt.sh` / `import-proxmox.sh` |
+| **Hyper-V** | `dispatch-appliance-hyperv` | `dispatch-appliance.vhdx` + `Import-DispatchAppliance.ps1` + README |
+| **VMware** (vSphere/ESXi/Workstation/Fusion) | `dispatch-appliance-vmware` | `dispatch-appliance.ova` + README |
+| **KVM/libvirt & Proxmox** | `dispatch-appliance-kvm` | `dispatch-appliance.qcow2` + `import-libvirt.sh` / `import-proxmox.sh` + README |
 
 All are **Gen2/UEFI**, ~4 GB RAM recommended (SQL Server needs ~2 GB). They boot on DHCP, but a relay your apps point at should have a **static IP** - set one after first boot (see [Static IP](#static-ip)).
 
