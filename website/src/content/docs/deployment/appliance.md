@@ -22,13 +22,24 @@ per-VM secrets. Grab the files from the
 
 ### Hyper-V
 
-Unzip the `.vhdx`, then in **PowerShell as Administrator** (the helper is in the download):
+Unzip the `.vhdx`, then in **PowerShell as Administrator** (the helper is in the download). Run it with
+no networking flags for a **guided menu** — it lists the host's virtual switches to pick from, your
+storage volumes (with free space) to choose where the VM lives, an optional **VLAN ID**, and
+memory/CPU, then confirms before creating:
 
 ```powershell
-.\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx -Start
+.\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx
 ```
 
-It creates a Gen2 VM, sets the **Microsoft UEFI CA** Secure Boot template (required for Linux), and
+For **unattended** import, pass `-SwitchName` (skips the menu) plus any of `-VlanId`, `-VmPath`,
+`-MemoryGB`, `-CpuCount`, `-Start`:
+
+```powershell
+.\Import-DispatchAppliance.ps1 -VhdxPath .\dispatch-appliance.vhdx -SwitchName "External" -VlanId 20 -VmPath "D:\Hyper-V" -Start
+```
+
+Either way it creates a Gen2 VM, sets the **Microsoft UEFI CA** Secure Boot template (required for
+Linux), disables Dynamic Memory, attaches the switch (tagging the VLAN if you gave one), and optionally
 starts it. Manual route: New VM → Generation 2 → use the existing VHDX → Security → Secure Boot
 template = Microsoft UEFI Certificate Authority.
 
