@@ -11,6 +11,10 @@
   Run it with no networking/storage flags for a guided menu: it lists the host's virtual switches and
   storage volumes and prompts for the VLAN, memory, and CPU. Pass -SwitchName for fully unattended use.
 
+  On a failover-cluster host it detects the cluster and offers to make the VM highly available (default
+  yes); unattended it adds the VM to the cluster automatically unless -NoCluster is passed. HA requires
+  the VM's storage to be on cluster shared storage (CSV).
+
 .EXAMPLE
   # Guided menu - finds the .vhdx next to this script automatically:
   .\Import-DispatchAppliance.ps1
@@ -30,6 +34,7 @@ param(
   [ValidateRange(0, 4094)] [int] $VlanId = 0,   # 0 = untagged / no VLAN
   [string] $VmPath,
   [switch] $Interactive,
+  [switch] $NoCluster,    # skip making the VM highly available even on a failover-cluster host
   [switch] $Start
 )
 
@@ -110,6 +115,14 @@ if ([System.IO.Path]::GetExtension($VhdxPath) -notin @('.vhdx', '.vhd')) {
   throw "-VhdxPath must point at the appliance .vhdx file, but got '$VhdxPath'. Unzip dispatch-appliance.vhdx.zip and pass the dispatch-appliance.vhdx inside it."
 }
 
+# Detect a failover cluster on this host (Get-Cluster ships in the FailoverClusters module, present only on
+# cluster nodes). When clustered, offer to make the VM highly available - defaulting to yes.
+$inCluster = $false
+if (Get-Command Get-Cluster -ErrorAction SilentlyContinue) {
+  try { $inCluster = [bool](Get-Cluster -ErrorAction Stop) } catch { $inCluster = $false }
+}
+$AddToCluster = $false
+
 # Guided menu when no switch was specified (or -Interactive): collect name, switch, VLAN, storage, sizing.
 $useMenu = $Interactive -or (-not $SwitchName)
 if ($useMenu) {
@@ -121,9 +134,13 @@ if ($useMenu) {
   $MemoryGB   = Read-IntWithDefault "Memory (GB)" $MemoryGB
   $CpuCount   = Read-IntWithDefault "vCPU count" $CpuCount
   if (-not $Start) { $Start = (Read-WithDefault "Start the VM after import? (y/N)" "N") -match '^(y|yes)$' }
+  if ($inCluster -and -not $NoCluster) {
+    $AddToCluster = (Read-WithDefault "This host is in a failover cluster - make the VM highly available? (Y/n)" "Y") -match '^(y|yes)$'
+  }
 }
 else {
   Write-Host "Using network switch: $SwitchName"
+  $AddToCluster = $inCluster -and (-not $NoCluster)   # unattended: HA by default on a cluster (use -NoCluster to skip)
 }
 
 if (Get-VM -Name $Name -ErrorAction SilentlyContinue) { throw "A VM named '$Name' already exists." }
@@ -137,6 +154,7 @@ Write-Host ("  Name:    {0}" -f $Name)
 Write-Host ("  Sizing:  {0} vCPU, {1} GB RAM (Gen2, Dynamic Memory off)" -f $CpuCount, $MemoryGB)
 Write-Host ("  Switch:  {0}{1}" -f $SwitchName, $(if ($VlanId -gt 0) { " (VLAN $VlanId)" } else { " (untagged)" }))
 Write-Host ("  Storage: {0}" -f (Join-Path $VmPath $Name))
+Write-Host ("  HA:      {0}" -f $(if ($AddToCluster) { "add to the failover cluster" } else { "standalone" }))
 if ($useMenu) {
   if ((Read-WithDefault "Proceed? (Y/n)" "Y") -notmatch '^(y|yes)$') { Write-Host "Cancelled."; return }
 }
@@ -175,9 +193,22 @@ catch {
   throw
 }
 
+# Make it highly available if requested. Best-effort: a failure here (e.g. storage isn't on a CSV) leaves a
+# working standalone VM rather than rolling it back. (Requires the VM's storage to be on cluster shared storage.)
+if ($AddToCluster) {
+  Write-Host "Adding '$Name' to the failover cluster (highly available)..."
+  try {
+    Add-ClusterVirtualMachineRole -VirtualMachine $Name -ErrorAction Stop | Out-Null
+    Write-Host "Added to the failover cluster."
+  } catch {
+    Write-Warning "Could not add the VM to the cluster: $($_.Exception.Message)"
+    Write-Warning "The VM is created and usable. Add it manually once its storage is on a CSV: Add-ClusterVirtualMachineRole -VirtualMachine '$Name'"
+  }
+}
+
 Write-Host ""
-Write-Host ("Created '{0}' (Gen2, {1} vCPU, {2} GB, switch '{3}'{4})." -f `
-  $Name, $CpuCount, $MemoryGB, $SwitchName, $(if ($VlanId -gt 0) { ", VLAN $VlanId" } else { "" }))
+Write-Host ("Created '{0}' (Gen2, {1} vCPU, {2} GB, switch '{3}'{4}{5})." -f `
+  $Name, $CpuCount, $MemoryGB, $SwitchName, $(if ($VlanId -gt 0) { ", VLAN $VlanId" } else { "" }), $(if ($AddToCluster) { ", clustered" } else { "" }))
 if ($Start) {
   Start-VM -VM $vm
   Write-Host "Started. First boot configures SQL + Dispatch (a few minutes)."
