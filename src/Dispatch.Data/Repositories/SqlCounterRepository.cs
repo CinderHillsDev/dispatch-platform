@@ -8,9 +8,10 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
 {
     public async Task IncrementAsync(int? relayId, CounterField field, CancellationToken ct = default)
     {
-        // relay_counters.relay_id is a NOT NULL FK; connection-level denials (no relay) are skipped here
-        // and surfaced via relay_log instead.
-        if (relayId is null or <= 0)
+        // relay_id 0 is the "no specific relay" bucket for connection-level events (denials counted before
+        // routing). It's summed into the totals but excluded from per-relay views. Negative ids are invalid.
+        var rid = relayId ?? 0;
+        if (rid < 0)
             return;
 
         var column = field switch
@@ -33,7 +34,7 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
             """;
 
         await using var cn = await factory.OpenAsync(ct);
-        await cn.ExecuteAsync(new CommandDefinition(sql, new { relayId }, cancellationToken: ct));
+        await cn.ExecuteAsync(new CommandDefinition(sql, new { relayId = rid }, cancellationToken: ct));
     }
 
     public async Task<CounterTotals> GetTodayAsync(CancellationToken ct = default)
@@ -63,6 +64,7 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
                    ISNULL(SUM(denied), 0)    AS Denied
             FROM relay_counters
             WHERE date = CAST(SYSUTCDATETIME() AS DATE)
+              AND relay_id > 0              -- exclude the relay_id 0 "no relay" bucket (denials) from per-relay views
             GROUP BY relay_id;
             """;
         await using var cn = await factory.OpenAsync(ct);

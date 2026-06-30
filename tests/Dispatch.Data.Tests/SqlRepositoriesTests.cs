@@ -38,6 +38,27 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
     }
 
     [Fact]
+    public async Task Denied_counter_is_recorded_in_totals_but_excluded_from_per_relay()
+    {
+        if (!sql.Available) return;
+        var counters = new SqlCounterRepository(sql.Factory);
+
+        // A connection-level denial has no relay (relay_id 0). Before migration 0007 this was dropped by the
+        // NOT NULL FK, so denials never reached /stats or Reports even though relay_log recorded them.
+        var before = (await counters.GetTodayAsync()).Denied;
+        await counters.IncrementAsync(0, CounterField.Denied);
+        var after = (await counters.GetTodayAsync()).Denied;
+        Assert.Equal(before + 1, after);
+
+        // Range totals (the Reports summary) include it too.
+        var today = DateTime.UtcNow.Date;
+        Assert.True((await counters.GetRangeTotalsAsync(today, today)).Denied >= 1);
+
+        // ...but the per-relay breakdown must not surface the relay_id 0 bucket as a phantom relay.
+        Assert.DoesNotContain(await counters.GetTodayByRelayAsync(), r => r.RelayId == 0);
+    }
+
+    [Fact]
     public async Task Default_relay_is_unconfigured_until_a_provider_is_set()
     {
         if (!sql.Available) return;
