@@ -77,13 +77,15 @@ jobs:
 
       - name: Package + checksum
         run: |
-          zip -9 dispatch-appliance.vhdx.zip dispatch-appliance.vhdx
+          # Bundle the one-command import helpers alongside the images.
+          cp appliance/Import-DispatchAppliance.ps1 appliance/import-libvirt.sh appliance/import-proxmox.sh .
+          cp appliance/hyperv-README.txt README.txt
+          # The Hyper-V download is self-contained: VHDX + import helper + instructions in one zip.
+          zip -9 dispatch-appliance.vhdx.zip dispatch-appliance.vhdx Import-DispatchAppliance.ps1 README.txt
           sha256sum dispatch-appliance.vhdx.zip | tee dispatch-appliance.vhdx.zip.sha256
           # The OVA and compressed qcow2 are already containers; just checksum them.
           sha256sum dispatch-appliance.ova    | tee dispatch-appliance.ova.sha256
           sha256sum dispatch-appliance.qcow2  | tee dispatch-appliance.qcow2.sha256
-          # Bundle the one-command import helpers alongside the images.
-          cp appliance/Import-DispatchAppliance.ps1 appliance/import-libvirt.sh appliance/import-proxmox.sh .
 
       # Upload before the boot smoke so the artifacts are available even if the smoke fails.
       - name: Upload appliance artifacts
