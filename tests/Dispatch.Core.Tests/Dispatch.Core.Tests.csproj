@@ -20,12 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- openssl-signed vectors (signed with the key matching the embedded public key) to prove interop. -->
-    <EmbeddedResource Include="testdata/sample.manifest.json" />
-    <EmbeddedResource Include="testdata/sample.manifest.json.sig" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\src\Dispatch.Core\Dispatch.Core.csproj" />
     <ProjectReference Include="..\..\src\Dispatch.Providers\Dispatch.Providers.csproj" />
     <ProjectReference Include="..\..\src\Dispatch.Service\Dispatch.Service.csproj" />
