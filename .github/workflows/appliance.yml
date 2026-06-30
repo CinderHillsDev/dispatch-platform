@@ -4,13 +4,10 @@ name: Appliance
 # Hyper-V host / nested virt needed) into a Gen2/UEFI VHDX with SQL Server Express + Dispatch baked in, then
 # boots it under QEMU/UEFI to prove the service comes up on first boot. Artifact: dispatch-hyperv-appliance.
 on:
+  # Dispatch-only: the Build workflow kicks this off automatically AFTER its tests + lint pass (see the
+  # trigger-appliance job in build.yml), so the appliance is never built from un-validated code and never
+  # races Build. Also runnable by hand from the Actions tab.
   workflow_dispatch:
-  push:
-    paths:
-      - "appliance/**"
-      - "installer/linux/install.sh"
-      - "installer/linux/dispatch.service"
-      - ".github/workflows/appliance.yml"
 
 env:
   DOTNET_NOLOGO: "true"

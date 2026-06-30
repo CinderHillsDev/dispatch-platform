@@ -96,5 +96,22 @@ jobs:
           fi
           echo "OK: no em dashes."
 
+  # After a green Build on a working branch, rebuild the appliance from THIS validated commit so the image
+  # always has the latest tested code and never races Build. workflow_run can't be used (it only fires from
+  # the default branch), so we dispatch the Appliance workflow with GITHUB_TOKEN (workflow_dispatch is an
+  # allowed GITHUB_TOKEN trigger). `needs: build-test` gates it on success.
+  trigger-appliance:
+    needs: [build-test, no-em-dash]
+    if: ${{ github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'feat/relay-engine-web-providers') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the appliance from this validated commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run appliance.yml --ref "${{ github.ref_name }}"
+
   # NOTE: tagged releases (refs/tags/v*) are handled by release.yml, which builds the signed Windows
   # installer + Linux tarball and publishes a GitHub Release. This workflow only runs build + tests.
