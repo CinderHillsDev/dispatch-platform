@@ -1,8 +1,10 @@
 name: Appliance
 
-# Builds the downloadable Hyper-V appliance: customizes the Ubuntu 24.04 cloud image with libguestfs (no
-# Hyper-V host / nested virt needed) into a Gen2/UEFI VHDX with SQL Server Express + Dispatch baked in, then
-# boots it under QEMU/UEFI to prove the service comes up on first boot. Artifact: dispatch-hyperv-appliance.
+# Builds the downloadable virtual appliances for ALL hypervisors in one job: customizes the Ubuntu 24.04
+# cloud image with libguestfs (no Hyper-V host / nested virt needed) into a Gen2/UEFI image with SQL Server
+# Express + Dispatch baked in, emits it as VHDX (Hyper-V), OVA (VMware), and qcow2 (KVM/Proxmox), then boots
+# it under QEMU/UEFI to prove the service comes up on first boot. Artifacts: dispatch-appliance-hyperv,
+# dispatch-appliance-vmware, dispatch-appliance-kvm.
 on:
   # Dispatch-only: the Build workflow kicks this off automatically AFTER its tests + lint pass (see the
   # trigger-appliance job in build.yml), so the appliance is never built from un-validated code and never
@@ -14,7 +16,10 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: "true"
 
 jobs:
-  hyperv-appliance:
+  # ONE job builds all three appliance formats (Hyper-V VHDX, VMware OVA, KVM/Proxmox qcow2) from a
+  # single image, then uploads them as three separate downloads near the end. The name reflects that
+  # it is not Hyper-V-only.
+  build-appliances:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
