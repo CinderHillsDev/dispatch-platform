@@ -64,4 +64,8 @@ public static class ConfigKeys
     public const string PurgeArchiveRetentionDays = "purge.archive_retention_days";
     public const string PurgeSizeTriggerGb = "purge.size_trigger_gb";
     public const string PurgeSizeTargetGb = "purge.size_target_gb";
+
+    // Set true by installers that ship a platform updater (appliance / Linux / Windows), enabling the
+    // web-UI "upload an upgrade package" flow. False (e.g. Docker) hides/refuses in-app updates.
+    public const string UpdatesSelfManaged = "updates.self_managed";
 }

@@ -26,6 +26,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ApiKeyCache>();
         services.AddSingleton<Auth.LoginThrottle>();
         services.AddSingleton<ApiMessageHandler>();
+        services.AddSingleton(Dispatch.Core.Updates.UpdateBundleVerifier.Default());
+        services.AddSingleton<Updates.UpdateService>();
         services.AddScoped<ApiKeyMiddleware>();
         services.AddScoped<WebAuthMiddleware>();
 
