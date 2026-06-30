@@ -210,7 +210,7 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
             var script = Path.Combine(UpdatesDir, "dispatch-update.ps1");
             File.WriteAllText(script, EmbeddedWindowsUpdater());
             Schtasks("/Create", "/TN", "DispatchUpdate", "/TR",
-                $"powershell -NoProfile -ExecutionPolicy Bypass -File {script}",
+                $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{script}\"",   // quote: data dir may contain spaces
                 "/SC", "ONCE", "/ST", "00:00", "/RU", "SYSTEM", "/RL", "HIGHEST", "/F");
             Schtasks("/Run", "/TN", "DispatchUpdate");
         }

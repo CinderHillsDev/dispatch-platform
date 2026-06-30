@@ -77,7 +77,14 @@ function Read-VlanId {
 }
 
 function Select-Storage([string]$Default) {
-  return (Read-WithDefault "Where should the VM be stored?" $Default)
+  Write-Host ""
+  Write-Host "Storage volumes:"
+  Get-Volume -ErrorAction SilentlyContinue |
+    Where-Object { $_.DriveLetter -and $_.Size -gt 0 } | Sort-Object DriveLetter | ForEach-Object {
+      Write-Host ("  {0}:  {1:N0} GB free of {2:N0} GB  {3}" -f $_.DriveLetter, ($_.SizeRemaining / 1GB), ($_.Size / 1GB), $_.FileSystemLabel)
+    }
+  Write-Host "  (The appliance disk is ~6-10 GB thin-provisioned; SQL + logs grow it over time.)"
+  return (Read-WithDefault "VM storage folder" $Default)
 }
 
 # --- preflight ----------------------------------------------------------------------------------
