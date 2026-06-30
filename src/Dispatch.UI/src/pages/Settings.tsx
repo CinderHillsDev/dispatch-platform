@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { api, type AppSettings, type SystemConfig, type PurgeRun } from "../lib/api";
+import { api, type AppSettings, type SystemConfig, type PurgeRun, type StorageUsage } from "../lib/api";
 import { Modal } from "../Modal";
 
 type Tab = "connections" | "delivery" | "storage";
@@ -57,6 +57,7 @@ export function Settings() {
 
       {tab === "storage" && (
         <SubTabbed items={[
+          { id: "usage", label: "Usage", render: () => <StorageUsagePanel /> },
           { id: "retention", label: "Retention", render: () => <RetentionPanel initial={settings.retention} /> },
           ...(sysConfig ? [{ id: "spool", label: "Spool", render: () => <SpoolPanel initial={sysConfig} /> }] : []),
           { id: "maintenance", label: "Maintenance", render: () => <PurgePanel /> },
@@ -185,6 +186,80 @@ function SpoolPanel({ initial }: { initial: SystemConfig }) {
       <Txt label="Directory" value={spool.directory} onChange={(v) => setSpool({ ...spool, directory: v })} />
       <Num label="Worker count" value={spool.workerCount} onChange={(v) => setSpool({ ...spool, workerCount: v })} />
     </SavePanel>
+  );
+}
+
+function fmtBytes(n: number): string {
+  if (n <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+// Shows what each retention category is actually consuming — DB tables (relay_log broken out by event,
+// plus the audit log) and the on-disk spool dirs — so the numbers on the Retention tab have context.
+function StorageUsagePanel() {
+  const [u, setU] = useState<StorageUsage | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => { api.storage().then(setU).catch((e) => setErr((e as Error).message)); }, []);
+
+  if (err) return <div className="panel" style={{ marginTop: 18 }}><span className="badge error">Error: {err}</span></div>;
+  if (!u) return <div className="center">Loading…</div>;
+
+  const eventLabel: Record<string, string> = {
+    Delivered: "Delivered", Failed: "Failed", Retrying: "Retrying", TestSent: "Test sends", Denied: "Denied",
+  };
+
+  return (
+    <div className="panel" style={{ maxWidth: 720, marginTop: 18 }}>
+      <h2>Database</h2>
+      {!u.database.connected
+        ? <p className="muted">Database not reachable.</p>
+        : (
+          <>
+            <table>
+              <thead><tr><th>Message log (by event)</th><th>Rows</th><th>Est. size</th></tr></thead>
+              <tbody>
+                {u.database.relayLog.byEvent.length === 0 && <tr><td colSpan={3} className="muted">No log rows.</td></tr>}
+                {u.database.relayLog.byEvent.map((e) => (
+                  <tr key={e.event}>
+                    <td>{eventLabel[e.event] ?? e.event}</td>
+                    <td>{e.rows.toLocaleString()}</td>
+                    <td>{fmtBytes(e.estBytes)}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td><strong>Audit log</strong>{u.database.audit.securityRows > 0 ? ` (${u.database.audit.securityRows.toLocaleString()} security)` : ""}</td>
+                  <td>{u.database.audit.rows.toLocaleString()}</td>
+                  <td>{fmtBytes(u.database.audit.tableBytes)}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+              Per-event sizes are estimated from each event's share of the {fmtBytes(u.database.relayLog.tableBytes)} message-log
+              table. Total database file: {fmtBytes(u.database.totalBytes)}.
+            </p>
+          </>
+        )}
+
+      <h2 style={{ marginTop: 22 }}>Spool (on disk)</h2>
+      <table>
+        <thead><tr><th>Directory</th><th>Files</th><th>Size</th></tr></thead>
+        <tbody>
+          {(["captured", "failed", "incoming", "processing"] as const).map((k) => (
+            <tr key={k}>
+              <td>{k === "captured" ? "Captured (local inbox)" : k === "failed" ? "Retry queue (failed)" : k[0].toUpperCase() + k.slice(1)}</td>
+              <td>{u.spool[k].files.toLocaleString()}</td>
+              <td>{fmtBytes(u.spool[k].bytes)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {u.disk.freeBytes != null && (
+        <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>{fmtBytes(u.disk.freeBytes)} free on the spool volume.</p>
+      )}
+    </div>
   );
 }
 

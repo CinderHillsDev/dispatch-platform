@@ -105,6 +105,7 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton<IRoutingRuleRepository, FakeRoutingRuleRepository>();
         builder.Services.AddSingleton<IDatabaseHealth, FakeDatabaseHealth>();
         builder.Services.AddSingleton<ILogMaintenance, FakeLogMaintenance>();
+        builder.Services.AddSingleton<Dispatch.Core.Maintenance.IStorageReport, FakeStorageReport>();
         builder.Services.AddSingleton<ISmtpCredentialRepository, FakeSmtpCredentialRepository>();
         builder.Services.AddSingleton<IRelayProviderFactory, FakeProviderFactory>();
         builder.Services.AddSingleton<IRelayResolver, RoutingEngine>();
@@ -255,6 +256,15 @@ internal sealed class FakeLogMaintenance : ILogMaintenance
     public Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default) => Task.FromResult(142L * 1024 * 1024);
     public Task<int> PurgeByRetentionAsync(string @event, int retentionDays, CancellationToken ct = default) => Task.FromResult(0);
     public Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default) => Task.FromResult(0);
+}
+
+internal sealed class FakeStorageReport : Dispatch.Core.Maintenance.IStorageReport
+{
+    public Task<Dispatch.Core.Maintenance.DbStorage> GetAsync(CancellationToken ct = default) =>
+        Task.FromResult(new Dispatch.Core.Maintenance.DbStorage(
+            Connected: true, DatabaseBytes: 142L * 1024 * 1024, RelayLogBytes: 1024,
+            RelayLogByEvent: [new Dispatch.Core.Maintenance.LogEventCount("Delivered", 3)],
+            AuditBytes: 256, AuditRows: 5, AuditSecurityRows: 1));
 }
 
 internal sealed class FakeSmtpCredentialRepository : Dispatch.Core.Smtp.ISmtpCredentialRepository

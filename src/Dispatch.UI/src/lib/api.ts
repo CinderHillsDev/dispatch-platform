@@ -191,6 +191,17 @@ export interface PurgeRun {
   databaseSizeBytes: number;
 }
 
+export interface StorageUsage {
+  database: {
+    connected: boolean;
+    totalBytes: number;
+    relayLog: { tableBytes: number; totalRows: number; byEvent: { event: string; rows: number; estBytes: number }[] };
+    audit: { tableBytes: number; rows: number; securityRows: number };
+  };
+  spool: Record<"captured" | "failed" | "incoming" | "processing", { files: number; bytes: number }>;
+  disk: { freeBytes: number | null };
+}
+
 export interface SystemInfo {
   version: string;
   uptimeSeconds: number;
@@ -332,6 +343,8 @@ export const api = {
     run: () => sendJson<PurgeRun>("/api/purge/run", "POST", {}),
     history: () => getJson<PurgeRun[]>("/api/purge/history"),
   },
+
+  storage: () => getJson<StorageUsage>("/api/storage"),
 
   system: {
     about: () => getJson<SystemInfo>("/api/system"),

@@ -223,6 +223,46 @@ public static class WebEndpoints
 
         group.MapGet("/spool", (SpoolDirectory spool) => Results.Ok(SpoolCounts(spool)));
 
+        // Storage usage broken out by retention category (spec §6.10): how much each log-event class, the
+        // audit log, and each spool dir is actually consuming — so operators can see what their retention
+        // windows hold. DB per-event bytes are estimated by apportioning the relay_log table size across the
+        // event row counts (exact per-event bytes aren't cheap in SQL Server); spool figures are exact.
+        group.MapGet("/storage", async (IStorageReport report, SpoolDirectory spool, CancellationToken ct) =>
+        {
+            var db = await report.GetAsync(ct);
+            var totalRows = db.RelayLogByEvent.Sum(e => e.Rows);
+            var byEvent = db.RelayLogByEvent
+                .OrderByDescending(e => e.Rows)
+                .Select(e => new
+                {
+                    e.Event,
+                    e.Rows,
+                    estBytes = totalRows > 0 ? (long)(db.RelayLogBytes * ((double)e.Rows / totalRows)) : 0L,
+                });
+
+            long? diskFreeBytes = null;
+            try { diskFreeBytes = new DriveInfo(spool.Root).AvailableFreeSpace; } catch { /* best-effort */ }
+
+            return Results.Ok(new
+            {
+                database = new
+                {
+                    connected = db.Connected,
+                    totalBytes = db.DatabaseBytes,
+                    relayLog = new { tableBytes = db.RelayLogBytes, totalRows, byEvent },
+                    audit = new { tableBytes = db.AuditBytes, rows = db.AuditRows, securityRows = db.AuditSecurityRows },
+                },
+                spool = new
+                {
+                    captured = DirUsage(spool.CapturedDir),
+                    failed = DirUsage(spool.FailedDir),
+                    incoming = DirUsage(spool.IncomingDir),
+                    processing = DirUsage(spool.ProcessingDir),
+                },
+                disk = new { freeBytes = diskFreeBytes },
+            });
+        });
+
         group.MapGet("/messages", async (HttpContext ctx, IMessageLogQuery logs, CancellationToken ct) =>
         {
             var q = ctx.Request.Query;
@@ -313,6 +353,18 @@ public static class WebEndpoints
         processing = Directory.EnumerateFiles(spool.ProcessingDir, "*.eml").Count(),
         failed = Directory.EnumerateFiles(spool.FailedDir, "*.eml").Count(),
     };
+
+    // Exact file count + total bytes for a spool dir (best-effort: a vanished dir/file reads as empty).
+    private static object DirUsage(string dir)
+    {
+        long files = 0, bytes = 0;
+        try
+        {
+            foreach (var f in new DirectoryInfo(dir).EnumerateFiles("*.eml")) { files++; bytes += f.Length; }
+        }
+        catch { /* dir missing or racing a purge — report what we have */ }
+        return new { files, bytes };
+    }
 
     private static object Public(ApiKey k) => new
     {

@@ -22,6 +22,10 @@ All of these are editable under **Settings → Retention**, and map to the `purg
 
 Setting any retention to **`0` means "keep forever"** — that data type is never purged by age (the database size safety net below still applies). Use `1` or more to actually delete by age.
 
+## Storage usage
+
+**Settings → Storage → Usage** (and `GET /api/storage`) shows what each retention category is actually consuming: message-log rows broken out by event (Delivered, Failed, Retrying, Test sends, Denied) with an estimated size, the audit log's rows and size, and the on-disk spool directories (captured / retry-queue) with exact file counts and bytes — plus free space on the spool volume. Use it to decide which retention window to tighten. (Per-event database sizes are estimated from each event's share of the message-log table; spool figures are exact.)
+
 ## Size-based safety
 
 In addition to age-based purging, Dispatch watches the database file size. When the file reaches **9.5 GB** it purges the oldest log rows down to **9.0 GB**. This keeps the database comfortably below the **SQL Server Express 10 GB limit**, so the service never wedges on a full database.
