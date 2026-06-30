@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Formats.Tar;
 using System.IO.Compression;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,6 +12,7 @@ using Dispatch.Core.Configuration;
 using Dispatch.Core.Updates;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Web.Updates;
 
@@ -21,7 +24,7 @@ namespace Dispatch.Web.Updates;
 /// platform updater (Linux systemd/bash or the Windows helper) which does the swap + restart + rollback and
 /// writes back <see cref="UpdateStatus"/>. The same package works on every install; only the apply differs.
 /// </summary>
-public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository config, IAuditLog audit, UpdateBundleVerifier verifier)
+public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository config, IAuditLog audit, UpdateBundleVerifier verifier, ILogger<UpdateService>? log = null)
 {
     private static readonly JsonSerializerOptions Json =
         new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new JsonStringEnumConverter() } };
@@ -128,6 +131,8 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
             await File.WriteAllTextAsync(tmp, JsonSerializer.Serialize(request, Json), ct);
             File.Move(tmp, reqPath, overwrite: true);
 
+            TriggerPlatformApply();
+
             await audit.Lifecycle("Update requested",
                 $"Upgrade to {manifest.Version} ({CurrentArch}) uploaded, verified, and handed to the updater.", "Notice");
             return new(true, StatusCodes.Status202Accepted,
@@ -192,6 +197,45 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
     {
         Directory.CreateDirectory(UpdatesDir);
         await File.WriteAllTextAsync(Path.Combine(UpdatesDir, "status.json"), JsonSerializer.Serialize(s, Json), ct);
+    }
+
+    // Linux: the systemd dispatch-update.path watcher picks up apply.request - nothing to do. Windows: there
+    // is no path watcher, so write the embedded updater script to the data dir and launch it DECOUPLED as
+    // SYSTEM via Task Scheduler, so it survives the service restart it performs.
+    private void TriggerPlatformApply()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try
+        {
+            var script = Path.Combine(UpdatesDir, "dispatch-update.ps1");
+            File.WriteAllText(script, EmbeddedWindowsUpdater());
+            Schtasks("/Create", "/TN", "DispatchUpdate", "/TR",
+                $"powershell -NoProfile -ExecutionPolicy Bypass -File {script}",
+                "/SC", "ONCE", "/ST", "00:00", "/RU", "SYSTEM", "/RL", "HIGHEST", "/F");
+            Schtasks("/Run", "/TN", "DispatchUpdate");
+        }
+        catch (Exception ex) { log?.LogError(ex, "Failed to launch the Windows updater task"); }
+    }
+
+    private static void Schtasks(params string[] args)
+    {
+        var psi = new ProcessStartInfo("schtasks.exe")
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = Process.Start(psi);
+        p?.WaitForExit(15000);
+    }
+
+    private static string EmbeddedWindowsUpdater()
+    {
+        var asm = Assembly.GetExecutingAssembly();
+        var name = Array.Find(asm.GetManifestResourceNames(), n => n.EndsWith("dispatch-update-windows.ps1", StringComparison.Ordinal))
+            ?? throw new InvalidOperationException("Embedded Windows updater script not found.");
+        using var s = asm.GetManifestResourceStream(name)!;
+        using var r = new StreamReader(s);
+        return r.ReadToEnd();
     }
 
     private static void TryDelete(string dir) { try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { /* best-effort */ } }

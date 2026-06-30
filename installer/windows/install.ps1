@@ -53,7 +53,10 @@ Write-Host "==> Publishing the service to $InstallDir"
 dotnet publish "$Source\src\Dispatch.Service" -c Release -o $InstallDir
 
 Write-Host "==> Writing config to $DataDir"
-New-Item -ItemType Directory -Force "$DataDir\spool", "$DataDir\logs" | Out-Null
+New-Item -ItemType Directory -Force "$DataDir\spool", "$DataDir\logs", "$DataDir\updates" | Out-Null
+# Mark this install self-managed so the dashboard exposes the "upload upgrade package" flow (the service,
+# running as LocalSystem, applies it by stopping itself, swapping binaries, and restarting via the SCM).
+New-Item -ItemType File -Force "$DataDir\updates\.self-managed" | Out-Null
 # Lock the data dir down: ProgramData is world-readable by default. Convert inherited ACEs to explicit, then
 # remove ONLY BUILTIN\Users (S-1-5-32-545) and Authenticated Users (S-1-5-11) - leaving SYSTEM + Administrators
 # (the service runs as LocalSystem) untouched so it can never be locked out. Protects the connection string,

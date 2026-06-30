@@ -71,6 +71,14 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public void Windows_updater_script_is_embedded()
+    {
+        // The Windows apply path writes this embedded script to disk at runtime; guard against a rename.
+        var asm = typeof(UpdateService).Assembly;
+        Assert.Contains(asm.GetManifestResourceNames(), n => n.EndsWith("dispatch-update-windows.ps1", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Refuses_when_not_self_managed()
     {
         var (svc, key, _) = Build(selfManaged: false);

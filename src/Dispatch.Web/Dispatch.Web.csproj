@@ -20,6 +20,11 @@
     <InternalsVisibleTo Include="Dispatch.Web.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The Windows update applier, written to the data dir + run as SYSTEM at apply time (see UpdateService). -->
+    <EmbeddedResource Include="Updates\dispatch-update-windows.ps1" />
+  </ItemGroup>
+
   <!-- Embed the compiled React dashboard (src/Dispatch.UI/dist copied to wwwroot) into the assembly.
        Run `npm run build` in ../Dispatch.UI and re-copy wwwroot when the UI changes. -->
   <PropertyGroup>

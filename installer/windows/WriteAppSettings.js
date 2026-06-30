@@ -12,6 +12,12 @@ if (parts.length >= 2) {
     var fso = new ActiveXObject("Scripting.FileSystemObject");
     if (!fso.FolderExists(dataDir)) { fso.CreateFolder(dataDir); }
 
+    // Mark this install self-managed so the dashboard exposes the "upload upgrade package" flow.
+    var updatesDir = fso.BuildPath(dataDir, "updates");
+    if (!fso.FolderExists(updatesDir)) { fso.CreateFolder(updatesDir); }
+    var marker = fso.BuildPath(updatesDir, ".self-managed");
+    if (!fso.FileExists(marker)) { fso.CreateTextFile(marker, true).Close(); }
+
     var targetPath = fso.BuildPath(dataDir, "appsettings.json");
     // Don't clobber an existing config (preserves manual edits + upgrades).
     if (!fso.FileExists(targetPath)) {
