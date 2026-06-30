@@ -1,16 +1,29 @@
 #Requires -Version 7
 <#
   Functional QC smoke for a real Dispatch install — the pre-release gate that proves core functionality
-  actually works end to end (not just that the service starts):
+  actually works end to end (not just that the service starts). Uses the Local provider so nothing leaves
+  the box and delivery is deterministic; delivery is confirmed via the /stats delivered counter (the log
+  stores spool ids in a different format than the API returns, so a counter delta is the robust signal).
 
-    1. API delivery     — POST /api/v1/messages (HTTP, port 8025) -> Delivered via the Local relay
-    2. SMTP delivery     — a real SMTP session upgraded with STARTTLS -> Delivered
-    3. API key revocation — a revoked key is refused (401)
-    4. SMTP AUTH         — over STARTTLS: valid creds accepted (235), bad creds rejected (535)
+  Coverage (each section cleans up the resources it creates):
 
-  Run after the service is up (serving /health). Uses the Local provider so nothing leaves the box and
-  delivery is deterministic. Verifies delivery via the /stats delivered counter (the log stores spool ids
-  in a different format than the API returns, so a counter delta is the robust signal).
+    1.  API delivery            — POST /api/v1/messages (HTTP, port 8025) -> Delivered via the Local relay
+    2.  SMTP delivery           — a real SMTP session upgraded with STARTTLS -> Delivered
+    3.  API key revocation      — a revoked key is refused (401)
+    4.  SMTP AUTH               — over STARTTLS: valid creds accepted (235), bad creds rejected (535)
+    5.  Local Inbox + features  — API message with cc/html/tags is captured; detail shows cc + bodies
+    6.  Attachments (SMTP)      — a MIME attachment sent over SMTP is parsed and downloadable from the inbox
+    6b. Attachments (HTTP API)  — a Mailgun-style multipart 'attachment' upload is parsed and downloadable
+    7.  Routing rules + simulate — a recipient rule routes to the chosen relay; non-match falls to default
+    8.  Relay test endpoint     — POST /relays/{id}/test succeeds against the Local provider
+    9.  Reports round-trip      — /reports reflects the deliveries we just made
+    10. Config round-trip       — PUT /config/api persists + reloads the cache (live setting)
+    11. Settings round-trip     — PUT /settings persists a retention threshold
+    12. Audit log               — operations produce audit rows
+    13. Purge                   — a manual purge runs and is recorded in history
+    14. Read-only endpoints     — health/stats/system/spool/metrics all answer
+
+  Run after the service is up (serving /health).
 #>
 [CmdletBinding()]
 param(
@@ -21,9 +34,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $hdr  = @{ 'X-Dispatch-Request' = '1' }
 $sess = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$tok  = (New-Guid).Guid.Substring(0, 8)   # run-unique token so subjects don't collide across runs
 
 function DGet  ($path)       { Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Uri "$Dashboard$path" }
 function DPost ($path,$body) { Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Post -Uri "$Dashboard$path" -Body $body }
+function DPut  ($path,$body) { Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Put -Uri "$Dashboard$path" -Body $body }
 function DDel  ($path)       { Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -Method Delete -Uri "$Dashboard$path" }
 function Delivered          { [int]((DGet '/api/stats').delivered) }
 
@@ -56,6 +71,27 @@ function New-StartTlsSmtp([int]$port) {
     return [pscustomobject]@{ Tcp = $tcp; R = $sr; W = $sw }
 }
 
+# Runs a full MAIL/RCPT/DATA exchange over an open (post-STARTTLS) connection. $dataLines are the raw
+# message lines (headers + blank line + body); the trailing "." is appended here.
+function Send-SmtpMessage($c, [string]$from, [string]$to, [string[]]$dataLines) {
+    $c.W.WriteLine("MAIL FROM:<$from>"); $m = $c.R.ReadLine(); if ($m -notmatch '^250') { throw "MAIL FROM: $m" }
+    $c.W.WriteLine("RCPT TO:<$to>");     $m = $c.R.ReadLine(); if ($m -notmatch '^250') { throw "RCPT TO: $m" }
+    $c.W.WriteLine('DATA');              $m = $c.R.ReadLine(); if ($m -notmatch '^3')   { throw "DATA: $m" }
+    foreach ($line in $dataLines) { $c.W.WriteLine($line) }
+    $c.W.WriteLine('.'); $m = $c.R.ReadLine(); if ($m -notmatch '^250') { throw "end-of-DATA: $m" }
+}
+
+# Polls the Local Inbox for a captured message with the given subject and returns its id (.eml name).
+function Find-LocalMessageId([string]$subject, [int]$timeoutSec = 15) {
+    $deadline = (Get-Date).AddSeconds($timeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        $hit = (DGet '/api/local/messages').items | Where-Object { $_.subject -eq $subject } | Select-Object -First 1
+        if ($hit) { return $hit.id }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "local message '$subject' not captured within ${timeoutSec}s"
+}
+
 # --- auth: first-run set password, otherwise log in ----------------------------------------------
 $status = DGet '/api/auth/status'
 $pwBody = "{""password"":""$Password""}"
@@ -86,11 +122,7 @@ Write-Host "OK: API message delivered ($($send.id))"
 # === 2. SMTP delivery over STARTTLS =============================================================
 $base = Delivered
 $c = New-StartTlsSmtp $smtpPort
-$c.W.WriteLine('MAIL FROM:<smoke-smtp@local.test>'); $m = $c.R.ReadLine(); if ($m -notmatch '^250') { throw "MAIL FROM: $m" }
-$c.W.WriteLine('RCPT TO:<dest@local.test>');         $m = $c.R.ReadLine(); if ($m -notmatch '^250') { throw "RCPT TO: $m" }
-$c.W.WriteLine('DATA');                               $m = $c.R.ReadLine(); if ($m -notmatch '^3')   { throw "DATA: $m" }
-$c.W.WriteLine('Subject: smoke-smtp'); $c.W.WriteLine(''); $c.W.WriteLine('hello over starttls'); $c.W.WriteLine('.')
-$m = $c.R.ReadLine(); if ($m -notmatch '^250') { throw "end-of-DATA: $m" }
+Send-SmtpMessage $c 'smoke-smtp@local.test' 'dest@local.test' @('Subject: smoke-smtp', '', 'hello over starttls')
 $c.W.WriteLine('QUIT'); $c.Tcp.Close()
 Wait-Delivered $base
 Write-Host "OK: SMTP message delivered over STARTTLS"
@@ -126,5 +158,142 @@ try {
     Write-Host "OK: SMTP AUTH over STARTTLS rejected bad credentials (535)"
 }
 finally { DDel "/api/smtp-credentials/$u" | Out-Null }
+
+# === 5. Local Inbox + message features (cc / html / tags via the HTTP API) =======================
+DDel '/api/local/messages' | Out-Null                          # start from a clean inbox for a precise assertion
+$key2 = DPost '/api/keys' '{"name":"smoke-features","rateLimitPerMinute":0}'
+$subj = "smoke-features-$tok"
+$base = Delivered
+$body = @{
+    from = 'features@local.test'; to = @('dest@local.test'); cc = @('carbon@local.test')
+    subject = $subj; text = 'plain part'; html = '<p>html part</p>'
+    headers = @{ 'X-Smoke-Tag' = $tok }; tags = @('smoke', 'features')
+} | ConvertTo-Json -Depth 5
+Invoke-RestMethod -Method Post -Uri "$Api/api/v1/messages" -Headers @{ Authorization = "Bearer $($key2.key)" } `
+    -ContentType 'application/json' -Body $body | Out-Null
+Wait-Delivered $base
+$id = Find-LocalMessageId $subj
+$det = DGet "/api/local/messages/$id"
+if ($det.cc -notmatch 'carbon@local.test') { throw "captured message is missing the Cc recipient: $($det.cc)" }
+if ($det.html -notmatch 'html part')       { throw "captured message is missing the HTML body" }
+if ($det.text -notmatch 'plain part')      { throw "captured message is missing the text body" }
+DDel "/api/keys/$($key2.id)" | Out-Null
+Write-Host "OK: Local Inbox captured a feature-rich message (cc + text + html)"
+
+# === 6. Attachments: send a MIME attachment over SMTP, parse + download it from the inbox =========
+$asubj = "smoke-attach-$tok"
+$attText = "dispatch-smoke-attachment-$tok"
+$attB64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($attText))
+$base = Delivered
+$c = New-StartTlsSmtp $smtpPort
+Send-SmtpMessage $c 'attach@local.test' 'dest@local.test' @(
+    "Subject: $asubj", 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="bnd1"', '',
+    '--bnd1', 'Content-Type: text/plain; charset=utf-8', '', 'see attached', '',
+    '--bnd1', 'Content-Type: application/octet-stream; name="hello.txt"',
+    'Content-Disposition: attachment; filename="hello.txt"', 'Content-Transfer-Encoding: base64', '',
+    $attB64, '', '--bnd1--')
+$c.W.WriteLine('QUIT'); $c.Tcp.Close()
+Wait-Delivered $base
+$aid = Find-LocalMessageId $asubj
+$adet = DGet "/api/local/messages/$aid"
+if (@($adet.attachments).Count -lt 1) { throw "attachment was not parsed from the captured message" }
+$dl = Invoke-WebRequest -SkipCertificateCheck -WebSession $sess -Uri "$Dashboard/api/local/messages/$aid/attachments/0"
+$got = [Text.Encoding]::ASCII.GetString($dl.Content)
+if ($got -notmatch [regex]::Escape($attText)) { throw "downloaded attachment content did not match (got: $got)" }
+Write-Host "OK: SMTP attachment parsed by the inbox and downloaded intact"
+
+# === 6b. Attachments over the HTTP API (Mailgun-style multipart 'attachment' field) ==============
+$apiSubj    = "smoke-attach-api-$tok"
+$apiAttText = "dispatch-api-attachment-$tok"
+$attFile    = Join-Path ([IO.Path]::GetTempPath()) "smoke-attach-$tok.txt"
+Set-Content -LiteralPath $attFile -Value $apiAttText -NoNewline -Encoding ascii
+$key3 = DPost '/api/keys' '{"name":"smoke-attach-api","rateLimitPerMinute":0}'
+$base = Delivered
+try {
+    # -Form sends multipart/form-data; a FileInfo value becomes a file part. This is the exact Mailgun shape:
+    # `attachment` file field(s), `o:tag` tags, `h:<Name>` custom headers.
+    $form = @{
+        from = 'attach-api@local.test'; to = 'dest@local.test'; subject = $apiSubj
+        text = 'see api attachment'; 'o:tag' = 'smoke'; attachment = Get-Item -LiteralPath $attFile
+    }
+    Invoke-RestMethod -Method Post -Uri "$Api/api/v1/messages" -Headers @{ Authorization = "Bearer $($key3.key)" } -Form $form | Out-Null
+    Wait-Delivered $base
+    $apiId  = Find-LocalMessageId $apiSubj
+    $apiDet = DGet "/api/local/messages/$apiId"
+    if (@($apiDet.attachments).Count -lt 1) { throw "API multipart attachment was not parsed into the message" }
+    $apiDl  = Invoke-WebRequest -SkipCertificateCheck -WebSession $sess -Uri "$Dashboard/api/local/messages/$apiId/attachments/0"
+    if ([Text.Encoding]::ASCII.GetString($apiDl.Content) -notmatch [regex]::Escape($apiAttText)) { throw "downloaded API attachment content did not match" }
+    Write-Host "OK: HTTP API accepted a multipart attachment (Mailgun-style) — parsed + downloaded intact"
+}
+finally {
+    DDel "/api/keys/$($key3.id)" | Out-Null
+    Remove-Item -LiteralPath $attFile -ErrorAction SilentlyContinue
+}
+
+# === 7. Routing rules + simulate ================================================================
+$r2 = DPost '/api/relays' '{"name":"smoke-route","provider":"Local"}'
+$rule = DPost '/api/routing/rules' "{""name"":""smoke-rule-$tok"",""recipientPattern"":""route-$tok@*"",""relayId"":$($r2.id),""priority"":100}"
+try {
+    $hit = DPost '/api/routing/simulate' "{""from"":""s@local.test"",""to"":""route-$tok@x.test""}"
+    if ([int]$hit.relayId -ne [int]$r2.id) { throw "rule should route to relay $($r2.id), simulate chose $($hit.relayId)" }
+    if (-not $hit.matched)                 { throw "simulate should report matched=true for the rule recipient" }
+    $miss = DPost '/api/routing/simulate' '{"from":"s@local.test","to":"someone-else@x.test"}'
+    if ([int]$miss.relayId -ne [int]$relay.id) { throw "non-matching recipient should fall to the default relay $($relay.id), got $($miss.relayId)" }
+    Write-Host "OK: routing rule matched in simulate; non-match fell through to the default relay"
+}
+finally {
+    DDel "/api/routing/rules/$($rule.id)" | Out-Null
+    DDel "/api/relays/$($r2.id)" | Out-Null
+}
+
+# === 8. Relay test endpoint (Local provider) ====================================================
+$test = DPost "/api/relays/$($relay.id)/test" '{"to":"relay-test@local.test"}'
+if (-not $test.ok) { throw "relay test against the Local provider should succeed: $($test | ConvertTo-Json -Compress)" }
+Write-Host "OK: relay test endpoint succeeded against the Local provider"
+
+# === 9. Reports round-trip ======================================================================
+$rep = DGet '/api/reports'
+if ([int]$rep.summary.received -lt 1)  { throw "reports should show received >= 1, got $($rep.summary.received)" }
+if ([int]$rep.summary.delivered -lt 1) { throw "reports should show delivered >= 1, got $($rep.summary.delivered)" }
+Write-Host "OK: reports reflect deliveries (received=$($rep.summary.received), delivered=$($rep.summary.delivered))"
+
+# === 10. Config round-trip (live-applied: API rate limit persists + cache reloads) ===============
+$origRl = [int](DGet '/api/config').api.rateLimitPerKey
+$newRl  = $origRl + 17
+DPut '/api/config/api' "{""rateLimitPerKey"":$newRl}" | Out-Null
+$readRl = [int](DGet '/api/config').api.rateLimitPerKey
+DPut '/api/config/api' "{""rateLimitPerKey"":$origRl}" | Out-Null     # restore
+if ($readRl -ne $newRl) { throw "config change did not persist/reload: expected $newRl, read $readRl" }
+Write-Host "OK: config round-trip persisted and reloaded (rateLimitPerKey $origRl -> $newRl -> restored)"
+
+# === 11. Settings round-trip (retention threshold persists) =====================================
+$origDays = [int](DGet '/api/settings').retention.logDeliveredRetentionDays
+$newDays  = $origDays + 1
+DPut '/api/settings' "{""retention"":{""logDeliveredRetentionDays"":$newDays}}" | Out-Null
+$readDays = [int](DGet '/api/settings').retention.logDeliveredRetentionDays
+DPut '/api/settings' "{""retention"":{""logDeliveredRetentionDays"":$origDays}}" | Out-Null   # restore
+if ($readDays -ne $newDays) { throw "settings change did not persist: expected $newDays, read $readDays" }
+Write-Host "OK: settings round-trip persisted (logDeliveredRetentionDays $origDays -> $newDays -> restored)"
+
+# === 12. Audit log (login + config changes produced rows; also exercise the category filter) =======
+$audit = DGet '/api/audit'
+if (@($audit.rows).Count -lt 1) { throw "audit log should contain rows after login + config changes" }
+$cfgAudit = DGet '/api/audit?category=Config'   # config PUTs above audit with category "Config"
+if (@($cfgAudit.rows).Count -lt 1) { throw "audit log should contain Config-category rows after config changes" }
+Write-Host "OK: audit log recorded operations ($(@($audit.rows).Count) rows, $(@($cfgAudit.rows).Count) Config)"
+
+# === 13. Purge: run a manual purge and confirm it is recorded in history =========================
+DPost '/api/purge/run' '{}' | Out-Null
+$hist = DGet '/api/purge/history'
+if (@($hist).Count -lt 1) { throw "a manual purge should appear in purge history" }
+Write-Host "OK: manual purge ran and is recorded in history"
+
+# === 14. Read-only / observability endpoints all answer =========================================
+foreach ($p in '/api/stats', '/api/stats/relays', '/api/stats/throughput', '/api/system', '/api/spool', '/health') {
+    DGet $p | Out-Null
+}
+$metrics = Invoke-WebRequest -SkipCertificateCheck -WebSession $sess -Uri "$Dashboard/metrics"
+if ([int]$metrics.StatusCode -ne 200) { throw "/metrics did not return 200 (got $($metrics.StatusCode))" }
+Write-Host "OK: stats / system / spool / health / metrics all answer"
 
 Write-Host "FUNCTIONAL SMOKE PASSED"
