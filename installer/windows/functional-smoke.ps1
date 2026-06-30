@@ -32,7 +32,8 @@
 param(
     [string]$Dashboard = 'https://localhost:8420',
     [string]$Api       = 'http://localhost:8025',
-    [string]$Password  = 'Zq7-Marsh-Pylon-Vex!'
+    [string]$Password  = 'Zq7-Marsh-Pylon-Vex!',
+    [string]$DataRoot  = "$env:ProgramData\Dispatch"   # content root; relative spool/key paths resolve here
 )
 $ErrorActionPreference = 'Stop'
 $hdr  = @{ 'X-Dispatch-Request' = '1' }
@@ -318,6 +319,11 @@ function New-AgedEml([string]$dir, [string]$name) {
 
 $origRet  = (DGet '/api/settings').retention
 $spoolDir = (DGet '/api/config').spool.directory
+# The service stores a relative spool dir (e.g. ./.dispatch-spool) resolved against its content root
+# (the ProgramData data dir), so make it absolute before touching the filesystem.
+if ($spoolDir -and -not [System.IO.Path]::IsPathRooted($spoolDir)) {
+    $spoolDir = Join-Path $DataRoot ($spoolDir -replace '^\.[\\/]', '')
+}
 if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
     # 13a. Captured / Local Inbox file purge — 0 keeps, 1 deletes the aged file.
     $capEml = New-AgedEml (Join-Path $spoolDir 'captured') "smoke-purge-cap-$tok.eml"
