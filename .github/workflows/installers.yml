@@ -180,6 +180,61 @@ jobs:
           if (-not $ok) { throw "No SMTP port advertised STARTTLS (the self-signed fallback should enable it)" }
           Write-Host "OK: STARTTLS advertised"
 
+      # End-to-end SMTP access-control check on the real install: tighten the source-IP allow-list to exclude
+      # loopback, confirm a localhost MAIL FROM is refused (550), and that the denial both appears in the
+      # Message Log AND is counted in /stats and Reports (the relay_id 0 counter path). Restore the list after.
+      - name: Verify SMTP allow-list denial flows to the log + reports
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'https://localhost:8420'
+          $hdr  = @{ 'X-Dispatch-Request' = '1' }
+          $sess = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+
+          # First-run: set the admin password (allowed without auth when none exists) — this also signs us in.
+          Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Post -Uri "$base/api/auth/password" -Body '{"password":"CiSmoke-Passw0rd!"}' | Out-Null
+
+          # Tighten the SMTP allow-list to a range that excludes loopback (the PUT reloads the cache live).
+          Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Put -Uri "$base/api/config/listener" -Body '{"allowedCidrs":["10.0.0.0/8"]}' | Out-Null
+
+          try {
+            $health = Invoke-RestMethod -SkipCertificateCheck -Uri "$base/health"
+            $port = 25
+            if ($health.smtp.listeningPorts) { $port = $health.smtp.listeningPorts[0] } elseif ($health.smtp.ports) { $port = $health.smtp.ports[0] }
+
+            # Raw SMTP from loopback (now disallowed): EHLO then MAIL FROM must get a 5xx access-denied.
+            $tcp = New-Object System.Net.Sockets.TcpClient('127.0.0.1', [int]$port)
+            $stream = $tcp.GetStream(); $stream.ReadTimeout = 5000
+            $r = New-Object System.IO.StreamReader($stream)
+            $w = New-Object System.IO.StreamWriter($stream); $w.NewLine = "`r`n"; $w.AutoFlush = $true
+            $r.ReadLine() | Out-Null
+            $w.WriteLine('EHLO ci.test')
+            do { $line = $r.ReadLine() } while ($line -match '^250-')
+            $w.WriteLine('MAIL FROM:<test@example.com>')
+            $resp = $r.ReadLine()
+            $tcp.Close()
+            Write-Host "MAIL FROM -> $resp"
+            if ($resp -notmatch '^5') { throw "Expected a 5xx denial from a disallowed source, got: $resp" }
+
+            # The denial must appear in the Message Log...
+            $log = Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Uri "$base/api/messages?event=Denied&pageSize=5"
+            if ([int]$log.total -lt 1) { throw "denial not found in the Message Log" }
+
+            # ...and be counted in /stats and Reports (verifies the relay_id 0 counter fix on a real install).
+            $stats = Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Uri "$base/api/stats"
+            if ([int]$stats.denied -lt 1) { throw "denial not counted in /stats" }
+            $today = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+            $rep = Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Uri "$base/api/reports?from=$today&to=$today"
+            if ([int]$rep.summary.denied -lt 1) { throw "denial not counted in Reports" }
+
+            Write-Host "OK: denial refused, logged (total=$($log.total)), counted in /stats ($($stats.denied)) + Reports ($($rep.summary.denied))"
+          }
+          finally {
+            # Restore the default allow-list (loopback + private ranges).
+            Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Put -Uri "$base/api/config/listener" -Body '{"allowedCidrs":["127.0.0.1/32","::1/128","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","fc00::/7"]}' | Out-Null
+          }
+
   # Builds the self-contained Linux tarball and uploads it as a workflow artifact (downloadable from
   # the Actions run page). This needs NO tag and creates NO release — releases are only for permanent
   # public download links. Grab "dispatch-linux-tarball" from the run to test install.sh --prebuilt.
