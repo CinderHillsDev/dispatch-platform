@@ -29,6 +29,11 @@ public interface IAuditLog
     /// and the noisier Access/SmtpAuth security events older than <paramref name="securityRetentionDays"/>
     /// (kept shorter). A retention of 0 means "keep forever" for that tier. Best-effort. Returns rows deleted.</summary>
     Task<int> PurgeAsync(int generalRetentionDays, int securityRetentionDays, CancellationToken ct = default);
+
+    /// <summary>Size-pressure step (Express only): reads the oldest <paramref name="batch"/> audit rows, hands
+    /// them to <paramref name="archive"/> to persist, then deletes them. Returns rows deleted; nothing is
+    /// deleted if archiving throws.</summary>
+    Task<int> ArchiveAndDeleteOldestAsync(int batch, Dispatch.Core.Maintenance.ArchiveRows archive, CancellationToken ct = default);
 }
 
 /// <summary>Ergonomic helpers so call sites read clearly and use consistent kinds/severities.</summary>

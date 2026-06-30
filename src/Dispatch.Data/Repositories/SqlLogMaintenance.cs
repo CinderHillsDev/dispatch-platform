@@ -1,5 +1,6 @@
 using Dapper;
 using Dispatch.Core.Logging;
+using Dispatch.Core.Maintenance;
 
 namespace Dispatch.Data.Repositories;
 
@@ -35,6 +36,15 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
         return await cn.ExecuteScalarAsync<long>(new CommandDefinition(sql, cancellationToken: ct));
     }
 
+    public async Task<long> GetDatabaseUsedBytesAsync(CancellationToken ct = default)
+    {
+        // Used pages (not allocated file size) so the size-pressure loop terminates: this value drops as
+        // rows are deleted, whereas sys.database_files.size never shrinks on DELETE.
+        const string sql = "SELECT CAST(SUM(CAST(FILEPROPERTY(name, 'SpaceUsed') AS BIGINT)) AS BIGINT) * 8 * 1024 FROM sys.database_files WHERE type = 0;";
+        await using var cn = await factory.OpenAsync(ct);
+        return await cn.ExecuteScalarAsync<long>(new CommandDefinition(sql, cancellationToken: ct));
+    }
+
     public async Task<bool> IsSizeCappedEditionAsync(CancellationToken ct = default)
     {
         // EngineEdition 4 = Express (the only edition with the 10 GB per-database data-file cap). 2/3 =
@@ -44,10 +54,19 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
         return await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, cancellationToken: ct)) == 4;
     }
 
-    public async Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default)
+    public async Task<int> ArchiveAndDeleteOldestRelayLogAsync(int batch, ArchiveRows archive, CancellationToken ct = default)
     {
-        var sql = $"DELETE TOP ({batchSize}) FROM relay_log WHERE id IN (SELECT TOP ({batchSize}) id FROM relay_log ORDER BY logged_at ASC, id ASC);";
         await using var cn = await factory.OpenAsync(ct);
-        return await cn.ExecuteAsync(new CommandDefinition(sql, cancellationToken: ct));
+        var rows = (await cn.QueryAsync(new CommandDefinition(
+            "SELECT TOP (@batch) * FROM relay_log ORDER BY logged_at ASC, id ASC;",
+            new { batch }, cancellationToken: ct))).ToList();
+        if (rows.Count == 0) return 0;
+
+        // Archive first; if that throws, the rows are NOT deleted (the safety net must not lose data).
+        await archive(rows.Select(r => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>((IDictionary<string, object>)r)).ToList(), ct);
+
+        var ids = rows.Select(r => Convert.ToInt64(((IDictionary<string, object>)r)["id"])).ToArray();
+        return await cn.ExecuteAsync(new CommandDefinition(
+            "DELETE FROM relay_log WHERE id IN @ids;", new { ids }, cancellationToken: ct));
     }
 }

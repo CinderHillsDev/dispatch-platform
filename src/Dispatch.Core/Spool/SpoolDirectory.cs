@@ -16,6 +16,10 @@ public sealed class SpoolDirectory
     /// <summary>Where the local/dev (None) provider captures messages instead of delivering externally.</summary>
     public string CapturedDir { get; }
 
+    /// <summary>Where the Express size-pressure purge writes weekly JSONL exports of relay_log / audit_log
+    /// rows before deleting them, so an emergency near-10GB purge never silently loses history.</summary>
+    public string ArchiveDir { get; }
+
     // Bounded doorbell: filenames only. DropOldest because a dropped wake-up is harmless —
     // the FileSystemWatcher and startup sweep guarantee files are still discovered.
     private readonly Channel<string> _doorbell =
@@ -31,6 +35,7 @@ public sealed class SpoolDirectory
         ProcessingDir = Path.Combine(Root, "processing");
         FailedDir = Path.Combine(Root, "failed");
         CapturedDir = Path.Combine(Root, "captured");
+        ArchiveDir = Path.Combine(Root, "archive");
         // The spool holds full message bodies (and the .dispatch-key lives in the data dir) — restrict to the
         // owner (700) on non-Windows so other local users can't read spooled mail.
         CreatePrivate(Root);
@@ -38,6 +43,7 @@ public sealed class SpoolDirectory
         CreatePrivate(ProcessingDir);
         CreatePrivate(FailedDir);
         CreatePrivate(CapturedDir);
+        CreatePrivate(ArchiveDir);
     }
 
     private static void CreatePrivate(string dir)

@@ -171,6 +171,7 @@ internal sealed class FakeAuditLog : Dispatch.Core.Audit.IAuditLog
     }
 
     public Task<int> PurgeAsync(int generalRetentionDays, int securityRetentionDays, CancellationToken ct = default) => Task.FromResult(0);
+    public Task<int> ArchiveAndDeleteOldestAsync(int batch, Dispatch.Core.Maintenance.ArchiveRows archive, CancellationToken ct = default) => Task.FromResult(0);
 }
 
 internal sealed class FakeApiKeyRepository : IApiKeyRepository
@@ -254,9 +255,10 @@ internal sealed class FakeLogMaintenance : ILogMaintenance
 {
     // 142 MB so /health's dbSizeMb is asserted as 142 in the web test.
     public Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default) => Task.FromResult(142L * 1024 * 1024);
+    public Task<long> GetDatabaseUsedBytesAsync(CancellationToken ct = default) => Task.FromResult(100L * 1024 * 1024);
     public Task<bool> IsSizeCappedEditionAsync(CancellationToken ct = default) => Task.FromResult(true);
     public Task<int> PurgeByRetentionAsync(string @event, int retentionDays, CancellationToken ct = default) => Task.FromResult(0);
-    public Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default) => Task.FromResult(0);
+    public Task<int> ArchiveAndDeleteOldestRelayLogAsync(int batch, Dispatch.Core.Maintenance.ArchiveRows archive, CancellationToken ct = default) => Task.FromResult(0);
 }
 
 internal sealed class FakeStorageReport : Dispatch.Core.Maintenance.IStorageReport

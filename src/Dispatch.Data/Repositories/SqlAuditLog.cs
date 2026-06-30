@@ -99,6 +99,30 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
         }
     }
 
+    public async Task<int> ArchiveAndDeleteOldestAsync(int batch, Dispatch.Core.Maintenance.ArchiveRows archive, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var cn = await factory.OpenAsync(ct);
+            var rows = (await cn.QueryAsync(new CommandDefinition(
+                "SELECT TOP (@batch) * FROM audit_log ORDER BY logged_at ASC, id ASC;",
+                new { batch }, cancellationToken: ct))).ToList();
+            if (rows.Count == 0) return 0;
+
+            // Archive before deleting; if archiving throws, keep the rows.
+            await archive(rows.Select(r => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>((IDictionary<string, object>)r)).ToList(), ct);
+
+            var ids = rows.Select(r => Convert.ToInt64(((IDictionary<string, object>)r)["id"])).ToArray();
+            return await cn.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM audit_log WHERE id IN @ids;", new { ids }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Audit archive-and-delete failed");
+            return 0;
+        }
+    }
+
     private static async Task<int> DeleteBatchedAsync(System.Data.Common.DbConnection cn, string sql, int days, CancellationToken ct)
     {
         const int batch = 1000;

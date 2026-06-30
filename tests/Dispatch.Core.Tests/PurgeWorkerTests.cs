@@ -12,8 +12,9 @@ public class PurgeWorkerTests
     {
         public Task<int> PurgeByRetentionAsync(string @event, int retentionDays, CancellationToken ct = default) => Task.FromResult(0);
         public Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default) => Task.FromResult(0L);
+        public Task<long> GetDatabaseUsedBytesAsync(CancellationToken ct = default) => Task.FromResult(0L);
         public Task<bool> IsSizeCappedEditionAsync(CancellationToken ct = default) => Task.FromResult(true);
-        public Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default) => Task.FromResult(0);
+        public Task<int> ArchiveAndDeleteOldestRelayLogAsync(int batch, ArchiveRows archive, CancellationToken ct = default) => Task.FromResult(0);
     }
 
     private sealed class RecordingLogMaintenance : ILogMaintenance
@@ -22,18 +23,22 @@ public class PurgeWorkerTests
         public Task<int> PurgeByRetentionAsync(string @event, int retentionDays, CancellationToken ct = default)
         { RetentionPurgedEvents.Add(@event); return Task.FromResult(0); }
         public Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default) => Task.FromResult(0L);
+        public Task<long> GetDatabaseUsedBytesAsync(CancellationToken ct = default) => Task.FromResult(0L);
         public Task<bool> IsSizeCappedEditionAsync(CancellationToken ct = default) => Task.FromResult(true);
-        public Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default) => Task.FromResult(0);
+        public Task<int> ArchiveAndDeleteOldestRelayLogAsync(int batch, ArchiveRows archive, CancellationToken ct = default) => Task.FromResult(0);
     }
 
-    // Records size-pressure activity and lets the test pick the SQL edition.
+    // Records size-pressure activity and lets the test pick the SQL edition. Reports 50 GB used (over any
+    // trigger) and deletes nothing, so the loop makes exactly one archive-and-delete attempt then stops.
     private sealed class SizePressureSpy(bool capped) : ILogMaintenance
     {
-        public int OldestPurgeCalls { get; private set; }
+        public int ArchiveAndDeleteCalls { get; private set; }
         public Task<int> PurgeByRetentionAsync(string @event, int retentionDays, CancellationToken ct = default) => Task.FromResult(0);
-        public Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default) => Task.FromResult(50L * 1024 * 1024 * 1024); // 50 GB — over any trigger
+        public Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default) => Task.FromResult(50L * 1024 * 1024 * 1024);
+        public Task<long> GetDatabaseUsedBytesAsync(CancellationToken ct = default) => Task.FromResult(50L * 1024 * 1024 * 1024);
         public Task<bool> IsSizeCappedEditionAsync(CancellationToken ct = default) => Task.FromResult(capped);
-        public Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default) { OldestPurgeCalls++; return Task.FromResult(0); }
+        public Task<int> ArchiveAndDeleteOldestRelayLogAsync(int batch, ArchiveRows archive, CancellationToken ct = default)
+        { ArchiveAndDeleteCalls++; return Task.FromResult(0); }
     }
 
     [Fact]
@@ -131,16 +136,16 @@ public class PurgeWorkerTests
         var disk = new DiskMonitor(t.Spool, new IntakeState(), _ => long.MaxValue, NullLogger<DiskMonitor>.Instance);
         var opts = new PurgeOptions { SizePressure = new PurgeOptions.SizePressureOptions { TriggerGb = 9.5, TargetGb = 9.0 } };
 
-        // Express edition + 50 GB > 9.5 GB trigger → size-pressure purges the oldest rows.
+        // Express edition + 50 GB > 9.5 GB trigger → size-pressure archives + purges the oldest rows.
         var express = new SizePressureSpy(capped: true);
         await new PurgeWorker(t.Spool, express, disk, new OptionsPurgeSettings(opts), new PurgeHistory(), NullLogger<PurgeWorker>.Instance)
             .RunOnceAsync(opts, default);
-        Assert.True(express.OldestPurgeCalls >= 1);
+        Assert.True(express.ArchiveAndDeleteCalls >= 1);
 
         // Non-Express (no 10 GB cap) → size-pressure is skipped even at 50 GB.
         var standard = new SizePressureSpy(capped: false);
         await new PurgeWorker(t.Spool, standard, disk, new OptionsPurgeSettings(opts), new PurgeHistory(), NullLogger<PurgeWorker>.Instance)
             .RunOnceAsync(opts, default);
-        Assert.Equal(0, standard.OldestPurgeCalls);
+        Assert.Equal(0, standard.ArchiveAndDeleteCalls);
     }
 }
