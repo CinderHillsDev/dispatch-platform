@@ -10,6 +10,10 @@
   --amber: #d29922;
   --blue: #58a6ff;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Render native controls (date-picker calendar icon + popup, scrollbars) in dark mode. Without this the
+     <input type="date"> calendar icon is dark-on-dark and nearly invisible, so the picker looks like a plain
+     text box. */
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
