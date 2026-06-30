@@ -21,6 +21,22 @@ Multiple attachments per message, any MIME type. They're streamed and preserved 
 total message size is bounded by a global and per-relay limit (default 25 MiB); the effective ceiling
 is also capped to the active provider's maximum.
 
+Over the HTTP API, attachments use **`multipart/form-data`** with one repeatable `attachment` file
+field per file — the same convention as Mailgun:
+
+```bash
+curl -X POST https://host:8025/api/v1/messages \
+  -H "Authorization: Bearer $KEY" \
+  -F from='you@example.com' -F to='dest@example.com' -F subject='Report' \
+  -F text='See attached.' \
+  -F attachment=@./report.pdf \
+  -F attachment=@./chart.png
+```
+
+The `application/json` body has **no** attachment field (matching Mailgun, which is multipart-only for
+files) — switch to `multipart/form-data` when you need to attach files. Over SMTP, attachments travel
+in the MIME message as usual.
+
 ## Custom headers
 
 Set arbitrary headers — `h:<Name>` fields (multipart), the `headers` object (JSON), or simply include
