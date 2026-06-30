@@ -220,11 +220,15 @@ jobs:
           cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
           test -f src/Dispatch.Web/wwwroot/index.html || { echo "embedded UI missing index.html"; exit 1; }
 
-      - name: Publish self-contained (x64 + arm64)
+      - name: Publish self-contained (linux-x64 + linux-arm64 + win-x64)
         run: |
           v=${{ steps.ver.outputs.version }}
           dotnet publish src/Dispatch.Service -c Release -r linux-x64   --self-contained true -p:Version=$v -o publish/x64
           dotnet publish src/Dispatch.Service -c Release -r linux-arm64 --self-contained true -p:Version=$v -o publish/arm64
+          # win-x64 cross-published on Linux - the self-contained Windows payload for the one upgrade package.
+          dotnet publish src/Dispatch.Service -c Release -r win-x64     --self-contained true -p:Version=$v -o publish/win
+          # Stamp the version so install.sh names the release dir (/opt/dispatch/releases/<ver>).
+          for d in x64 arm64 win; do echo "$v" > "publish/$d/.dispatch-version"; done
 
       - name: Assemble the universal Linux tarball
         run: |
@@ -233,9 +237,11 @@ jobs:
           mkdir -p "staging/${stage}/bin-x64" "staging/${stage}/bin-arm64"
           cp -r publish/x64/.   "staging/${stage}/bin-x64/"
           cp -r publish/arm64/. "staging/${stage}/bin-arm64/"
-          cp installer/linux/install.sh "staging/${stage}/install.sh"
-          cp installer/linux/dispatch.service "staging/${stage}/dispatch.service"
-          chmod +x "staging/${stage}/install.sh" \
+          cp installer/linux/install.sh installer/linux/dispatch.service \
+             installer/linux/dispatch-updater.service installer/linux/dispatch-update.path \
+             installer/linux/dispatch-update.sh "staging/${stage}/"
+          cp src/Dispatch.Core/Updates/dispatch-update-public.pem "staging/${stage}/"
+          chmod +x "staging/${stage}/install.sh" "staging/${stage}/dispatch-update.sh" \
             "staging/${stage}/bin-x64/Dispatch.Service" "staging/${stage}/bin-arm64/Dispatch.Service"
           cat > "staging/${stage}/README.txt" <<EOF
           Dispatch SMTP Relay ${ver} - Linux (universal: x64 + arm64, self-contained; no .NET SDK required).
@@ -259,46 +265,45 @@ jobs:
           path: dispatch-*-linux.tar.gz
           if-no-files-found: error
 
-      # Per-arch upgrade bundles for the web-UI self-update: the self-contained payload tarball, a
-      # manifest (version/arch/sha256/minFromVersion), and a detached RSA/SHA-256 signature over the
-      # manifest. The in-app verifier (UpdateBundleVerifier) authenticates the signature with the embedded
-      # public key, then checks the payload's sha256 against the manifest. Signing is gated on the secret;
-      # without it the bundles are unsigned and the updater refuses them.
-      - name: Build + sign upgrade bundles
+      # ONE cross-platform upgrade package for web-UI self-update: every platform's self-contained payload
+      # (linux-x64, linux-arm64, win-x64) plus a single signed manifest, in one .tar.gz. A host uploads
+      # this one file; the updater picks + applies the payload matching its arch and verifies its sha256.
+      # The manifest signature is checked against the embedded public key. Signing is gated on the secret;
+      # without it the package is unsigned and the app/updater refuse it.
+      - name: Build + sign the upgrade package
         env:
           SIGNING_KEY: ${{ secrets.DISPATCH_UPDATE_SIGNING_KEY }}
         run: |
           ver="${{ steps.ver.outputs.version }}"
           built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           notes="https://github.com/${{ github.repository }}/releases/tag/v${ver}"
-          keyfile=""
+          mkdir -p pkg
+          tar -czf pkg/linux-x64.tar.gz   -C publish/x64 .
+          tar -czf pkg/linux-arm64.tar.gz -C publish/arm64 .
+          ( cd publish/win && zip -qr - . ) > pkg/win-x64.zip
+          shx="$(sha256sum pkg/linux-x64.tar.gz   | awk '{print $1}')"
+          sha="$(sha256sum pkg/linux-arm64.tar.gz | awk '{print $1}')"
+          shw="$(sha256sum pkg/win-x64.zip        | awk '{print $1}')"
+          printf '{"name":"dispatch","version":"%s","minFromVersion":"0.0.0","builtAt":"%s","notesUrl":"%s","artifacts":{"linux-x64":{"file":"linux-x64.tar.gz","sha256":"%s"},"linux-arm64":{"file":"linux-arm64.tar.gz","sha256":"%s"},"win-x64":{"file":"win-x64.zip","sha256":"%s"}}}\n' \
+            "$ver" "$built" "$notes" "$shx" "$sha" "$shw" > pkg/manifest.json
           if [ -n "$SIGNING_KEY" ]; then
             keyfile="$(mktemp)"; printf '%s' "$SIGNING_KEY" > "$keyfile"
+            openssl dgst -sha256 -sign "$keyfile" -out pkg/manifest.json.sig pkg/manifest.json
+            # Self-check: the signature must verify against the committed public key before we ship it.
+            openssl dgst -sha256 -verify src/Dispatch.Core/Updates/dispatch-update-public.pem -signature pkg/manifest.json.sig pkg/manifest.json
+            rm -f "$keyfile"
           else
-            echo "::warning::DISPATCH_UPDATE_SIGNING_KEY not set - upgrade bundles will be UNSIGNED and the updater will reject them."
+            echo "::warning::DISPATCH_UPDATE_SIGNING_KEY not set - the upgrade package will be UNSIGNED and refused by the updater."
+            : > pkg/manifest.json.sig
           fi
-          mkdir -p bundles
-          for arch in x64 arm64; do
-            bundle="bundles/dispatch-upgrade-${ver}-linux-${arch}.tar.gz"
-            tar -czf "$bundle" -C "publish/${arch}" .
-            sha="$(sha256sum "$bundle" | awk '{print $1}')"
-            man="bundles/dispatch-upgrade-${ver}-linux-${arch}.manifest.json"
-            printf '{"name":"dispatch","version":"%s","arch":"linux-%s","sha256":"%s","minFromVersion":"0.0.0","builtAt":"%s","notesUrl":"%s"}\n' \
-              "$ver" "$arch" "$sha" "$built" "$notes" > "$man"
-            if [ -n "$keyfile" ]; then
-              openssl dgst -sha256 -sign "$keyfile" -out "${man}.sig" "$man"
-              # Self-check: the signature must verify against the committed public key before we ship it.
-              openssl dgst -sha256 -verify src/Dispatch.Core/Updates/dispatch-update-public.pem -signature "${man}.sig" "$man"
-            fi
-          done
-          [ -n "$keyfile" ] && rm -f "$keyfile" || true
-          ls -lh bundles/
+          tar -czf "dispatch-upgrade-${ver}.tar.gz" -C pkg manifest.json manifest.json.sig linux-x64.tar.gz linux-arm64.tar.gz win-x64.zip
+          ls -lh "dispatch-upgrade-${ver}.tar.gz"
 
-      - name: Upload upgrade bundles
+      - name: Upload upgrade package
         uses: actions/upload-artifact@v6
         with:
-          name: upgrade-bundles
-          path: bundles/*
+          name: upgrade-package
+          path: dispatch-upgrade-*.tar.gz
           if-no-files-found: error
 
   # Build + push the multi-arch container image (linux/amd64 + linux/arm64) to GHCR. One image tag
@@ -363,7 +368,7 @@ jobs:
           # (the Linux tarball already carries the version). Names match the README.
           cp "dist/windows/DispatchSetup.exe" "release/DispatchSetup-${VER}-x64.exe"
           cp dist/linux/dispatch-*-linux.tar.gz release/
-          cp dist/upgrade-bundles/* release/          # upgrade bundles + manifests + signatures
+          cp dist/upgrade-package/* release/          # the single cross-platform upgrade package
           ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
 
       - name: Publish GitHub Release

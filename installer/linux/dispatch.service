@@ -7,9 +7,11 @@ After=network.target
 Type=notify
 User=dispatch
 Group=dispatch
-# Binaries live in /opt/dispatch; appsettings.json + the spool live under the data dir (the content root).
+# Binaries live under /opt/dispatch/releases/<ver> with /opt/dispatch/current symlinked to the active one
+# (so the updater swaps releases atomically by re-pointing the link); appsettings.json + the spool live
+# under the data dir (the content root).
 WorkingDirectory=/var/lib/dispatch
-ExecStart=/opt/dispatch/Dispatch.Service
+ExecStart=/opt/dispatch/current/Dispatch.Service
 Environment=DOTNET_ENVIRONMENT=Production
 Environment=DISPATCH_LOG_DIR=/var/log/dispatch
 Restart=always

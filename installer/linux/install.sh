@@ -227,7 +227,10 @@ fi
 # upgrade copy fails. Best-effort: ignored on a fresh install where the unit doesn't exist yet.
 systemctl stop dispatch 2>/dev/null || true
 
-mkdir -p "$INSTALL_DIR"
+# Binaries live under /opt/dispatch/releases/<ver> with /opt/dispatch/current symlinked to the active one,
+# so the web-UI updater can swap releases atomically by re-pointing 'current' (and roll back the same way).
+mkdir -p "$INSTALL_DIR/releases"
+REL_VER="base"
 if [[ -n "$PREBUILT_DIR" ]]; then
   # Release-tarball mode: copy the self-contained publish output as-is (no SDK / Node build).
   # A relative --prebuilt is resolved against the current dir, then against the script's own dir, so
@@ -235,22 +238,25 @@ if [[ -n "$PREBUILT_DIR" ]]; then
   if [[ ! -d "$PREBUILT_DIR" && -d "$SCRIPT_DIR/$PREBUILT_DIR" ]]; then PREBUILT_DIR="$SCRIPT_DIR/$PREBUILT_DIR"; fi
   [[ -d "$PREBUILT_DIR" ]] || { echo "--prebuilt dir not found: $PREBUILT_DIR (cwd: $PWD, script: $SCRIPT_DIR)" >&2; exit 1; }
   [[ -f "$PREBUILT_DIR/Dispatch.Service" ]] || { echo "--prebuilt dir has no Dispatch.Service executable: $PREBUILT_DIR" >&2; exit 1; }
+  [[ -f "$PREBUILT_DIR/.dispatch-version" ]] && REL_VER="$(tr -d '[:space:]' < "$PREBUILT_DIR/.dispatch-version")"
   # A self-contained .NET build still needs the system ICU library for globalization (it aborts at
   # startup without it) plus TLS roots - minimal images often lack both.
   echo "==> Ensuring .NET runtime dependencies (ICU, CA certs)"
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -y >/dev/null 2>&1 || true
     apt-get install -y ca-certificates || true
-    # On Debian/Ubuntu the ICU runtime is version-numbered (libicu74, libicu76, …) - there is no plain
+    # On Debian/Ubuntu the ICU runtime is version-numbered (libicu74, libicu76, ...) - there is no plain
     # "libicu" package. Resolve the highest-versioned one; fall back to libicu-dev which always pulls it.
     icu_pkg="$(apt-cache --names-only search '^libicu[0-9]+$' 2>/dev/null | awk '{print $1}' | sort -V | tail -1)"
     apt-get install -y "${icu_pkg:-libicu-dev}" || echo "WARN: could not install the ICU runtime - install libicu manually if the service fails to start." >&2
   elif command -v dnf >/dev/null 2>&1; then dnf install -y libicu ca-certificates || true
   elif command -v yum >/dev/null 2>&1; then yum install -y libicu ca-certificates || true
   fi
-  echo "==> Installing pre-built binaries from $PREBUILT_DIR to $INSTALL_DIR"
-  cp -r "$PREBUILT_DIR/." "$INSTALL_DIR/"
-  chmod +x "$INSTALL_DIR/Dispatch.Service"
+  REL_DIR="$INSTALL_DIR/releases/$REL_VER"
+  echo "==> Installing pre-built binaries from $PREBUILT_DIR to $REL_DIR"
+  rm -rf "$REL_DIR"; mkdir -p "$REL_DIR"
+  cp -r "$PREBUILT_DIR/." "$REL_DIR/"
+  chmod +x "$REL_DIR/Dispatch.Service"
 else
   # Build-from-source mode: needs the .NET SDK + Node.
   SOURCE_DIR="${SOURCE_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
@@ -260,9 +266,16 @@ else
   mkdir -p "$SOURCE_DIR/src/Dispatch.Web/wwwroot"
   cp -r "$SOURCE_DIR/src/Dispatch.UI/dist/." "$SOURCE_DIR/src/Dispatch.Web/wwwroot/"
 
-  echo "==> Publishing the service to $INSTALL_DIR"
-  dotnet publish "$SOURCE_DIR/src/Dispatch.Service" -c Release -o "$INSTALL_DIR"
+  REL_DIR="$INSTALL_DIR/releases/$REL_VER"
+  echo "==> Publishing the service to $REL_DIR"
+  rm -rf "$REL_DIR"; mkdir -p "$REL_DIR"
+  dotnet publish "$SOURCE_DIR/src/Dispatch.Service" -c Release -o "$REL_DIR"
 fi
+# Point 'current' at this release, then clear any old flat-layout binaries (pre-symlink installs put the
+# executable + dlls directly under /opt/dispatch) so only the symlinked release is ever run.
+ln -sfn "$REL_DIR" "$INSTALL_DIR/current"
+rm -f "$INSTALL_DIR/Dispatch.Service" 2>/dev/null || true
+find "$INSTALL_DIR" -maxdepth 1 -type f -name '*.dll' -delete 2>/dev/null || true
 
 echo "==> Creating the 'dispatch' service account and directories"
 id -u dispatch >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dispatch
@@ -296,20 +309,27 @@ mkdir -p "$DATA_DIR/.dispatch-spool/incoming" "$DATA_DIR/.dispatch-spool/process
 chown -R dispatch:dispatch "$DATA_DIR/.dispatch-spool"
 chmod 700 "$DATA_DIR/.dispatch-spool" "$DATA_DIR/.dispatch-spool/incoming" "$DATA_DIR/.dispatch-spool/processing" "$DATA_DIR/.dispatch-spool/failed"
 
-echo "==> Installing systemd unit"
-# The unit lives next to this script in a release tarball, or under installer/linux in a source tree.
-if [[ -f "$SCRIPT_DIR/dispatch.service" ]]; then
-  UNIT_SRC="$SCRIPT_DIR/dispatch.service"
-else
-  UNIT_SRC="$SOURCE_DIR/installer/linux/dispatch.service"
-fi
-install -m 644 "$UNIT_SRC" /etc/systemd/system/dispatch.service
+echo "==> Installing systemd units + the web-UI updater"
+# Units/scripts live next to this script in a release tarball, or under installer/linux in a source tree.
+UNIT_SRC="$SCRIPT_DIR"; [[ -f "$SCRIPT_DIR/dispatch.service" ]] || UNIT_SRC="$SOURCE_DIR/installer/linux"
+install -m 644 "$UNIT_SRC/dispatch.service"         /etc/systemd/system/dispatch.service
+install -m 644 "$UNIT_SRC/dispatch-updater.service" /etc/systemd/system/dispatch-updater.service
+install -m 644 "$UNIT_SRC/dispatch-update.path"     /etc/systemd/system/dispatch-update.path
+install -m 755 "$UNIT_SRC/dispatch-update.sh"       "$INSTALL_DIR/dispatch-update.sh"
+# Release public key for the updater's independent signature re-verify (defense-in-depth over the app check).
+PUBKEY_SRC="$UNIT_SRC/dispatch-update-public.pem"
+[[ -f "$PUBKEY_SRC" ]] || PUBKEY_SRC="$SOURCE_DIR/src/Dispatch.Core/Updates/dispatch-update-public.pem"
+install -m 644 "$PUBKEY_SRC" "$INSTALL_DIR/dispatch-update-public.pem"
+# Mark this install self-managed so the dashboard exposes the "upload upgrade package" flow.
+mkdir -p "$DATA_DIR/updates"; touch "$DATA_DIR/updates/.self-managed"
+chown -R dispatch:dispatch "$DATA_DIR/updates"
+
 systemctl daemon-reload
 if [[ "$NO_START" == "1" ]]; then
-  systemctl enable dispatch                      # appliance build: started on first boot, not now
-  echo "==> Service enabled (not started - --no-start)"
+  systemctl enable dispatch dispatch-update.path   # appliance build: started on first boot, not now
+  echo "==> Service + updater enabled (not started - --no-start)"
 else
-  systemctl enable --now dispatch
+  systemctl enable --now dispatch dispatch-update.path
 fi
 
 # Open firewall ports if a supported firewall is active (best-effort).
