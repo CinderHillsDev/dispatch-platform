@@ -18,7 +18,11 @@ That triggers the **Release** workflow, which:
    Authenticode-signs both (engine detached, signed, reattached, then the bundle is signed).
 3. Builds the **universal Linux tarball** (`dispatch-<ver>-linux.tar.gz`, x64 + arm64, self-contained) -
    `install.sh` auto-detects the arch; no .NET SDK needed on the box.
-4. Generates `SHA256SUMS` and publishes a **GitHub Release** with all four assets and auto-generated notes.
+4. Builds the **upgrade package** (`dispatch-upgrade-<ver>.tar.gz`) - one cross-platform file with every
+   platform's payload (linux-x64, linux-arm64, win-x64) and a signed manifest - for the dashboard's
+   "upload an upgrade package" self-update flow (see [Upgrading](https://chrismuench.github.io/Dispatch-SMTP-Relay/deployment/upgrading/)).
+   It is signed if `DISPATCH_UPDATE_SIGNING_KEY` is set (see below).
+5. Generates `SHA256SUMS` and publishes a **GitHub Release** with all assets and auto-generated notes.
 
 ### Versioning
 
@@ -38,6 +42,7 @@ and publishes a **draft** release you can inspect and delete - nothing goes publ
 | Windows  | **`DispatchSetup-<ver>-x64.exe`** | The single file. Installs SQL Server 2025 Express → the MSI → the service. |
 | Windows  | `Dispatch-<ver>-x64.msi` | Advanced: install against an existing SQL Server (`msiexec /i Dispatch-<ver>-x64.msi SQLCONN="..."`). |
 | Linux    | `dispatch-<ver>-linux.tar.gz` | Universal (x64 + arm64). Extract, then `sudo ./install.sh --install-sql ...` (auto-detects arch). |
+| Upgrade  | `dispatch-upgrade-<ver>.tar.gz` | One cross-platform package for the **dashboard self-update** (Updates page). Upload it on any appliance/Linux/Windows install. |
 | Any      | `ghcr.io/chrismuench/dispatch-smtp-relay:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |
 | All      | `SHA256SUMS` | Verify downloads: `sha256sum -c SHA256SUMS`. |
 
@@ -76,6 +81,36 @@ The next tagged release then signs the MSI and the bundle automatically. The sig
 > Note: the project is licensed AGPL-3.0 + Commons Clause. The Commons Clause is not OSI-approved, so the
 > free **SignPath Foundation** OSS signing program does not apply - Azure Artifact Signing (a paid service
 > tied to your own identity, license-agnostic) is the path here.
+
+## Upgrade-package signing key (one-time)
+
+The dashboard self-update will only apply a package whose manifest is signed by the release key. The
+**public** key is committed (`src/Dispatch.Core/Updates/dispatch-update-public.pem`, embedded in the app
+and shipped to installs); the **private** key lives only in the `DISPATCH_UPDATE_SIGNING_KEY` GitHub
+Actions secret. Until the secret is set, releases emit an **unsigned** package that the updater refuses.
+
+Generate the key (RSA-3072) and store the public half in the repo, the private half in the secret:
+
+```bash
+# from the repo root
+openssl genrsa -out dispatch-update-signing.key 3072
+openssl rsa -in dispatch-update-signing.key -pubout -out src/Dispatch.Core/Updates/dispatch-update-public.pem
+
+# store the PRIVATE key as a repo secret (never commit it)
+gh secret set DISPATCH_UPDATE_SIGNING_KEY < dispatch-update-signing.key
+
+# commit the regenerated PUBLIC key
+git add src/Dispatch.Core/Updates/dispatch-update-public.pem
+git commit -m "chore: set update signing key"
+```
+
+Then move `dispatch-update-signing.key` somewhere safe (a password manager / secrets vault) and delete the
+local copy. **Keep it** - you need the same key to sign every future release, or already-deployed installs
+(which trust the committed public key) will reject new packages. If you ever rotate it, re-run the steps
+above and re-sign the interop test vector: `printf '{"version":"0.1.0"}' | openssl dgst -sha256 -sign dispatch-update-signing.key -out tests/Dispatch.Core.Tests/testdata/sample.manifest.json.sig`.
+
+In the GitHub UI the secret is at **Settings → Secrets and variables → Actions → New repository secret**,
+name `DISPATCH_UPDATE_SIGNING_KEY`, value = the full PEM (`-----BEGIN PRIVATE KEY-----` ... `-----END...`).
 
 ## CI vs. release builds
 
