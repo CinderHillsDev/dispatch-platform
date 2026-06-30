@@ -193,7 +193,7 @@ jobs:
           $sess = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 
           # First-run: set the admin password (allowed without auth when none exists) — this also signs us in.
-          Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Post -Uri "$base/api/auth/password" -Body '{"password":"CiSmoke-Passw0rd!"}' | Out-Null
+          Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Post -Uri "$base/api/auth/password" -Body '{"password":"Zq7-Marsh-Pylon-Vex!"}' | Out-Null
 
           # Tighten the SMTP allow-list to a range that excludes loopback (the PUT reloads the cache live).
           Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Put -Uri "$base/api/config/listener" -Body '{"allowedCidrs":["10.0.0.0/8"]}' | Out-Null
