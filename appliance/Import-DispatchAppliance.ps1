@@ -97,8 +97,11 @@ if (-not ($isAdmin -or $isHyperVAdm)) {
   throw "This needs an elevated Administrator session or membership in the 'Hyper-V Administrators' group. Re-run as administrator, or have an admin add you to that group."
 }
 
-if (-not (Test-Path $VhdxPath)) { throw "VHDX not found: $VhdxPath" }
-$VhdxPath = (Resolve-Path $VhdxPath).Path
+if (-not (Test-Path -LiteralPath $VhdxPath -PathType Leaf)) { throw "VHDX file not found: $VhdxPath" }
+$VhdxPath = (Resolve-Path -LiteralPath $VhdxPath).Path
+if ([System.IO.Path]::GetExtension($VhdxPath) -notin @('.vhdx', '.vhd')) {
+  throw "-VhdxPath must point at the appliance .vhdx file, but got '$VhdxPath'. Unzip dispatch-appliance.vhdx.zip and pass the dispatch-appliance.vhdx inside it."
+}
 
 # Guided menu when no switch was specified (or -Interactive): collect name, switch, VLAN, storage, sizing.
 $useMenu = $Interactive -or (-not $SwitchName)
@@ -139,23 +142,30 @@ $destDir  = Join-Path $VmPath $Name
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 $destVhdx = Join-Path $destDir ([IO.Path]::GetFileName($VhdxPath))
 Write-Host "Copying VHDX -> $destVhdx"
-Copy-Item -Path $VhdxPath -Destination $destVhdx -Force
+Copy-Item -LiteralPath $VhdxPath -Destination $destVhdx -Force
+if (-not (Test-Path -LiteralPath $destVhdx -PathType Leaf)) { throw "VHDX copy failed (destination is not a file): $destVhdx" }
 
 Write-Host "Creating Generation 2 VM '$Name'"
-$vm = New-VM -Name $Name -Generation 2 -MemoryStartupBytes ($MemoryGB * 1GB) `
-             -VHDPath $destVhdx -SwitchName $SwitchName -Path $destDir
-Set-VMProcessor -VM $vm -Count $CpuCount
-
-# Linux on Gen2 needs the Microsoft UEFI CA Secure Boot template (not the default Windows one).
-Set-VMFirmware -VM $vm -EnableSecureBoot On -SecureBootTemplate "MicrosoftUEFICertificateAuthority"
-
-# SQL Server needs a stable working set; disable Dynamic Memory.
-Set-VMMemory -VM $vm -DynamicMemoryEnabled $false
-
-# Apply a VLAN tag to the adapter if requested (access mode = single tagged VLAN).
-if ($VlanId -gt 0) {
-  Set-VMNetworkAdapterVlan -VMName $Name -Access -VlanId $VlanId
-  Write-Host "Network adapter set to VLAN access mode, VLAN ID $VlanId."
+try {
+  $vm = New-VM -Name $Name -Generation 2 -MemoryStartupBytes ($MemoryGB * 1GB) `
+               -VHDPath $destVhdx -SwitchName $SwitchName -Path $destDir
+  Set-VMProcessor -VM $vm -Count $CpuCount
+  # Linux on Gen2 needs the Microsoft UEFI CA Secure Boot template (not the default Windows one).
+  Set-VMFirmware -VM $vm -EnableSecureBoot On -SecureBootTemplate "MicrosoftUEFICertificateAuthority"
+  # SQL Server needs a stable working set; disable Dynamic Memory.
+  Set-VMMemory -VM $vm -DynamicMemoryEnabled $false
+  # Apply a VLAN tag to the adapter if requested (access mode = single tagged VLAN).
+  if ($VlanId -gt 0) {
+    Set-VMNetworkAdapterVlan -VMName $Name -Access -VlanId $VlanId
+    Write-Host "Network adapter set to VLAN access mode, VLAN ID $VlanId."
+  }
+}
+catch {
+  # Roll back a half-created VM + the copied files so the import can be retried cleanly.
+  Write-Warning "Import failed; cleaning up the partial VM and copied files."
+  Get-VM -Name $Name -ErrorAction SilentlyContinue | Remove-VM -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $destDir -Recurse -Force -ErrorAction SilentlyContinue
+  throw
 }
 
 Write-Host ""
