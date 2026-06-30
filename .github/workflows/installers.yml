@@ -235,6 +235,13 @@ jobs:
             Invoke-RestMethod -SkipCertificateCheck -WebSession $sess -Headers $hdr -ContentType 'application/json' -Method Put -Uri "$base/api/config/listener" -Body '{"allowedCidrs":["127.0.0.1/32","::1/128","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","fc00::/7"]}' | Out-Null
           }
 
+      # Comprehensive functional QC on the real install: end-to-end delivery (API + SMTP over STARTTLS),
+      # API-key revocation, and SMTP AUTH over STARTTLS. See installer/windows/functional-smoke.ps1.
+      - name: Functional smoke (delivery, revoke, SMTP AUTH over STARTTLS)
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        shell: pwsh
+        run: ./installer/windows/functional-smoke.ps1
+
   # Builds the self-contained Linux tarball and uploads it as a workflow artifact (downloadable from
   # the Actions run page). This needs NO tag and creates NO release — releases are only for permanent
   # public download links. Grab "dispatch-linux-tarball" from the run to test install.sh --prebuilt.
