@@ -15,6 +15,15 @@ public class PurgeWorkerTests
         public Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default) => Task.FromResult(0);
     }
 
+    private sealed class RecordingLogMaintenance : ILogMaintenance
+    {
+        public List<string> RetentionPurgedEvents { get; } = [];
+        public Task<int> PurgeByRetentionAsync(string @event, int retentionDays, CancellationToken ct = default)
+        { RetentionPurgedEvents.Add(@event); return Task.FromResult(0); }
+        public Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default) => Task.FromResult(0L);
+        public Task<int> PurgeOldestAsync(int batchSize, CancellationToken ct = default) => Task.FromResult(0);
+    }
+
     [Fact]
     public async Task Deletes_aged_failed_and_captured_files_keeps_recent()
     {
@@ -44,5 +53,62 @@ public class PurgeWorkerTests
         Assert.False(File.Exists(SpoolMeta.PathFor(oldFailed)));   // .meta sidecar removed too
         Assert.True(File.Exists(recentFailed));
         Assert.False(File.Exists(oldCaptured));
+    }
+
+    [Fact]
+    public async Task Retention_zero_keeps_files_forever()
+    {
+        using var t = new TempSpool();
+
+        // A year-old file in each managed dir — would be purged at any positive retention.
+        var agedFailed = Path.Combine(t.Spool.FailedDir, $"{Guid.NewGuid()}.eml");
+        File.WriteAllText(agedFailed, "old");
+        File.SetLastWriteTimeUtc(agedFailed, DateTime.UtcNow.AddDays(-365));
+
+        var agedCaptured = Path.Combine(t.Spool.CapturedDir, $"{Guid.NewGuid()}.eml");
+        File.WriteAllText(agedCaptured, "old");
+        File.SetLastWriteTimeUtc(agedCaptured, DateTime.UtcNow.AddDays(-365));
+
+        var disk = new DiskMonitor(t.Spool, new IntakeState(), _ => long.MaxValue, NullLogger<DiskMonitor>.Instance);
+        var opts = new PurgeOptions
+        {
+            SpoolFailedRetentionDays = 0,
+            CapturedRetentionDays = 0,
+            SizePressure = new PurgeOptions.SizePressureOptions { TriggerGb = 9.5, TargetGb = 9.0 },
+        };
+        var worker = new PurgeWorker(t.Spool, new NoopLogMaintenance(), disk,
+            new OptionsPurgeSettings(opts), new PurgeHistory(), NullLogger<PurgeWorker>.Instance);
+
+        await worker.RunOnceAsync(opts, default);
+
+        // 0 = keep forever (industry convention, consistent with the audit-log purge).
+        Assert.True(File.Exists(agedFailed));
+        Assert.True(File.Exists(agedCaptured));
+    }
+
+    [Fact]
+    public async Task Retention_zero_skips_log_row_purge()
+    {
+        using var t = new TempSpool();
+        var disk = new DiskMonitor(t.Spool, new IntakeState(), _ => long.MaxValue, NullLogger<DiskMonitor>.Instance);
+        var rec = new RecordingLogMaintenance();
+        var opts = new PurgeOptions
+        {
+            Log = new PurgeOptions.LogRetention
+            {
+                DeliveredRetentionDays = 0,
+                FailedRetentionDays = 0,
+                RetryingRetentionDays = 0,
+                TestSentRetentionDays = 0,
+            },
+            SizePressure = new PurgeOptions.SizePressureOptions { TriggerGb = 9.5, TargetGb = 9.0 },
+        };
+        var worker = new PurgeWorker(t.Spool, rec, disk,
+            new OptionsPurgeSettings(opts), new PurgeHistory(), NullLogger<PurgeWorker>.Instance);
+
+        await worker.RunOnceAsync(opts, default);
+
+        // 0 = keep forever: no DELETE issued for any log event.
+        Assert.Empty(rec.RetentionPurgedEvents);
     }
 }

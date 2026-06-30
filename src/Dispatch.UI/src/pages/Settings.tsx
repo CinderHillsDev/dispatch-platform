@@ -152,10 +152,10 @@ function RetryPanel({ initial }: { initial: AppSettings["retry"] }) {
 function RetentionPanel({ initial }: { initial: AppSettings["retention"] }) {
   const [retention, setRetention] = useState(initial);
   const rows: { key: keyof AppSettings["retention"]; label: string; help: string; step?: number }[] = [
-    { key: "logDeliveredRetentionDays", label: "Delivered log retention (days)", help: "Delivered-message log entries older than this are removed." },
-    { key: "logFailedRetentionDays", label: "Failed log retention (days)", help: "Failed-message log entries older than this are removed." },
-    { key: "spoolFailedRetentionDays", label: "Retry-queue retention (days)", help: "Messages held in the retry queue (failed, awaiting retry/delete) older than this are removed." },
-    { key: "capturedRetentionDays", label: "Captured (local inbox) retention (days)", help: "Captured messages (Local mode) on disk older than this are deleted." },
+    { key: "logDeliveredRetentionDays", label: "Delivered log retention (days)", help: "Delivered-message log entries older than this are removed (0 = keep forever)." },
+    { key: "logFailedRetentionDays", label: "Failed log retention (days)", help: "Failed-message log entries older than this are removed (0 = keep forever)." },
+    { key: "spoolFailedRetentionDays", label: "Retry-queue retention (days)", help: "Messages held in the retry queue (failed, awaiting retry/delete) older than this are removed (0 = keep forever)." },
+    { key: "capturedRetentionDays", label: "Captured (local inbox) retention (days)", help: "Captured messages (Local mode) on disk older than this are deleted (0 = keep forever)." },
     { key: "auditRetentionDays", label: "Audit log retention (days)", help: "System Logs entries older than this are removed (0 = keep forever)." },
     { key: "auditSecurityRetentionDays", label: "Security event retention (days)", help: "Noisier security events (access denials, SMTP auth failures) are removed sooner (0 = keep forever)." },
     { key: "sizeTriggerGb", label: "Max database size (GB)", help: "When the database reaches this size, the oldest log entries are removed automatically (down to ~0.5 GB below). SQL Server Express caps at 10 GB.", step: 0.1 },

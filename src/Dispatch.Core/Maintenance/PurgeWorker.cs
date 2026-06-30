@@ -93,6 +93,11 @@ public sealed class PurgeWorker(
 
     private async Task<int> PurgeLogAsync(string @event, int retentionDays, CancellationToken ct)
     {
+        // 0 (or negative) means "keep forever" — the industry convention, consistent with the audit-log
+        // purge and the "0 = keep forever" hint in the Settings UI. Without this, retention 0 would compute
+        // a cutoff of "now" and delete everything.
+        if (retentionDays <= 0) return 0;
+
         var deleted = await logs.PurgeByRetentionAsync(@event, retentionDays, ct);
         if (deleted > 0)
             log.LogInformation("Purged {Count} {Event} log rows older than {Days}d", deleted, @event, retentionDays);
@@ -124,7 +129,9 @@ public sealed class PurgeWorker(
 
     private static int PurgeFiles(string dir, int retentionDays, bool includeMeta)
     {
-        if (!Directory.Exists(dir)) return 0;
+        // 0 (or negative) means "keep forever" — see PurgeLogAsync. Guard before computing the cutoff,
+        // otherwise retention 0 would delete every file older than "now".
+        if (retentionDays <= 0 || !Directory.Exists(dir)) return 0;
         var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
         var count = 0;
         foreach (var eml in Directory.EnumerateFiles(dir, "*.eml").ToList())
