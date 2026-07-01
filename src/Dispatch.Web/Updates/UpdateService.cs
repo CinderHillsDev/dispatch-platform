@@ -206,6 +206,13 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
             return new(true, StatusCodes.Status202Accepted,
                 $"Verified and staged {manifest.Version}; the updater will apply it and the dashboard will briefly restart.", manifest.Version);
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A malformed package (e.g. not a gzip/tar - someone uploaded the GitHub artifact .zip wrapper
+            // instead of the inner dispatch-upgrade-*.tar.gz) must be rejected cleanly, never surface as a 500.
+            log?.LogWarning(ex, "Upgrade package could not be read");
+            return await RejectAsync("the package could not be read - upload the dispatch-upgrade-<version>.tar.gz file (not a .zip)", sourceIp, ct);
+        }
         finally { try { File.Delete(pkgPath); } catch { /* best-effort */ } }
     }
 
