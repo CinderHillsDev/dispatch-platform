@@ -34,7 +34,10 @@ echo "==> Creating VM $VMID ($NAME): q35 + OVMF/UEFI, ${CORES} cores, ${MEMORY} 
 qm create "$VMID" --name "$NAME" --memory "$MEMORY" --cores "$CORES" \
   --machine q35 --bios ovmf --scsihw virtio-scsi-pci \
   --net0 "virtio,bridge=$BRIDGE" \
+  --agent enabled=1 \
   --efidisk0 "$STORAGE:0,efitype=4m,pre-enrolled-keys=0"
+# --agent enabled=1 adds the QEMU guest-agent channel; the appliance's baked-in qemu-guest-agent then
+# reports the VM's IP (and enables graceful shutdown) in the Proxmox UI.
 
 echo "==> Importing the appliance disk into $STORAGE"
 qm importdisk "$VMID" "$QCOW2" "$STORAGE"

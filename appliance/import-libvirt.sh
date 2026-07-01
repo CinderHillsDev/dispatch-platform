@@ -47,8 +47,11 @@ virt-install \
   --boot uefi \
   --disk path="$dest",format=qcow2,bus=virtio \
   --network network="$NETWORK",model=virtio \
+  --channel unix,target_type=virtio,name=org.qemu.guest_agent.0 \
   --graphics none --console pty,target_type=serial \
   --import --noautoconsole $run_flag
+# --channel org.qemu.guest_agent.0 adds the guest-agent virtio channel; the appliance's baked-in
+# qemu-guest-agent then reports the VM's IP to libvirt ("virsh domifaddr <vm> --source agent").
 
 echo
 echo "VM '$NAME' defined. First boot configures SQL + Dispatch (a few minutes)."
