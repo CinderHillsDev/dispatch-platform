@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { setUnauthorizedHandler } from "./lib/api";
 
 interface Status { authenticated: boolean; needsSetup: boolean; }
 
@@ -22,6 +23,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
   };
   useEffect(() => { check(); }, []);
+
+  // If any API call comes back 401 (e.g. the session cookie was invalidated by a mid-upgrade restart to a
+  // new version), drop straight to the login screen instead of leaving the dashboard stuck. Guard so we only
+  // act while signed in - a 401 from the login flow itself must not loop.
+  useEffect(() => {
+    setUnauthorizedHandler(() => setState((s) => (s === "ok" ? "login" : s)));
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   const submit = async (path: string, fallbackErr: string) => {
     setBusy(true); setErr(null);

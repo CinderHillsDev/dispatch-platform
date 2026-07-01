@@ -212,10 +212,18 @@ export interface SystemInfo {
   logDirectory: string;
 }
 
+// Global 401 handler: the AuthGate registers this so ANY API call that comes back unauthenticated flips the
+// app straight to the login screen. This matters across the mid-upgrade service restart - the new version
+// invalidates the session cookie, so polling starts returning 401; without this the dashboard would sit on
+// "reconnecting..." until a manual refresh instead of taking the user to sign in.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) { onUnauthorized = fn; }
+
 async function getJson<T>(url: string): Promise<T> {
   // no-store: this is a live admin dashboard - every GET (and the manual "Refresh" button, which re-requests
   // the same URL) must hit the server, never a cached response, or refresh appears to do nothing.
   const res = await fetch(url, { cache: "no-store" });
+  if (res.status === 401) onUnauthorized?.();
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
 }
@@ -228,6 +236,7 @@ async function sendJson<T>(url: string, method: string, body: unknown): Promise<
     headers: { "Content-Type": "application/json", "X-Dispatch-Request": "1" },
     body: JSON.stringify(body),
   });
+  if (res.status === 401) onUnauthorized?.();
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) throw new Error(data?.error ?? `${res.status} ${res.statusText}`);
