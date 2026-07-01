@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Formats.Tar;
 using System.IO.Compression;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -151,10 +152,15 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
 
         Directory.CreateDirectory(UpdatesDir);
         var pkgPath = Path.Combine(UpdatesDir, "incoming.pkg");
-        await using (var fs = File.Create(pkgPath)) await pkg.CopyToAsync(fs, ct);
 
         try
         {
+            // Persist the upload, then (be forgiving) unwrap a GitHub-wrapped .zip that contains the real
+            // dispatch-upgrade-<ver>.tar.gz. Both are inside the try so an IO failure here (e.g. the disk is
+            // full) is reported with its real reason instead of surfacing as a blank 500.
+            await using (var fs = File.Create(pkgPath)) await pkg.CopyToAsync(fs, ct);
+            pkgPath = await UnwrapZipIfNeededAsync(pkgPath, ct);
+
             // 1) Authenticate the manifest signature against the embedded release key (fail-closed).
             await WriteStatusAsync(new(UpdateState.Verifying, null, "Verifying package signature...", DateTime.UtcNow), ct);
             var manifestBytes = await ReadEntryAsync(pkgPath, "manifest.json", ct);
@@ -208,12 +214,44 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // A malformed package (e.g. not a gzip/tar - someone uploaded the GitHub artifact .zip wrapper
-            // instead of the inner dispatch-upgrade-*.tar.gz) must be rejected cleanly, never surface as a 500.
-            log?.LogWarning(ex, "Upgrade package could not be read");
-            return await RejectAsync("the package could not be read - upload the dispatch-upgrade-<version>.tar.gz file (not a .zip)", sourceIp, ct);
+            // Anything that goes wrong reading/verifying/staging the package (a malformed archive, a full
+            // disk, a permissions problem) is reported with its real reason - never a blank 500.
+            log?.LogWarning(ex, "Upgrade package could not be processed");
+            var hint = ex is InvalidDataException ? " (is it a valid dispatch-upgrade-<version>.tar.gz?)" : "";
+            return await RejectAsync($"the package could not be processed: {ex.Message}{hint}", sourceIp, ct);
         }
         finally { try { File.Delete(pkgPath); } catch { /* best-effort */ } }
+    }
+
+    // If the upload is a .zip (GitHub artifact wrapper) containing exactly one *.tar.gz, extract that inner
+    // package and return its path (deleting the .zip); otherwise return the original path unchanged. Best-
+    // effort - any problem just leaves the original file for the normal tar.gz reader to accept or reject.
+    private async Task<string> UnwrapZipIfNeededAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            var head = new byte[4];
+            await using (var fs = File.OpenRead(path))
+                if (await fs.ReadAsync(head.AsMemory(0, 4), ct) < 4) return path;
+            // ZIP local-file-header magic "PK\x03\x04"; gzip is 0x1F 0x8B, so this cleanly distinguishes them.
+            if (!(head[0] == 0x50 && head[1] == 0x4B && head[2] == 0x03 && head[3] == 0x04)) return path;
+
+            using var zip = ZipFile.OpenRead(path);
+            var entry = zip.Entries.FirstOrDefault(e => e.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+                        ?? (zip.Entries.Count == 1 ? zip.Entries[0] : null);
+            if (entry is null) return path; // not a single-package wrapper; let the tar.gz reader reject it
+
+            var inner = path + ".inner.tgz";
+            entry.ExtractToFile(inner, overwrite: true);
+            log?.LogInformation("Unwrapped a .zip upload to its inner package '{Entry}'", entry.Name);
+            try { File.Delete(path); } catch { /* best-effort */ }
+            return inner;
+        }
+        catch (Exception ex)
+        {
+            log?.LogWarning(ex, "Could not unwrap a .zip upload; using it as-is");
+            return path;
+        }
     }
 
     // Reads a single (small) entry's bytes from the .tar.gz package. Entry names may be prefixed "./".
@@ -266,7 +304,9 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
     {
         await audit.Audit("Update", $"Rejected an uploaded upgrade package: {why}.", "Warning", "admin", ip, ct: ct);
         // Record the failure in status.json so the dashboard's progress view shows which step rejected it.
-        await WriteStatusAsync(new(UpdateState.Failed, null, $"Rejected: {why}", DateTime.UtcNow), ct);
+        // Best-effort: if the reason is itself a write failure (e.g. a full disk), don't let this re-throw.
+        try { await WriteStatusAsync(new(UpdateState.Failed, null, $"Rejected: {why}", DateTime.UtcNow), ct); }
+        catch (Exception ex) { log?.LogWarning(ex, "Could not write the rejected-update status"); }
         return new(false, StatusCodes.Status400BadRequest, $"Upgrade rejected: {why}.");
     }
 
