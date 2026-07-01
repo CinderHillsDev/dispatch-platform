@@ -184,9 +184,16 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
                 return await RejectAsync($"this version ({CurrentVersion}) is older than the package minimum ({manifest.MinFromVersion})", sourceIp, ct);
 
             // 3) Extract THIS arch's payload to the staging dir and confirm its sha256 matches the manifest.
-            var stagedDir = Path.Combine(UpdatesDir, "staged", manifest.Version);
+            // Create the staging tree with the execute bit guaranteed: under a restrictive process UMask
+            // (e.g. 0177) Directory.CreateDirectory would otherwise yield drw------- dirs that can't be
+            // descended into, so the nested create + payload write fail with "Permission denied".
+            var stageBase = Path.Combine(UpdatesDir, "staged");
+            Directory.CreateDirectory(stageBase);
+            EnsureTraversable(stageBase);
+            var stagedDir = Path.Combine(stageBase, manifest.Version);
             TryDelete(stagedDir);
             Directory.CreateDirectory(stagedDir);
+            EnsureTraversable(stagedDir);
             var payloadPath = Path.Combine(stagedDir, "payload");
             await WriteStatusAsync(new(UpdateState.Extracting, manifest.Version, $"Unpacking payload for {CurrentArch}...", DateTime.UtcNow), ct);
             var sha = await ExtractAndHashAsync(pkgPath, art.File, payloadPath, ct);
@@ -356,6 +363,15 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
     }
 
     private static void TryDelete(string dir) { try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { /* best-effort */ } }
+
+    // Guarantee the owner can enter + write a directory even under a restrictive process UMask (which would
+    // otherwise strip the execute bit and make the dir undescendable). Linux/macOS only; no-op on Windows.
+    private static void EnsureTraversable(string dir)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try { File.SetUnixFileMode(dir, File.GetUnixFileMode(dir) | UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+        catch { /* best-effort */ }
+    }
 
     /// <summary>True if <paramref name="version"/> &gt;= <paramref name="minimum"/> (dotted numeric); permissive on parse failure.</summary>
     internal static bool VersionAtLeast(string version, string minimum) =>

@@ -29,8 +29,11 @@ ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true
 # Spool .eml/.meta files contain message content (spec §14.5): force mode 600 (rw-------) on every
-# file the service creates so message bodies are never group/world-readable.
-UMask=0177
+# file the service creates so message bodies are never group/world-readable. Use 0077 (NOT 0177):
+# both make files 0600, but 0177 also strips the directory execute bit, so directories the service
+# creates come out drw------- and can't be descended into - which broke web-UI update staging
+# (creating updates/staged/<ver>/ failed with "Permission denied"). 0077 keeps files 0600, dirs 0700.
+UMask=0077
 ReadWritePaths=/var/lib/dispatch /var/log/dispatch
 
 [Install]
