@@ -2,6 +2,7 @@ using Dispatch.Core.Logging;
 using Dispatch.Web.Auth;
 using Dispatch.Web.Ingestion;
 using Dispatch.Web.Realtime;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,6 +46,18 @@ public static class ServiceCollectionExtensions
                 o.SlidingExpiration = true;
                 o.Events.OnRedirectToLogin = c => { c.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
                 o.Events.OnRedirectToAccessDenied = c => { c.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+                // Invalidate sessions across a version change: the login cookie is stamped with the running
+                // version ("ver" claim); after an upgrade the process runs a new version, so existing cookies
+                // no longer match and everyone must sign in again for the new version. A plain restart at the
+                // same version keeps sessions. Older cookies with no "ver" claim also fail closed here.
+                o.Events.OnValidatePrincipal = async c =>
+                {
+                    if (c.Principal?.FindFirst("ver")?.Value != Updates.UpdateService.CurrentVersion)
+                    {
+                        c.RejectPrincipal();
+                        await c.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    }
+                };
             });
 
         // Decorate the existing ILogRepository registration with the broadcaster.

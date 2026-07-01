@@ -35,8 +35,45 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
     private const long MaxUploadBytes = 2L * 1024 * 1024 * 1024; // 2 GiB
 
     private string UpdatesDir => Path.Combine(env.ContentRootPath, "updates");
+    private string NoticeFile => Path.Combine(UpdatesDir, "upgrade-notice.json");
+    private string VersionMarkerFile => Path.Combine(UpdatesDir, "version.marker");
 
     public static string CurrentVersion => typeof(UpdateService).Assembly.GetName().Version?.ToString() ?? "dev";
+
+    /// <summary>A completed upgrade the dashboard congratulates the admin about on their next login.</summary>
+    public sealed record UpgradeNotice(
+        [property: JsonPropertyName("from")] string From,
+        [property: JsonPropertyName("to")] string To,
+        [property: JsonPropertyName("atUtc")] DateTime AtUtc);
+
+    /// <summary>Run once at startup: if the last-run version differs from the current one, record an upgrade
+    /// notice (from -> to) that the dashboard shows after the next login. First run just records the marker,
+    /// so a fresh install never shows a spurious "you upgraded" banner.</summary>
+    public void DetectStartupUpgrade()
+    {
+        try
+        {
+            Directory.CreateDirectory(UpdatesDir);
+            var prev = File.Exists(VersionMarkerFile) ? File.ReadAllText(VersionMarkerFile).Trim() : null;
+            var cur = CurrentVersion;
+            if (!string.IsNullOrEmpty(prev) && prev != cur)
+            {
+                File.WriteAllText(NoticeFile, JsonSerializer.Serialize(new UpgradeNotice(prev, cur, DateTime.UtcNow), Json));
+                log?.LogInformation("Detected upgrade {From} -> {To}", prev, cur);
+            }
+            File.WriteAllText(VersionMarkerFile, cur);
+        }
+        catch (Exception ex) { log?.LogWarning(ex, "Startup upgrade detection failed"); }
+    }
+
+    /// <summary>Clears the "you just upgraded" notice once the admin has seen it.</summary>
+    public void DismissNotice() { try { File.Delete(NoticeFile); } catch { /* already gone */ } }
+
+    private UpgradeNotice? ReadNotice()
+    {
+        try { return File.Exists(NoticeFile) ? JsonSerializer.Deserialize<UpgradeNotice>(File.ReadAllText(NoticeFile), Json) : null; }
+        catch { return null; }
+    }
 
     public static string CurrentArch =>
         (OperatingSystem.IsWindows() ? "win" : OperatingSystem.IsMacOS() ? "osx" : "linux") + "-" +
@@ -71,6 +108,7 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
             message = status?.Message ?? "",
             stagedVersion = status?.Version,
             updatedAtUtc = status?.UpdatedAtUtc,
+            upgradeNotice = ReadNotice(),
         };
     }
 
@@ -118,6 +156,7 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
         try
         {
             // 1) Authenticate the manifest signature against the embedded release key (fail-closed).
+            await WriteStatusAsync(new(UpdateState.Verifying, null, "Verifying package signature...", DateTime.UtcNow), ct);
             var manifestBytes = await ReadEntryAsync(pkgPath, "manifest.json", ct);
             var sigBytes = await ReadEntryAsync(pkgPath, "manifest.json.sig", ct);
             if (manifestBytes is null || sigBytes is null)
@@ -132,6 +171,7 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
                 return await RejectAsync("the manifest is unreadable", sourceIp, ct);
 
             // 2) Compatibility: must carry a payload for this host's arch, and satisfy minFromVersion.
+            await WriteStatusAsync(new(UpdateState.Verifying, manifest.Version, $"Checking compatibility (platform {CurrentArch}, from {CurrentVersion})...", DateTime.UtcNow), ct);
             if (manifest.Artifacts is null || !manifest.Artifacts.TryGetValue(CurrentArch, out var art) || art is null)
                 return await RejectAsync($"the package has no payload for this platform ({CurrentArch})", sourceIp, ct);
             if (!VersionAtLeast(CurrentVersion, manifest.MinFromVersion))
@@ -142,8 +182,10 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
             TryDelete(stagedDir);
             Directory.CreateDirectory(stagedDir);
             var payloadPath = Path.Combine(stagedDir, "payload");
+            await WriteStatusAsync(new(UpdateState.Extracting, manifest.Version, $"Unpacking payload for {CurrentArch}...", DateTime.UtcNow), ct);
             var sha = await ExtractAndHashAsync(pkgPath, art.File, payloadPath, ct);
             if (sha is null) { TryDelete(stagedDir); return await RejectAsync($"payload '{art.File}' not found in the package", sourceIp, ct); }
+            await WriteStatusAsync(new(UpdateState.Extracting, manifest.Version, "Verifying payload checksum...", DateTime.UtcNow), ct);
             if (!HashEquals(sha, art.Sha256)) { TryDelete(stagedDir); return await RejectAsync("the payload checksum does not match the manifest", sourceIp, ct); }
 
             await File.WriteAllBytesAsync(Path.Combine(stagedDir, "manifest.json"), manifestBytes, ct);
@@ -216,6 +258,8 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
     private async Task<UploadResult> RejectAsync(string why, string? ip, CancellationToken ct)
     {
         await audit.Audit("Update", $"Rejected an uploaded upgrade package: {why}.", "Warning", "admin", ip, ct: ct);
+        // Record the failure in status.json so the dashboard's progress view shows which step rejected it.
+        await WriteStatusAsync(new(UpdateState.Failed, null, $"Rejected: {why}", DateTime.UtcNow), ct);
         return new(false, StatusCodes.Status400BadRequest, $"Upgrade rejected: {why}.");
     }
 

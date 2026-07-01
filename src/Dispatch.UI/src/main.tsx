@@ -21,6 +21,28 @@ import { AccessControl } from "./pages/AccessControl";
 import { AuthGate, logout } from "./auth";
 import "./index.css";
 
+// One-time "you just upgraded" banner, shown after a version change on the first authenticated load.
+// The server records from -> to at startup; dismissing clears it so it appears only once.
+function UpgradeBanner() {
+  const [notice, setNotice] = useState<{ from: string; to: string } | null>(null);
+  useEffect(() => { api.updates.status().then((s) => setNotice(s.upgradeNotice)).catch(() => {}); }, []);
+  if (!notice) return null;
+  const dismiss = () => { setNotice(null); api.updates.dismissNotice().catch(() => {}); };
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 12, margin: "0 0 18px", padding: "12px 16px",
+      background: "rgba(34,197,94,.12)", border: "1px solid rgba(34,197,94,.4)", borderRadius: 8,
+    }}>
+      <span style={{ fontSize: 20 }}>🎉</span>
+      <div style={{ flex: 1 }}>
+        <strong>Upgrade complete</strong> - you're now running Dispatch <strong>{notice.to}</strong>
+        {notice.from ? <> (upgraded from {notice.from})</> : null}. Enjoy the new version!
+      </div>
+      <button onClick={dismiss}>Dismiss</button>
+    </div>
+  );
+}
+
 function Layout() {
   return (
     <div className="app">
@@ -56,7 +78,7 @@ function Layout() {
         </nav>
         <button onClick={logout} style={{ marginTop: 18, width: "100%" }}>Sign out</button>
       </aside>
-      <main className="main"><Outlet /></main>
+      <main className="main"><UpgradeBanner /><Outlet /></main>
     </div>
   );
 }

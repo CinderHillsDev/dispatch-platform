@@ -52,8 +52,7 @@ public static class AuthEndpoints
             }
 
             throttle.RecordSuccess(ip);
-            var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "admin")], CookieAuthenticationDefaults.AuthenticationScheme);
-            await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
+            await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(AdminIdentity()));
             await audit.Audit("Auth", "Login succeeded", "Info", actor: "admin", sourceIp: ip);
             return Results.Ok(new { ok = true });
         });
@@ -81,13 +80,16 @@ public static class AuthEndpoints
 
             // Sign the admin in immediately after first-run setup.
             if (!hasPassword)
-            {
-                var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "admin")], CookieAuthenticationDefaults.AuthenticationScheme);
-                await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
-            }
+                await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(AdminIdentity()));
             return Results.Ok(new { ok = true });
         });
     }
+
+    // The admin identity, stamped with the running version so a later upgrade invalidates the cookie and
+    // forces a fresh sign-in (see OnValidatePrincipal in ServiceCollectionExtensions).
+    private static ClaimsIdentity AdminIdentity() => new(
+        [new Claim(ClaimTypes.Name, "admin"), new Claim("ver", Updates.UpdateService.CurrentVersion)],
+        CookieAuthenticationDefaults.AuthenticationScheme);
 
     // Exact-match common weak passwords, compared case-insensitively (spec §17.3 common-password check).
     private static readonly HashSet<string> CommonPasswords = new(StringComparer.OrdinalIgnoreCase)

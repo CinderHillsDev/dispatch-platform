@@ -48,6 +48,7 @@ try {
 
   # UseWindowsService(): Start-Service returns once the new version signals Running to the SCM (after DB
   # migrations + listeners) - that is the health gate.
+  Set-Status 'Restarting' "restarting service on $script:ver (the dashboard will briefly disconnect)"
   Start-Service Dispatch
   Start-Sleep -Seconds 3
   if ((Get-Service Dispatch).Status -ne 'Running') { throw 'service is not Running after start' }

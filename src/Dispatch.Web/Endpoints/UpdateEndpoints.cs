@@ -14,6 +14,13 @@ public static class UpdateEndpoints
         group.MapGet("/updates/status", async (UpdateService svc, CancellationToken ct) =>
             Results.Ok(await svc.StatusAsync(ct)));
 
+        // Dismiss the "you just upgraded" notice after the admin has seen it (shown once, post-upgrade login).
+        group.MapPost("/updates/dismiss-notice", (UpdateService svc) =>
+        {
+            svc.DismissNotice();
+            return Results.Ok(new { ok = true });
+        });
+
         // Multipart: bundle (.tar.gz) + manifest (.json) + signature (.sig). Verified + staged, then handed
         // to the platform updater. (Reads the form manually, so no antiforgery token is required.)
         group.MapPost("/updates/upload", async (HttpRequest req, UpdateService svc, CancellationToken ct) =>

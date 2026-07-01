@@ -93,6 +93,7 @@ ln -sfn "$NEWDIR" "$INSTALL_DIR/current"
 # 4) Restart. The unit is Type=notify, so `systemctl restart` only returns success once the new version has
 #    fully started (DB migrations applied, listeners bound, READY signalled) - that IS the health gate.
 echo "update: restarting service on $VER"
+status "Restarting" "restarting service on $VER (the dashboard will briefly disconnect)"
 if systemctl restart dispatch; then
   status "Succeeded" "updated to $VER"
   echo "update: now running $VER"

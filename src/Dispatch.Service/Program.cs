@@ -283,6 +283,10 @@ try
     try { await app.Services.GetRequiredService<IAuditLog>().Lifecycle("Dispatch service started"); }
     catch (Exception ex) { Log.Warning(ex, "Could not write startup audit event"); }
 
+    // Detect a version change since the last run so the dashboard can show a "you just upgraded" notice.
+    try { app.Services.GetRequiredService<Dispatch.Web.Updates.UpdateService>().DetectStartupUpgrade(); }
+    catch (Exception ex) { Log.Warning(ex, "Could not run startup upgrade detection"); }
+
     await app.RunAsync();
     return 0;
 }

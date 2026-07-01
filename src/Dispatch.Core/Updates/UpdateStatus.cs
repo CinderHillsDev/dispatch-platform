@@ -4,7 +4,10 @@ namespace Dispatch.Core.Updates;
 
 /// <summary>Progress of an in-place update. The platform updater (Linux systemd/bash or the Windows
 /// helper) writes this to <c>updates/status.json</c>; the dashboard reads it to show progress.</summary>
-public enum UpdateState { Idle, Staged, Applying, Succeeded, Failed, RolledBack }
+// Ordered by the progress the dashboard shows: the upload is received, its signature/compatibility verified,
+// the payload unpacked, staged, then the platform updater applies it and restarts the service. Older writers
+// only emit Staged/Applying/Succeeded/Failed/RolledBack; the extra states are optional finer-grained steps.
+public enum UpdateState { Idle, Receiving, Verifying, Extracting, Staged, Applying, Restarting, Succeeded, Failed, RolledBack }
 
 /// <summary>Status surfaced to the dashboard. State is serialized as a string for the bash/JSON interop.</summary>
 public sealed record UpdateStatus(

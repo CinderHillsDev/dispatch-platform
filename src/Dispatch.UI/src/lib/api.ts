@@ -249,10 +249,11 @@ export interface UpdateInfo {
   currentVersion: string;
   arch: string;
   selfManaged: boolean;
-  state: string;            // Idle | Staged | Applying | Succeeded | Failed | RolledBack
+  state: string;            // Idle | Receiving | Verifying | Extracting | Staged | Applying | Restarting | Succeeded | Failed | RolledBack
   message: string;
   stagedVersion: string | null;
   updatedAtUtc: string | null;
+  upgradeNotice: { from: string; to: string; atUtc: string } | null; // set once after a version change
 }
 
 export const api = {
@@ -359,15 +360,30 @@ export const api = {
 
   updates: {
     status: () => getJson<UpdateInfo>("/api/updates/status"),
-    upload: async (file: File): Promise<{ ok: boolean; message: string; version?: string }> => {
-      const fd = new FormData();
-      fd.append("package", file);
-      // No Content-Type header: the browser sets the multipart boundary. X-Dispatch-Request is the CSRF guard.
-      const res = await fetch("/api/updates/upload", { method: "POST", headers: { "X-Dispatch-Request": "1" }, body: fd });
-      const data = await res.json().catch(() => ({} as { message?: string }));
-      if (!res.ok) throw new Error(data.message ?? `Upload failed (${res.status})`);
-      return data as { ok: boolean; message: string; version?: string };
-    },
+    dismissNotice: () => sendJson<{ ok: boolean }>("/api/updates/dismiss-notice", "POST", {}),
+    // XHR (not fetch) so we can report real upload progress; packages are large (100s of MB). onProgress is
+    // called with bytes sent / total while uploading. X-Dispatch-Request is the CSRF guard; the browser sets
+    // the multipart Content-Type boundary itself.
+    upload: (
+      file: File,
+      onProgress?: (loaded: number, total: number) => void,
+    ): Promise<{ ok: boolean; message: string; version?: string }> =>
+      new Promise((resolve, reject) => {
+        const fd = new FormData();
+        fd.append("package", file);
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/updates/upload");
+        xhr.setRequestHeader("X-Dispatch-Request", "1");
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded, e.total); };
+        xhr.onload = () => {
+          let data: { ok?: boolean; message?: string; version?: string } = {};
+          try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
+          if (xhr.status >= 200 && xhr.status < 300) resolve(data as { ok: boolean; message: string; version?: string });
+          else reject(new Error(data.message ?? `Upload failed (${xhr.status})`));
+        };
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.send(fd);
+      }),
   },
 
   system: {
