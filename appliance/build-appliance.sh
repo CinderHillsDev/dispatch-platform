@@ -46,11 +46,17 @@ cp "$REPO/appliance/dispatch-firstboot.service"  "$STAGE/dispatch-firstboot.serv
 cp "$REPO/appliance/dispatch-set-ip"             "$STAGE/dispatch-set-ip"
 chmod +x "$STAGE/install.sh" "$STAGE/dispatch-update.sh" "$STAGE/firstboot.sh" "$STAGE/dispatch-set-ip" "$STAGE/bin/Dispatch.Service"
 
+echo "==> Detecting the guest kernel version (for Hyper-V integration tools, which are kernel-tied)"
+# The Hyper-V KVP/VSS/fcopy daemons ship in a per-kernel package, so we must fetch the set matching THIS
+# image's kernel (not the download container's). open-vm-tools / qemu-guest-agent are kernel-independent.
+KVER="$(virt-ls -a "$WORK/base.img" /lib/modules 2>/dev/null | grep -E '^[0-9]' | sort -V | tail -1 || true)"
+echo "guest kernel: ${KVER:-<unknown - Hyper-V IP reporting may be skipped>}"
+
 echo "==> Pre-downloading SQL Server Express + tools (.debs) for an offline in-guest install"
 # Done on the host in a clean Ubuntu 24.04 container so the dependency closure matches the cloud image and
 # the image build itself needs no in-guest network (libguestfs passt networking is unreliable on CI).
 mkdir -p "$STAGE/debs"
-docker run --rm -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
+docker run --rm -e KVER="$KVER" -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq curl ca-certificates >/dev/null
@@ -61,13 +67,28 @@ docker run --rm -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
   curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2025.list \
     -o /etc/apt/sources.list.d/mssql-server.list
   apt-get update -qq
+  cd /debs
   # Full recursive runtime dependency closure of the target packages (skip virtual/undownloadable entries).
   deps=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances \
            mssql-server mssql-tools18 unixodbc-dev | grep "^\w" | sort -u)
-  cd /debs
   for d in $deps; do apt-get download "$d" 2>/dev/null || true; done
-  echo "downloaded $(ls -1 /debs/*.deb | wc -l) packages"
+  echo "downloaded $(ls -1 /debs/*.deb | wc -l) SQL packages"
   ls /debs/mssql-server_*.deb >/dev/null   # fail the build if the core package is missing
+
+  # Hypervisor guest agents so each hypervisor manager can display the VM IP (installed offline in the guest;
+  # NO first-boot network, so this keeps the appliance no-call-home): open-vm-tools = VMware, qemu-guest-agent
+  # = KVM/libvirt/Proxmox (both kernel-independent), and the Hyper-V KVP/VSS/fcopy daemons via the per-kernel
+  # linux-cloud-tools set matching THIS image (linux-cloud-tools-common holds the systemd units). Best-effort:
+  # a missing Hyper-V set only drops Hyper-V IP reporting, it does not fail the build.
+  agents="open-vm-tools qemu-guest-agent linux-cloud-tools-common"
+  [ -n "$KVER" ] && agents="$agents linux-cloud-tools-$KVER"
+  gdeps=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances \
+            $agents 2>/dev/null | grep "^\w" | sort -u || true)
+  for d in $gdeps; do apt-get download "$d" 2>/dev/null || true; done
+  ls /debs/open-vm-tools_*.deb    >/dev/null 2>&1 || echo "WARN: open-vm-tools not downloaded (VMware IP display may be unavailable)"
+  ls /debs/qemu-guest-agent_*.deb >/dev/null 2>&1 || echo "WARN: qemu-guest-agent not downloaded (KVM/Proxmox IP display may be unavailable)"
+  ls /debs/linux-cloud-tools-*-generic_*.deb >/dev/null 2>&1 || echo "WARN: Hyper-V cloud-tools for kernel '"'"'$KVER'"'"' not downloaded (Hyper-V IP display may be unavailable)"
+  echo "total .debs staged: $(ls -1 /debs/*.deb | wc -l)"
 '
 
 echo "==> Expanding the root partition into a ${DISK_SIZE} working image"
@@ -94,6 +115,14 @@ for unit in dispatch.service dispatch-firstboot.service; do
     || { echo "ERROR: $unit is not enabled (no WantedBy symlink) - it would not start at boot" >&2; exit 1; }
 done
 echo "verified: bootloader fallback + dispatch/firstboot units enabled"
+
+# Informational: which hypervisor guest agents ended up enabled (best-effort - never fails the build). At
+# least open-vm-tools + qemu-guest-agent should be present; the Hyper-V KVP daemon requires the kernel-tied
+# cloud-tools set to have been available for this image's kernel.
+enabled_wants="$(virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants 2>/dev/null || true)"
+for unit in hv-kvp-daemon.service open-vm-tools.service qemu-guest-agent.service; do
+  echo "$enabled_wants" | grep -qx "$unit" && echo "guest agent enabled: $unit" || echo "guest agent NOT enabled: $unit"
+done
 
 echo "==> Converting to a Gen2/UEFI dynamic VHDX"
 qemu-img convert -p -f qcow2 -O vhdx -o subformat=dynamic "$WORK/disk.qcow2" "$OUT"

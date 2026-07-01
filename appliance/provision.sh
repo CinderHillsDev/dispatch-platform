@@ -16,9 +16,19 @@ echo "mssql-tools18 mssql-tools/accept_eula boolean true" | debconf-set-selectio
 
 echo "==> Install SQL Server Express + tools (offline from pre-downloaded .debs)"
 dpkg -i "$STAGE"/debs/*.deb || true   # may report ordering warnings; configure resolves them
-dpkg --configure -a
+# Tolerant: a guest-agent postinst can be noisy in an offline chroot (no running systemd). SQL correctness is
+# hard-verified immediately below, so a nonzero configure here must not abort the build.
+dpkg --configure -a || true
 test -x /opt/mssql/bin/mssql-conf || { echo "ERROR: mssql-server did not install" >&2; exit 1; }
 test -x /opt/mssql-tools18/bin/sqlcmd || { echo "ERROR: mssql-tools18 did not install" >&2; exit 1; }
+
+echo "==> Enable hypervisor guest agents (best-effort; each idles harmlessly on a non-matching host)"
+# So Hyper-V Manager / vCenter / Proxmox can show the VM's IP. The .debs are installed above; enable only the
+# units that are present (systemctl --root creates the WantedBy symlinks without a running systemd). Not all
+# agents install on every build (the Hyper-V set is kernel-tied and best-effort), so a missing unit is fine.
+for unit in hv-kvp-daemon.service hv-vss-daemon.service hv-fcopy-daemon.service open-vm-tools.service qemu-guest-agent.service; do
+  if systemctl --root=/ enable "$unit" >/dev/null 2>&1; then echo "  enabled $unit"; else echo "  (skip $unit - not installed)"; fi
+done
 
 echo "==> Stage Dispatch (enabled, not started; SA password finalized on first boot)"
 bash "$STAGE/install.sh" --prebuilt "$STAGE/bin" --no-start \
