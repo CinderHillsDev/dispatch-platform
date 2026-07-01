@@ -12,6 +12,7 @@ using Dispatch.Core.Configuration;
 using Dispatch.Core.Updates;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Web.Updates;
@@ -28,6 +29,10 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
 {
     private static readonly JsonSerializerOptions Json =
         new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new JsonStringEnumConverter() } };
+
+    // Upper bound for an uploaded upgrade package. Generous (a payload is a self-contained runtime for one
+    // arch, ~150-200 MB) but not unbounded, so a bad or hostile upload can't fill the disk unchecked.
+    private const long MaxUploadBytes = 2L * 1024 * 1024 * 1024; // 2 GiB
 
     private string UpdatesDir => Path.Combine(env.ContentRootPath, "updates");
 
@@ -80,7 +85,28 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
         if (!req.HasFormContentType)
             return new(false, StatusCodes.Status400BadRequest, "Expected a multipart upload with the upgrade package in field 'package'.");
 
-        var form = await req.ReadFormAsync(ct);
+        // Upgrade packages are large (hundreds of MB), so lift this request's body-size caps BEFORE reading
+        // the form - otherwise ReadFormAsync throws and the upload fails with a 500: Kestrel's
+        // MaxRequestBodySize defaults to ~30 MB and the multipart body-length limit to 128 MB. Safe here: the
+        // endpoint is admin-only and gated to self-managed installs (checked above), and we cap at
+        // MaxUploadBytes rather than removing the limit entirely. Skip when the form is already parsed or
+        // supplied (e.g. a pre-populated Request.Form in tests) so we don't clobber it.
+        if (req.HttpContext.Features.Get<IFormFeature>()?.Form is null)
+        {
+            var sizeFeature = req.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if (sizeFeature is { IsReadOnly: false }) sizeFeature.MaxRequestBodySize = MaxUploadBytes;
+            req.HttpContext.Features.Set<IFormFeature>(
+                new FormFeature(req, new FormOptions { MultipartBodyLengthLimit = MaxUploadBytes }));
+        }
+
+        IFormCollection form;
+        try { form = await req.ReadFormAsync(ct); }
+        catch (Exception ex) when (ex is BadHttpRequestException or InvalidDataException)
+        {
+            log?.LogWarning(ex, "Upgrade upload rejected while reading the multipart body");
+            return new(false, StatusCodes.Status413PayloadTooLarge,
+                $"The upload could not be read - it may exceed the {MaxUploadBytes / (1024 * 1024)} MB limit or be malformed.");
+        }
         var pkg = form.Files["package"] ?? (form.Files.Count == 1 ? form.Files[0] : null);
         if (pkg is null)
             return new(false, StatusCodes.Status400BadRequest, "Upload the single upgrade package (.tar.gz) in field 'package'.");
