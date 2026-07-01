@@ -39,6 +39,16 @@ Denied connections are logged with their source IP.
   TLS is available out of the box (the dashboard self-signs the same way). Configure a CA-issued cert to
   remove untrusted-cert warnings. See [TLS certificate](/configuration/tls-certificate/).
 
+## Privacy - no call home
+
+Dispatch never phones home. There is **no telemetry, no analytics, no usage stats, no license
+check, and no automatic update polling** anywhere in the software. The only outbound network
+connections it makes are to the **mail providers you configure** (to deliver mail) - nothing about
+your install, your configuration, or your messages is sent to us or any third party. Updates are
+applied only from a **signed package you upload yourself** through the dashboard; nothing runs in the
+background reaching out for new versions. Dispatch runs fully on an isolated network as long as your
+chosen provider is reachable.
+
 ## Health & metrics
 
 `/health` and `/metrics` are unauthenticated but served only on the dashboard port and gated by its

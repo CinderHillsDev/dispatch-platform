@@ -39,6 +39,11 @@ const features = [
     body: 'HTTPS-only dashboard, a shared TLS cert for SMTP + the API, bcrypt-hashed passwords & API keys, encrypted secrets at rest, and CIDR allow-lists so it’s never an open relay.',
   },
   {
+    title: '🔒 Privacy first - no call home',
+    body: 'Dispatch never phones home. No telemetry, no analytics, no usage stats, no license check, no automatic update pings. It only ever connects to the mail providers you configure - nothing leaves your network otherwise. Updates are applied from a package you upload yourself.',
+    accent: true,
+  },
+  {
     title: 'Deploy anywhere',
     body: 'Windows & Linux installers (bundled SQL), a multi-arch Docker image, or a ready-to-import virtual appliance for Hyper-V, VMware, KVM & Proxmox. Plus /health and Prometheus /metrics.',
   },
@@ -53,7 +58,7 @@ const features = [
     <title>Dispatch SMTP Relay</title>
     <meta
       name="description"
-      content="Self-hosted .NET SMTP relay - forward mail from your apps to a dozen providers, capture mail locally for testing, with a durable spool and a live dashboard."
+      content="Self-hosted, privacy-first .NET SMTP relay - no telemetry, no call home. Forward mail from your apps to a dozen providers, capture mail locally for testing, with a durable spool and a live dashboard."
     />
     <link rel="icon" href={docs('favicon.svg')} type="image/svg+xml" />
     <script src="https://cdn.tailwindcss.com" is:inline></script>

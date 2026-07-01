@@ -52,6 +52,7 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 - **Smart routing** - send by sender/recipient domain to different relays, with a catch-all default and a simulate tool.
 - **Live dashboard** - real-time counters, a searchable message log with sandboxed HTML preview, reports, and one-click provider testing.
 - **Secure by default** - HTTPS-only dashboard, a shared TLS cert for SMTP + the API, bcrypt-hashed passwords & API keys, encrypted secrets at rest, CIDR allow-lists so it's never an open relay.
+- **Privacy first - no call home** - no telemetry, no analytics, no usage stats, no license check, no automatic update pings. The only outbound connections are to the mail providers you configure; updates are applied from a signed package you upload yourself.
 - **Observability** - unauthenticated `/health` and Prometheus `/metrics` (dashboard-port, allow-list-gated).
 - **Deploy anywhere** - Windows & Linux installers (bundled SQL), a multi-arch Docker image, or a ready-to-import virtual appliance for Hyper-V, VMware, KVM & Proxmox.
 
@@ -88,7 +89,11 @@ Everything lives on the docs site: **https://chrismuench.github.io/Dispatch-SMTP
 
 ## Security
 
-Safe by default: the dashboard is HTTPS-only, secrets are encrypted at rest (AES-256-GCM with a portable, access-restricted key file on every platform - so a database backup can be restored on another machine by also restoring the key file), passwords and API keys are bcrypt-hashed, and SMTP + the API are closed to anything outside private ranges so a fresh install is never an open relay. Full details: **[Security docs](https://chrismuench.github.io/Dispatch-SMTP-Relay/security/)**. Please report vulnerabilities privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new).
+Safe by default: the dashboard is HTTPS-only, secrets are encrypted at rest (AES-256-GCM with a portable, access-restricted key file on every platform - so a database backup can be restored on another machine by also restoring the key file), passwords and API keys are bcrypt-hashed, and SMTP + the API are closed to anything outside private ranges so a fresh install is never an open relay.
+
+**Privacy first - no call home.** Dispatch never phones home: no telemetry, no analytics, no usage stats, no license check, and no automatic update polling. The only outbound connections it makes are to the mail providers you configure; updates are applied only from a signed package you upload yourself. Nothing about your install or your mail is sent to us or any third party.
+
+Full details: **[Security docs](https://chrismuench.github.io/Dispatch-SMTP-Relay/security/)**. Please report vulnerabilities privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new).
 
 ## Building from source
 

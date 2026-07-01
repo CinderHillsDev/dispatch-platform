@@ -28,6 +28,22 @@ middle:
 - **Test before you commit** - verify provider credentials with a live relay log, or capture mail
   to the [Local Inbox](/sending/local-inbox/) without delivering anything.
 
+## Privacy first - no call home
+
+Dispatch is built to run on your infrastructure and stay there. It **never phones home**:
+
+- **No telemetry, no analytics, no usage stats** - nothing about you, your mail, or your install is
+  ever sent anywhere.
+- **No license check and no automatic update pings** - the software doesn't reach out to verify
+  itself or look for new versions.
+- **The only outbound connections are to the providers *you* configure** - Dispatch talks to your
+  chosen mail provider (or SMTP smart host) to deliver mail, and to nothing else.
+- **Updates are pull-by-you, not push-to-you** - you download a signed upgrade package and upload it
+  through the dashboard yourself; there is no background updater calling out.
+
+If you put Dispatch on an isolated network with only your mail provider reachable, it works exactly
+as designed. See [Security](/security/) for the full model.
+
 ## Where to next
 
 - [Quickstart](/start/quickstart/) - running in a few minutes with Docker.
