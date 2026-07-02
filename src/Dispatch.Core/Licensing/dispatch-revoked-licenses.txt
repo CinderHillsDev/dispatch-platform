@@ -1,0 +1,6 @@
+# Dispatch revoked-license blacklist.
+# One revoked license per line: a bare seqId (e.g. 42) or a DSP-##### id (e.g. DSP-00042).
+# Blank lines and lines starting with '#' are ignored.
+# This list is embedded in the product and ships with each signed release; a leaked key is
+# blocked once customers update. To revoke a key, mark it revoked in the issuer / licenses.json,
+# regenerate this list, and cut a release.
