@@ -5,8 +5,6 @@
 **Self-hosted .NET email relay - forward mail from your apps to any cloud provider**
 
 [![Build](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions/workflows/build.yml/badge.svg)](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions)
-[![License: AGPL v3 + Commons Clause](https://img.shields.io/badge/License-AGPL_v3_%2B_Commons_Clause-blue.svg)](LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/chrismuench/Dispatch-SMTP-Relay)](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)](https://chrismuench.github.io/Dispatch-SMTP-Relay/deployment/overview/)
 
 Point your applications and devices at Dispatch over **SMTP** (the standard ports **25** and **587** by default - it falls back to **2525** only if 25 is already taken) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services - or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
@@ -117,4 +115,4 @@ Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). **Adding a p
 
 ## Licence
 
-AGPL-3.0 with Commons Clause - see [LICENSE](LICENSE). You may use, self-host, modify, and contribute back; you may **not** sell Dispatch, charge for a hosted version, or ship it inside a paid product. See the [licence FAQ](https://chrismuench.github.io/Dispatch-SMTP-Relay/project/license/).
+Dispatch is commercial, proprietary software. © 2026 CinderHills. All rights reserved. Running Dispatch requires a valid license key (validated offline, node-locked to the install); see the in-product **License** page in the dashboard.

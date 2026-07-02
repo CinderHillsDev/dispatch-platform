@@ -78,9 +78,9 @@ SmartScreen will warn on first run). To enable it:
 The next tagged release then signs the MSI and the bundle automatically. The signing steps key off
 `AZURE_SIGNING_ACCOUNT`; if it's unset, they're skipped.
 
-> Note: the project is licensed AGPL-3.0 + Commons Clause. The Commons Clause is not OSI-approved, so the
-> free **SignPath Foundation** OSS signing program does not apply - Azure Artifact Signing (a paid service
-> tied to your own identity, license-agnostic) is the path here.
+> Note: Dispatch is commercial, proprietary software, so free OSS code-signing programs (e.g. the
+> **SignPath Foundation**) do not apply - Azure Artifact Signing (a paid service tied to your own identity)
+> is the path here.
 
 ## Upgrade-package signing key (one-time)
 
