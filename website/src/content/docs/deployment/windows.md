@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Download `DispatchSetup-{version}-x64.exe` from the
-[latest release](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest). It's a single
+[latest release](https://dispatchrelay.app/download). It's a single
 bundled installer that:
 
 1. Installs **SQL Server 2025 Express** (a dedicated `DISPATCHSQL` instance) - skipped automatically if

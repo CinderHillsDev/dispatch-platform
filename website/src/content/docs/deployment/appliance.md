@@ -8,7 +8,7 @@ sidebar:
 A prebuilt **Ubuntu 24.04 + SQL Server + Dispatch** VM. Nothing to install - import the image for
 your hypervisor, power on, and on first boot it configures SQL and starts Dispatch with unique
 per-VM secrets. Grab the files from the
-[releases page](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases/latest). Recommended:
+[downloads page](https://dispatchrelay.app/download). Recommended:
 **2 vCPU / 4 GB RAM**. It boots on DHCP, but a relay your apps point at should have a **static IP**
 (see below). All images are Gen2/UEFI.
 

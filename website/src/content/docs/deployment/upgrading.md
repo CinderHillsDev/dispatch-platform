@@ -15,7 +15,7 @@ Appliance, Linux, and Windows installs can update themselves from the web UI by 
 **upgrade package** - no shell access needed.
 
 1. Download the package for the release you want from the
-   [GitHub Releases](https://github.com/chrismuench/Dispatch-SMTP-Relay/releases) page:
+   [Downloads](https://dispatchrelay.app/download) page:
    **`dispatch-upgrade-<version>.tar.gz`**. It's a single, cross-platform file - the same one works on
    every appliance, Linux, and Windows host (it carries each platform's payload inside).
 2. In the dashboard, go to **Updates** (under *System*).

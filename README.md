@@ -91,7 +91,7 @@ Safe by default: the dashboard is HTTPS-only, secrets are encrypted at rest (AES
 
 **Privacy first - no call home.** Dispatch never phones home: no telemetry, no analytics, no usage stats, and no automatic update polling. License verification is fully offline - the license key is validated locally against an embedded public key, nothing is sent to us. The only outbound connections it makes are to the mail providers you configure; updates are applied only from a signed package you upload yourself. Nothing about your install or your mail is sent to us or any third party.
 
-Full details: **[Security docs](https://chrismuench.github.io/Dispatch-SMTP-Relay/security/)**. Please report vulnerabilities privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new).
+Full details: **[Security docs](https://chrismuench.github.io/Dispatch-SMTP-Relay/security/)**. Please report vulnerabilities privately by email to **security@dispatchrelay.app** rather than in public.
 
 ## Building from source
 
