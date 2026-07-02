@@ -16,10 +16,17 @@ namespace Dispatch.Web.Ingestion;
 /// builds a <see cref="MimeMessage"/>, writes the RFC5322 <c>.eml</c> plus its <c>.meta</c> sidecar to
 /// <c>spool/incoming/</c> (so the worker can claim it exactly as an SMTP message), and returns 202.
 /// </summary>
-public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions> apiOptions, IRelayResolver routing, ILogger<ApiMessageHandler> log)
+public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions> apiOptions, IRelayResolver routing, Dispatch.Core.Licensing.LicenseGate license, ILogger<ApiMessageHandler> log)
 {
     public async Task<IResult> HandleAsync(HttpContext ctx, CancellationToken ct)
     {
+        // Licensing (grace-then-stop): once unlicensed past grace, refuse ingestion with a 503 so callers retry.
+        if (license.EnforcementActive)
+        {
+            log.LogWarning("Rejecting API ingestion: unlicensed past grace period");
+            return Results.Json(new { error = "Service not licensed" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
         var maxBytes = apiOptions.Value.MaxMessageBytes;
 
         // Reject oversized uploads early when the client declares Content-Length.

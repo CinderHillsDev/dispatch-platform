@@ -164,6 +164,7 @@ public class CidrMailboxFilterTests
             cache,
             new InMemoryCounterRepository(),
             resolver,
+            new Dispatch.Core.Licensing.LicenseGate(),
             intake ?? new IntakeState(),
             connections ?? new Dispatch.Service.ConnectionTracker(),
             new CapturingLogRepository(),

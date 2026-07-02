@@ -1,6 +1,7 @@
 using Dispatch.Core.Audit;
 using Dispatch.Core.Configuration;
 using Dispatch.Core.Counters;
+using Dispatch.Core.Licensing;
 using Dispatch.Core.Maintenance;
 using Dispatch.Core.Providers;
 using Dispatch.Core.Relays;
@@ -184,6 +185,13 @@ try
 
     // SQL persistence (relay_log, relay_counters, relays, config, api_keys, message-log queries).
     builder.Services.AddDispatchData(connectionString);
+
+    // Licensing (offline, node-locked): MachineIdentity/LicenseService/LicenseGate are registered by
+    // AddDispatchWeb (the ingestion handler + dashboard consume them). Here the service host adds the
+    // enforcement worker (singleton + hosted service, like PurgeWorker) that evaluates on a timer and after
+    // a key is saved, flipping the LicenseGate read at the intake/relay points.
+    builder.Services.AddSingleton<LicenseWorker>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<LicenseWorker>());
 
     // The dashboard listener is always HTTPS (configured or self-signed cert), so enforce Secure cookies +
     // HSTS in any non-Development run. In Development the dashboard is reached via the Vite proxy over plain
