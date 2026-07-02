@@ -30,6 +30,27 @@ export LIBGUESTFS_BACKEND=direct
 echo "==> Downloading Ubuntu cloud image"
 curl -fSL "$UBUNTU_IMG_URL" -o "$WORK/base.img"
 
+echo "==> Verifying the cloud image against Ubuntu's GPG-signed SHA256SUMS"
+# The base image is the entire OS of every appliance, so verify it fail-closed: check the checksum file's
+# detached signature against the PINNED Ubuntu Cloud Image signing key, then check the image hash against it.
+img_base="$(dirname "$UBUNTU_IMG_URL")"
+img_name="$(basename "$UBUNTU_IMG_URL")"
+curl -fSL "$img_base/SHA256SUMS"     -o "$WORK/SHA256SUMS"
+curl -fSL "$img_base/SHA256SUMS.gpg" -o "$WORK/SHA256SUMS.gpg"
+UBUNTU_CLOUD_FPR="D2EB44626FDDC30B513D5BB71A5D6C4C7DB87C81"   # Ubuntu Cloud Image Builder signing key
+export GNUPGHOME="$WORK/gnupg"; mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
+gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$UBUNTU_CLOUD_FPR" 2>/dev/null \
+  || gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys "$UBUNTU_CLOUD_FPR" \
+  || { echo "ERROR: could not fetch the Ubuntu cloud-image signing key $UBUNTU_CLOUD_FPR" >&2; exit 1; }
+gpg --batch --status-fd 1 --verify "$WORK/SHA256SUMS.gpg" "$WORK/SHA256SUMS" 2>/dev/null \
+  | grep -q "VALIDSIG .*$UBUNTU_CLOUD_FPR" \
+  || { echo "ERROR: SHA256SUMS signature did not verify against the pinned Ubuntu key" >&2; exit 1; }
+want="$(grep " [*]\?${img_name}\$" "$WORK/SHA256SUMS" | awk '{print $1}')"
+got="$(sha256sum "$WORK/base.img" | awk '{print $1}')"
+[ -n "$want" ] && [ "$want" = "$got" ] \
+  || { echo "ERROR: cloud image checksum mismatch (want='$want' got='$got')" >&2; exit 1; }
+echo "cloud image verified: $img_name ($got)"
+
 echo "==> Assembling the staging payload"
 STAGE="$WORK/stage"
 mkdir -p "$STAGE/bin"
@@ -61,7 +82,11 @@ docker run --rm -e KVER="$KVER" -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
   apt-get update -qq
   apt-get install -y -qq curl ca-certificates >/dev/null
   # packages-microsoft-prod.deb sets up the Microsoft "prod" repo + signing key (msodbcsql18, mssql-tools18).
+  # Pin its SHA256 (fail-closed) so a swapped bootstrap .deb cannot install a rogue repo/key. If Microsoft
+  # rotates this .deb the build will fail here - re-verify the new file and update this hash.
   curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -o /tmp/pmc.deb
+  echo "c13f01ac7c3001b51a9281d40dde666db5e037e05512840c319832f7852bfec4  /tmp/pmc.deb" | sha256sum -c - \
+    || { echo "ERROR: packages-microsoft-prod.deb checksum mismatch - refusing to trust it"; exit 1; }
   dpkg -i /tmp/pmc.deb >/dev/null
   # The SQL Server engine has its own per-version feed; Ubuntu 24.04 ships SQL Server 2025 (2022 is 22.04).
   curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2025.list \

@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # Keep GitHub Actions current. Third-party actions are pinned to commit SHAs (supply-chain hardening);
+  # Dependabot bumps those SHAs (and the trailing version comment) when new releases ship, so pinning
+  # doesn't mean going stale. Grouped into one PR to keep the noise down.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Frontend dependencies (npm) for the dashboard.
+  - package-ecosystem: npm
+    directory: "/src/Dispatch.UI"
+    schedule:
+      interval: weekly
+    groups:
+      ui:
+        patterns: ["*"]
+
+  # .NET NuGet dependencies.
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      nuget:
+        patterns: ["*"]
