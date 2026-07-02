@@ -4,7 +4,7 @@
 
 **Self-hosted .NET email relay - forward mail from your apps to any cloud provider**
 
-[![Build](https://github.com/CinderHillsDev/dispatch-relay/actions/workflows/build.yml/badge.svg)](https://github.com/CinderHillsDev/dispatch-relay/actions)
+[![Build](https://github.com/CinderHillsDev/dispatch-platform/actions/workflows/build.yml/badge.svg)](https://github.com/CinderHillsDev/dispatch-platform/actions)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)](https://docs.dispatchrelay.app/deployment/overview/)
 
 Point your applications and devices at Dispatch over **SMTP** (the standard ports **25** and **587** by default - it falls back to **2525** only if 25 is already taken) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services - or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
@@ -59,8 +59,8 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 The fastest way to try Dispatch is Docker Compose - it brings up Dispatch **and** its database together:
 
 ```bash
-git clone https://github.com/CinderHillsDev/dispatch-relay.git
-cd dispatch-relay
+git clone https://github.com/CinderHillsDev/dispatch-platform.git
+cd dispatch-platform
 docker compose up -d --build
 # dashboard → https://localhost:8420  (self-signed cert; default login password in docker-compose.yml)
 ```
@@ -98,8 +98,8 @@ Full details: **[Security docs](https://docs.dispatchrelay.app/security/)**. Ple
 Prerequisites: the **.NET 10 SDK**, **Node.js 20+**, and **Docker** (for SQL).
 
 ```bash
-git clone https://github.com/CinderHillsDev/dispatch-relay.git
-cd dispatch-relay
+git clone https://github.com/CinderHillsDev/dispatch-platform.git
+cd dispatch-platform
 docker compose up -d                       # SQL (Azure SQL Edge); schema auto-created on first run
 cd src/Dispatch.UI && npm install && npm run build && cd ../..
 rm -rf src/Dispatch.Web/wwwroot && mkdir -p src/Dispatch.Web/wwwroot
