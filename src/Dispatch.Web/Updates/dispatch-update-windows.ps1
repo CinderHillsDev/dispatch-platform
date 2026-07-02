@@ -44,7 +44,23 @@ try {
   New-Item -ItemType Directory -Force -Path $backup | Out-Null
   Get-ChildItem -LiteralPath $installDir -Force | Where-Object { $_.Name -ne '.backup' } |
     Copy-Item -Destination $backup -Recurse -Force
-  Expand-Archive -LiteralPath (Join-Path $staged 'payload') -DestinationPath $installDir -Force
+  # Extract the new payload over the install dir with a zip-slip guard: validate every entry resolves to a
+  # path strictly under $installDir before writing (Expand-Archive / older .NET don't reject '..' entries).
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $staged 'payload'))
+  try {
+    $root = [System.IO.Path]::GetFullPath($installDir)
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    foreach ($entry in $zip.Entries) {
+      $dest = [System.IO.Path]::GetFullPath((Join-Path $installDir $entry.FullName))
+      if ($dest -ne $root -and -not $dest.StartsWith($root + $sep, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "unsafe zip entry path (zip-slip): $($entry.FullName)"
+      }
+      if ($entry.FullName.EndsWith('/')) { New-Item -ItemType Directory -Force -Path $dest | Out-Null; continue }
+      New-Item -ItemType Directory -Force -Path ([System.IO.Path]::GetDirectoryName($dest)) | Out-Null
+      [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dest, $true)
+    }
+  } finally { $zip.Dispose() }
 
   # UseWindowsService(): Start-Service returns once the new version signals Running to the SCM (after DB
   # migrations + listeners) - that is the health gate.

@@ -3,6 +3,7 @@ using Dispatch.Core.Configuration;
 using Dispatch.Core.Routing;
 using Dispatch.Core.Spool;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -25,6 +26,15 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
         if (maxBytes > 0 && ctx.Request.ContentLength is { } declared && declared > maxBytes)
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
+        // Cap the body at the server layer too, so an upload WITHOUT a Content-Length (chunked) is aborted
+        // while streaming instead of being buffered into several in-memory copies first (DoS guard). A small
+        // overhead is allowed above maxBytes for multipart framing.
+        if (maxBytes > 0)
+        {
+            var sizeFeature = ctx.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if (sizeFeature is { IsReadOnly: false }) sizeFeature.MaxRequestBodySize = maxBytes + (1024 * 1024);
+        }
+
         MimeMessage mime;
         string[] tags;
         try
@@ -36,6 +46,11 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
         catch (ApiValidationException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (BadHttpRequestException)
+        {
+            // Body exceeded the cap (or was malformed at the transport layer) - report it as too-large.
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
         }
         catch (Exception ex) when (ex is FormatException or ParseException or System.Text.Json.JsonException or ArgumentException)
         {
