@@ -147,7 +147,7 @@ public class CidrMailboxFilterTests
 
     private static CidrMailboxFilter Build(long relayMaxBytes, IntakeState? intake = null,
         Dispatch.Service.ConnectionTracker? connections = null, int maxConnections = 0,
-        string? allowedCidrs = null)
+        string? allowedCidrs = null, Dispatch.Core.Licensing.LicenseGate? license = null)
     {
         var resolver = new StubRelayResolver(new ResolvedRelay
         {
@@ -164,7 +164,7 @@ public class CidrMailboxFilterTests
             cache,
             new InMemoryCounterRepository(),
             resolver,
-            new Dispatch.Core.Licensing.LicenseGate(),
+            license ?? new Dispatch.Core.Licensing.LicenseGate(),
             intake ?? new IntakeState(),
             connections ?? new Dispatch.Service.ConnectionTracker(),
             new CapturingLogRepository(),
@@ -179,6 +179,19 @@ public class CidrMailboxFilterTests
         connections.Increment();   // 1
         connections.Increment();   // 2 - over a cap of 1
         var filter = Build(relayMaxBytes: 0, connections: connections, maxConnections: 1);
+        var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Loopback, 4242));
+
+        var ex = await Assert.ThrowsAsync<SmtpServer.Protocol.SmtpResponseException>(() =>
+            filter.CanAcceptFromAsync(ctx, new Mailbox("alice", "example.com"), size: 10, CancellationToken.None));
+        Assert.Equal(SmtpServer.Protocol.SmtpReplyCode.ServiceUnavailable, ex.Response.ReplyCode);
+    }
+
+    [Fact]
+    public async Task CanAcceptFrom_rejects_when_license_enforcement_active()
+    {
+        var gate = new Dispatch.Core.Licensing.LicenseGate();
+        gate.Set(true);   // unlicensed past grace
+        var filter = Build(relayMaxBytes: 0, license: gate);
         var ctx = new FakeSessionContext(new IPEndPoint(IPAddress.Loopback, 4242));
 
         var ex = await Assert.ThrowsAsync<SmtpServer.Protocol.SmtpResponseException>(() =>

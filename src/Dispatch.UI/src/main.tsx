@@ -1,8 +1,8 @@
 import React, { useEffect, useState, type ReactNode } from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserRouter, RouterProvider, NavLink, Outlet, useRouteError } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, NavLink, Link, Outlet, useRouteError } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { api } from "./lib/api";
+import { api, type LicenseStatus } from "./lib/api";
 import { FirstRunWizard } from "./FirstRunWizard";
 import { Dashboard } from "./pages/Dashboard";
 import { Messages } from "./pages/Messages";
@@ -44,6 +44,48 @@ function UpgradeBanner() {
   );
 }
 
+// Site-wide license banner: shows on every page whenever the install isn't fully licensed. Amber during
+// the first-run grace (a countdown), red once enforcement is active (mail refused/paused) or the key is
+// expired/revoked. Hidden when licensed. Polls occasionally so a pasted key clears it without a reload.
+function LicenseBanner() {
+  const [s, setS] = useState<LicenseStatus | null>(null);
+  useEffect(() => {
+    const load = () => api.license.get().then(setS).catch(() => {});
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, []);
+  if (!s || s.licensed) return null;
+
+  const enforcing = s.enforcementActive;
+  const color = enforcing ? "#f85149" : "#d29922";
+  const days = s.graceDaysRemaining;
+  const reason = s.revoked
+    ? "This license has been revoked."
+    : s.expired
+    ? "Your license has expired."
+    : s.inGracePeriod
+    ? `Unlicensed - ${days} day${days === 1 ? "" : "s"} left in the grace period.`
+    : "This install is unlicensed.";
+  const tail = enforcing
+    ? " New mail is being refused and relaying is paused until a valid license key is entered."
+    : " Enter a license key to keep relaying.";
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 12, margin: "0 0 18px", padding: "12px 16px",
+      background: enforcing ? "rgba(248,81,73,.12)" : "rgba(210,153,34,.12)",
+      border: `1px solid ${color}`, borderRadius: 8, color,
+    }}>
+      <span style={{ fontSize: 18 }}>{enforcing ? "⛔" : "⚠"}</span>
+      <div style={{ flex: 1 }}>
+        <strong>{enforcing ? "Not licensed" : "License required"}</strong> - {reason}{tail}
+      </div>
+      <Link to="/license"><button>Manage license</button></Link>
+    </div>
+  );
+}
+
 function Layout() {
   return (
     <div className="app">
@@ -80,7 +122,7 @@ function Layout() {
         </nav>
         <button onClick={logout} style={{ marginTop: 18, width: "100%" }}>Sign out</button>
       </aside>
-      <main className="main"><UpgradeBanner /><Outlet /></main>
+      <main className="main"><LicenseBanner /><UpgradeBanner /><Outlet /></main>
     </div>
   );
 }
