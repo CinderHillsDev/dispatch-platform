@@ -304,7 +304,7 @@ chmod 600 "$CONFIG_DIR/appsettings.json"
 [[ -n "$TLS_CERT_PATH" ]] && chown dispatch:dispatch "$TLS_CERT_PATH"
 
 # Spool file security (spec §14.5): pre-create the subdirectories mode 700 so they're correct from first
-# start; the service runs with UMask=0177 so every .eml/.meta is created rw------- (600).
+# start; the service runs with UMask=0077 so every .eml/.meta is created rw------- (600) and dirs rwx------.
 mkdir -p "$DATA_DIR/.dispatch-spool/incoming" "$DATA_DIR/.dispatch-spool/processing" "$DATA_DIR/.dispatch-spool/failed"
 chown -R dispatch:dispatch "$DATA_DIR/.dispatch-spool"
 chmod 700 "$DATA_DIR/.dispatch-spool" "$DATA_DIR/.dispatch-spool/incoming" "$DATA_DIR/.dispatch-spool/processing" "$DATA_DIR/.dispatch-spool/failed"

@@ -30,6 +30,8 @@ public static class SecurityHeaders
                 h["X-Frame-Options"] = "DENY";
                 h["Referrer-Policy"] = "no-referrer";
                 h["Content-Security-Policy"] = Csp;
+                // The dashboard needs none of these powerful features; disable them so a future XSS can't reach them.
+                h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), usb=(), payment=()";
                 if (requireHttps)
                     h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
                 await next(ctx);

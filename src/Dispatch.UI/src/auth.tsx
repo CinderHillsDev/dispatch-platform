@@ -55,7 +55,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           type="password"
           autoFocus
           style={{ width: "100%", margin: "10px 0" }}
-          placeholder={setup ? "New password (min 8 chars)" : "Password"}
+          placeholder={setup ? "New password (min 12 chars)" : "Password"}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") submit(setup ? "/api/auth/password" : "/api/auth/login", setup ? "Failed" : "Incorrect password"); }}

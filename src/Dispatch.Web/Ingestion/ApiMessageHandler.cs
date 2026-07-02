@@ -163,6 +163,12 @@ public sealed class ApiMessageHandler(SpoolDirectory spool, IOptions<ApiOptions>
         string? text, string? html, IReadOnlyDictionary<string, string>? headers,
         IReadOnlyList<IFormFile>? attachments)
     {
+        // Defense-in-depth against header (CRLF) injection: MimeKit encodes these on serialization, but reject
+        // control chars in the subject up front rather than relying solely on that (matches the custom-header
+        // guard below).
+        if (HasControlChars(subject))
+            throw new ApiValidationException("subject contains control characters");
+
         var msg = new MimeMessage();
         msg.From.Add(MailboxAddress.Parse(from));
         foreach (var t in to) msg.To.AddRange(InternetAddressList.Parse(t));

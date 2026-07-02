@@ -238,8 +238,10 @@ async function sendJson<T>(url: string, method: string, body: unknown): Promise<
   });
   if (res.status === 401) onUnauthorized?.();
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(data?.error ?? `${res.status} ${res.statusText}`);
+  // Tolerate a non-JSON body (e.g. a proxy/plain-text error) so the real HTTP status surfaces, not a parse error.
+  let data: unknown = {};
+  try { data = text ? JSON.parse(text) : {}; } catch { data = {}; }
+  if (!res.ok) throw new Error((data as { error?: string })?.error ?? `${res.status} ${res.statusText}`);
   return data as T;
 }
 

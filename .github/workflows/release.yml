@@ -293,8 +293,8 @@ jobs:
             openssl dgst -sha256 -verify src/Dispatch.Core/Updates/dispatch-update-public.pem -signature pkg/manifest.json.sig pkg/manifest.json
             rm -f "$keyfile"
           else
-            echo "::warning::DISPATCH_UPDATE_SIGNING_KEY not set - the upgrade package will be UNSIGNED and refused by the updater."
-            : > pkg/manifest.json.sig
+            echo "::error::DISPATCH_UPDATE_SIGNING_KEY is not set - refusing to publish an unsigned upgrade package (it would be rejected by every installer anyway). Set the signing-key secret to cut a release."
+            exit 1
           fi
           tar -czf "dispatch-upgrade-${ver}.tar.gz" -C pkg manifest.json manifest.json.sig linux-x64.tar.gz linux-arm64.tar.gz win-x64.zip
           ls -lh "dispatch-upgrade-${ver}.tar.gz"
