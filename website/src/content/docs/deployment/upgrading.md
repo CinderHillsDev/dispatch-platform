@@ -1,6 +1,6 @@
 ---
 title: Upgrading
-description: Upgrade Dispatch SMTP Relay from the web dashboard by uploading a signed package, or in place per platform. Schema migrations are additive and automatic.
+description: Upgrade Dispatch from the web dashboard by uploading a signed package, or in place per platform. Schema migrations are additive and automatic.
 sidebar:
   order: 6
 ---

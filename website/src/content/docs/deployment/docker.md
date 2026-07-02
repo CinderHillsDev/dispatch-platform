@@ -1,6 +1,6 @@
 ---
 title: Docker
-description: Run Dispatch SMTP Relay from a multi-arch container image, locally with Compose or from GHCR against your own SQL Server.
+description: Run Dispatch from a multi-arch container image, locally with Compose or from GHCR against your own SQL Server.
 sidebar:
   order: 2
 ---

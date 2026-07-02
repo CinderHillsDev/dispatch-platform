@@ -41,10 +41,12 @@ Denied connections are logged with their source IP.
 
 ## Privacy - no call home
 
-Dispatch never phones home. There is **no telemetry, no analytics, no usage stats, no license
-check, and no automatic update polling** anywhere in the software. The only outbound network
-connections it makes are to the **mail providers you configure** (to deliver mail) - nothing about
-your install, your configuration, or your messages is sent to us or any third party. Updates are
+Dispatch never phones home. There is **no telemetry, no analytics, no usage stats, and no automatic
+update polling** anywhere in the software. Dispatch is commercially licensed, but license verification
+is **fully offline** - the key is validated locally against an embedded public key and node-locked to
+this install; nothing is transmitted to us. The only outbound network connections it makes are to the
+**mail providers you configure** (to deliver mail) - nothing about your install, your configuration, or
+your messages is sent to us or any third party. Updates are
 applied only from a **signed package you upload yourself** through the dashboard; nothing runs in the
 background reaching out for new versions. Dispatch runs fully on an isolated network as long as your
 chosen provider is reachable.
@@ -57,6 +59,4 @@ IP allow-list, and they expose no secrets or message content. See
 
 ## Reporting a vulnerability
 
-Please report security issues privately via
-[GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new)
-rather than a public issue.
+Please report security issues privately by email to **security@dispatchrelay.app** rather than in public.

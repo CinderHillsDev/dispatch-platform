@@ -1,6 +1,6 @@
 ---
 title: SendGrid
-description: Relay mail through SendGrid's Web API v3 from Dispatch SMTP Relay.
+description: Relay mail through SendGrid's Web API v3 from Dispatch.
 sidebar:
   order: 3
 ---

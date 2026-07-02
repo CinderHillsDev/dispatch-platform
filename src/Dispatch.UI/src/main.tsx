@@ -15,6 +15,7 @@ import { SmtpAuth } from "./pages/SmtpAuth";
 import { ApiKeys } from "./pages/ApiKeys";
 import { Settings } from "./pages/Settings";
 import { Updates } from "./pages/Updates";
+import { License } from "./pages/License";
 import { System } from "./pages/System";
 import { Logs } from "./pages/Logs";
 import { AccessControl } from "./pages/AccessControl";
@@ -72,6 +73,7 @@ function Layout() {
             <div className="nav-label">System</div>
             <NavLink to="/settings">Settings</NavLink>
             <NavLink to="/updates">Updates</NavLink>
+            <NavLink to="/license">License</NavLink>
             <NavLink to="/logs">Logs</NavLink>
             <NavLink to="/system">About</NavLink>
           </div>
@@ -111,6 +113,7 @@ const pages: { path: string; element: ReactNode }[] = [
   { path: "/inbox", element: <LocalInbox /> },
   { path: "/settings", element: <Settings /> },
   { path: "/updates", element: <Updates /> },
+  { path: "/license", element: <License /> },
   { path: "/logs", element: <Logs /> },
   { path: "/system", element: <System /> },
 ];

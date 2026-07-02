@@ -1,6 +1,6 @@
 ---
 title: Azure Communication Services
-description: Relay mail through Azure Communication Services from Dispatch SMTP Relay.
+description: Relay mail through Azure Communication Services from Dispatch.
 sidebar:
   order: 11
 ---

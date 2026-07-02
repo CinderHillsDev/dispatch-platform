@@ -1,6 +1,6 @@
 ---
 title: SMTP2GO
-description: Relay mail through SMTP2GO's REST API from Dispatch SMTP Relay.
+description: Relay mail through SMTP2GO's REST API from Dispatch.
 sidebar:
   order: 8
 ---

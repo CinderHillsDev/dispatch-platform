@@ -1,6 +1,6 @@
 ---
 title: Resend
-description: Relay mail through Resend's REST API from Dispatch SMTP Relay.
+description: Relay mail through Resend's REST API from Dispatch.
 sidebar:
   order: 6
 ---

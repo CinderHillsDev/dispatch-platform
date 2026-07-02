@@ -1,6 +1,6 @@
 ---
 title: Windows
-description: Install Dispatch SMTP Relay on Windows with the single bundled installer, including silent and existing-SQL options.
+description: Install Dispatch on Windows with the single bundled installer, including silent and existing-SQL options.
 sidebar:
   order: 4
 ---

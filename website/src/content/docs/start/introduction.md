@@ -1,11 +1,11 @@
 ---
 title: Introduction
-description: What Dispatch SMTP Relay is, why it exists, and how it works at a glance.
+description: What Dispatch is, why it exists, and how it works at a glance.
 sidebar:
   order: 1
 ---
 
-**Dispatch SMTP Relay** is an open-source, self-hosted .NET service that sits between your
+**Dispatch** is a self-hosted .NET service that sits between your
 applications and your email provider. Point your apps and devices at Dispatch over **SMTP** (or a
 Mailgun-compatible **HTTP API**); it queues every message durably and forwards it to a cloud
 provider - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird,
@@ -34,8 +34,9 @@ Dispatch is built to run on your infrastructure and stay there. It **never phone
 
 - **No telemetry, no analytics, no usage stats** - nothing about you, your mail, or your install is
   ever sent anywhere.
-- **No license check and no automatic update pings** - the software doesn't reach out to verify
-  itself or look for new versions.
+- **Offline license verification, no automatic update pings** - Dispatch is commercially licensed, but
+  the license key is validated **locally** against an embedded public key; the software never reaches out
+  to verify itself or look for new versions.
 - **The only outbound connections are to the providers *you* configure** - Dispatch talks to your
   chosen mail provider (or SMTP smart host) to deliver mail, and to nothing else.
 - **Updates are pull-by-you, not push-to-you** - you download a signed upgrade package and upload it

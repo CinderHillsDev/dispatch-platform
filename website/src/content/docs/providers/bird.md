@@ -1,6 +1,6 @@
 ---
 title: Bird
-description: Relay mail through Bird's REST API from Dispatch SMTP Relay.
+description: Relay mail through Bird's REST API from Dispatch.
 sidebar:
   order: 10
 ---

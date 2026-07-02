@@ -2,7 +2,7 @@
 
 # Dispatch SMTP Relay
 
-**Open-source .NET SMTP relay - forward mail from your apps to any cloud provider**
+**Self-hosted .NET email relay - forward mail from your apps to any cloud provider**
 
 [![Build](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions/workflows/build.yml/badge.svg)](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions)
 [![License: AGPL v3 + Commons Clause](https://img.shields.io/badge/License-AGPL_v3_%2B_Commons_Clause-blue.svg)](LICENSE)
@@ -52,7 +52,7 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 - **Smart routing** - send by sender/recipient domain to different relays, with a catch-all default and a simulate tool.
 - **Live dashboard** - real-time counters, a searchable message log with sandboxed HTML preview, reports, and one-click provider testing.
 - **Secure by default** - HTTPS-only dashboard, a shared TLS cert for SMTP + the API, bcrypt-hashed passwords & API keys, encrypted secrets at rest, CIDR allow-lists so it's never an open relay.
-- **Privacy first - no call home** - no telemetry, no analytics, no usage stats, no license check, no automatic update pings. The only outbound connections are to the mail providers you configure; updates are applied from a signed package you upload yourself.
+- **Privacy first - no call home** - no telemetry, no analytics, no usage stats, no automatic update pings; even license verification is fully offline. The only outbound connections are to the mail providers you configure; updates are applied from a signed package you upload yourself.
 - **Observability** - unauthenticated `/health` and Prometheus `/metrics` (dashboard-port, allow-list-gated).
 - **Deploy anywhere** - Windows & Linux installers (bundled SQL), a multi-arch Docker image, or a ready-to-import virtual appliance for Hyper-V, VMware, KVM & Proxmox.
 
@@ -91,7 +91,7 @@ Everything lives on the docs site: **https://chrismuench.github.io/Dispatch-SMTP
 
 Safe by default: the dashboard is HTTPS-only, secrets are encrypted at rest (AES-256-GCM with a portable, access-restricted key file on every platform - so a database backup can be restored on another machine by also restoring the key file), passwords and API keys are bcrypt-hashed, and SMTP + the API are closed to anything outside private ranges so a fresh install is never an open relay.
 
-**Privacy first - no call home.** Dispatch never phones home: no telemetry, no analytics, no usage stats, no license check, and no automatic update polling. The only outbound connections it makes are to the mail providers you configure; updates are applied only from a signed package you upload yourself. Nothing about your install or your mail is sent to us or any third party.
+**Privacy first - no call home.** Dispatch never phones home: no telemetry, no analytics, no usage stats, and no automatic update polling. License verification is fully offline - the license key is validated locally against an embedded public key, nothing is sent to us. The only outbound connections it makes are to the mail providers you configure; updates are applied only from a signed package you upload yourself. Nothing about your install or your mail is sent to us or any third party.
 
 Full details: **[Security docs](https://chrismuench.github.io/Dispatch-SMTP-Relay/security/)**. Please report vulnerabilities privately via [GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new).
 

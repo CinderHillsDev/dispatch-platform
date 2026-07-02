@@ -1,6 +1,6 @@
 ---
 title: SparkPost
-description: Relay mail through SparkPost's REST API from Dispatch SMTP Relay.
+description: Relay mail through SparkPost's REST API from Dispatch.
 sidebar:
   order: 7
 ---

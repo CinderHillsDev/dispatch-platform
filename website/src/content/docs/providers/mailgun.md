@@ -1,6 +1,6 @@
 ---
 title: Mailgun
-description: Relay mail through Mailgun's HTTP API from Dispatch SMTP Relay.
+description: Relay mail through Mailgun's HTTP API from Dispatch.
 sidebar:
   order: 2
 ---

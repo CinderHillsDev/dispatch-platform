@@ -1,6 +1,6 @@
 ---
 title: Generic SMTP
-description: Relay mail to any SMTP smart host from Dispatch SMTP Relay.
+description: Relay mail to any SMTP smart host from Dispatch.
 sidebar:
   order: 12
 ---

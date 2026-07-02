@@ -1,6 +1,6 @@
 ---
 title: Linux
-description: Install Dispatch SMTP Relay on Linux from a self-contained tarball with the bundled install.sh script.
+description: Install Dispatch on Linux from a self-contained tarball with the bundled install.sh script.
 sidebar:
   order: 3
 ---

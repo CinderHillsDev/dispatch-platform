@@ -1,6 +1,6 @@
 ---
 title: Amazon SES
-description: Relay mail through Amazon SES v2 from Dispatch SMTP Relay.
+description: Relay mail through Amazon SES v2 from Dispatch.
 sidebar:
   order: 4
 ---

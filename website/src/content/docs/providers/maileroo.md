@@ -1,6 +1,6 @@
 ---
 title: Maileroo
-description: Relay mail through Maileroo's REST API from Dispatch SMTP Relay.
+description: Relay mail through Maileroo's REST API from Dispatch.
 sidebar:
   order: 9
 ---

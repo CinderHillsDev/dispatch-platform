@@ -6,7 +6,6 @@ import dashboard from '../assets/dashboard.png';
 
 const base = import.meta.env.BASE_URL; // e.g. "/Dispatch-SMTP-Relay/" (trailing slash included)
 const docs = (p = '') => `${base}${p}`;
-const gh = 'https://github.com/chrismuench/Dispatch-SMTP-Relay';
 
 const features = [
   {
@@ -40,7 +39,7 @@ const features = [
   },
   {
     title: '🔒 Privacy first - no call home',
-    body: 'Dispatch never phones home. No telemetry, no analytics, no usage stats, no license check, no automatic update pings. It only ever connects to the mail providers you configure - nothing leaves your network otherwise. Updates are applied from a package you upload yourself.',
+    body: 'Dispatch never phones home. No telemetry, no analytics, no usage stats, no automatic update pings. Even license checks are fully offline. It only ever connects to the mail providers you configure - nothing leaves your network otherwise. Updates are applied from a package you upload yourself.',
     accent: true,
   },
   {
@@ -55,10 +54,10 @@ const features = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dispatch SMTP Relay</title>
+    <title>Dispatch - self-hosted email relay</title>
     <meta
       name="description"
-      content="Self-hosted, privacy-first .NET SMTP relay - no telemetry, no call home. Forward mail from your apps to a dozen providers, capture mail locally for testing, with a durable spool and a live dashboard."
+      content="Self-hosted, privacy-first email relay - no telemetry, no call home. Forward mail from your apps to a dozen providers, capture mail locally for testing, with a durable spool and a live dashboard."
     />
     <link rel="icon" href={docs('favicon.svg')} type="image/svg+xml" />
     <script src="https://cdn.tailwindcss.com" is:inline></script>
@@ -68,10 +67,10 @@ const features = [
       <!-- Hero -->
       <header class="pt-20 pb-10 text-center">
         <h1 class="text-5xl sm:text-6xl font-bold tracking-tight text-white">
-          Dispatch <span class="text-sky-400">SMTP Relay</span>
+          Dispatch <span class="text-sky-400">email relay</span>
         </h1>
         <p class="mt-5 mx-auto max-w-2xl text-lg leading-relaxed text-gray-400">
-          A self-hosted SMTP relay for your apps and devices. Point everything at Dispatch and it
+          A self-hosted email relay for your apps and devices. Point everything at Dispatch and it
           forwards mail to any provider - with a durable queue and a live dashboard.
         </p>
         <div class="mt-8 flex flex-wrap justify-center gap-3">
@@ -92,18 +91,6 @@ const features = [
             class="rounded-lg border border-sky-700 px-5 py-2.5 font-semibold text-sky-200 hover:bg-sky-900/40 transition"
           >
             Virtual appliance
-          </a>
-          <a
-            href={`${gh}/releases/latest`}
-            class="rounded-lg border border-gray-700 px-5 py-2.5 font-semibold text-gray-200 hover:bg-gray-800 transition"
-          >
-            Download / Releases
-          </a>
-          <a
-            href={gh}
-            class="rounded-lg border border-gray-700 px-5 py-2.5 font-semibold text-gray-200 hover:bg-gray-800 transition"
-          >
-            GitHub
           </a>
         </div>
       </header>
@@ -147,11 +134,7 @@ const features = [
         <a class="hover:text-gray-300" href={docs('deployment/overview/')}>Deployment</a>
         <span class="px-2 text-gray-700">·</span>
         <a class="hover:text-gray-300" href={docs('deployment/appliance/')}>Virtual appliance</a>
-        <span class="px-2 text-gray-700">·</span>
-        <a class="hover:text-gray-300" href={`${gh}/releases/latest`}>Releases</a>
-        <span class="px-2 text-gray-700">·</span>
-        <a class="hover:text-gray-300" href={gh}>GitHub</a>
-        <p class="mt-3 text-gray-600">AGPL-3.0 with Commons Clause</p>
+        <p class="mt-3 text-gray-600">© 2026 CinderHills · Commercial license</p>
       </footer>
     </div>
   </body>

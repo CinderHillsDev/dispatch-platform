@@ -1,6 +1,6 @@
 ---
 title: Logging
-description: Where Dispatch SMTP Relay writes application logs and the SQL audit log, plus per-platform locations.
+description: Where Dispatch writes application logs and the SQL audit log, plus per-platform locations.
 sidebar:
   order: 2
 ---

@@ -1,6 +1,6 @@
 ---
 title: Backup & restore
-description: What to back up in Dispatch SMTP Relay - the SQL database, encryption key, and config - and how to restore.
+description: What to back up in Dispatch - the SQL database, encryption key, and config - and how to restore.
 sidebar:
   order: 3
 ---

@@ -1,6 +1,6 @@
 ---
 title: License
-description: Dispatch SMTP Relay is licensed under AGPL-3.0 with the Commons Clause - what you can and cannot do.
+description: Dispatch is licensed under AGPL-3.0 with the Commons Clause - what you can and cannot do.
 sidebar:
   order: 2
 ---
