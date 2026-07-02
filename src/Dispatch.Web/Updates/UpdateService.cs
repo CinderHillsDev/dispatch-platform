@@ -182,6 +182,13 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
                 return await RejectAsync($"the package has no payload for this platform ({CurrentArch})", sourceIp, ct);
             if (!VersionAtLeast(CurrentVersion, manifest.MinFromVersion))
                 return await RejectAsync($"this version ({CurrentVersion}) is older than the package minimum ({manifest.MinFromVersion})", sourceIp, ct);
+            // Block downgrades (rollback attack / reintroducing fixed vulns): refuse a package older than
+            // what's running. Same version is allowed (repair/reinstall); an unparseable pair is allowed
+            // through since the signature already vouches for the package's authenticity.
+            if (CompareVersions(manifest.Version, CurrentVersion) is < 0)
+                return await RejectAsync(
+                    $"that package is version {manifest.Version}, which is older than the installed version ({CurrentVersion}). Downgrades aren't allowed - upload {CurrentVersion} or newer.",
+                    sourceIp, ct);
 
             // 3) Extract THIS arch's payload to the staging dir and confirm its sha256 matches the manifest.
             // Create the staging tree with the execute bit guaranteed: under a restrictive process UMask
@@ -381,5 +388,34 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
     {
         var head = (s ?? "").Split('-')[0];
         return head.Contains('.') ? head : head + ".0";   // Version needs at least major.minor
+    }
+
+    // Compare two dotted numeric versions component-wise (major.minor.build.revision; missing parts = 0),
+    // ignoring any -prerelease/+build suffix. Returns <0 / 0 / >0, or null if either side isn't parseable.
+    // This normalizes 3-part release tags ("0.2.1") against the 4-part assembly version ("0.2.1.0") so an
+    // identical release doesn't read as a downgrade.
+    internal static int? CompareVersions(string? a, string? b)
+    {
+        static int[]? Parse(string? v)
+        {
+            if (string.IsNullOrWhiteSpace(v)) return null;
+            var core = v.Trim();
+            var cut = core.IndexOfAny(['-', '+']);
+            if (cut >= 0) core = core[..cut];
+            var parts = core.Split('.');
+            var nums = new int[4];
+            for (var i = 0; i < parts.Length && i < 4; i++)
+                if (!int.TryParse(parts[i], out nums[i])) return null;
+            return nums;
+        }
+        var pa = Parse(a);
+        var pb = Parse(b);
+        if (pa is null || pb is null) return null;
+        for (var i = 0; i < 4; i++)
+        {
+            var c = pa[i].CompareTo(pb[i]);
+            if (c != 0) return c;
+        }
+        return 0;
     }
 }

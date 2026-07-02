@@ -135,4 +135,26 @@ public class UpdateServiceTests
         // The big package temp file must be cleaned up.
         Assert.False(File.Exists(Path.Combine(root, "updates", "incoming.pkg")));
     }
+
+    [Fact]
+    public async Task Rejects_a_downgrade_to_an_older_version()
+    {
+        var (svc, key, _) = Build(selfManaged: true);
+        // CurrentVersion is the assembly version (0.2.x baseline); an older signed package must be refused.
+        var r = await svc.HandleUploadAsync(Upload(Package(key, UpdateService.CurrentArch, [1, 2, 3], version: "0.0.1")), null, default);
+        Assert.False(r.Ok);
+        Assert.Contains("older", r.Message);
+    }
+
+    [Theory]
+    [InlineData("0.2.1", "0.2.1.0", 0)]      // 3-part release tag vs 4-part assembly version = equal (not a downgrade)
+    [InlineData("0.2.0", "0.2.1.0", -1)]     // older
+    [InlineData("0.3.0", "0.2.1.0", 1)]      // newer
+    [InlineData("0.2.1-test", "0.2.1.0", 0)] // -prerelease suffix ignored
+    public void CompareVersions_normalizes_release_tags(string a, string b, int expected) =>
+        Assert.Equal(expected, Math.Sign(UpdateService.CompareVersions(a, b) ?? 99));
+
+    [Fact]
+    public void CompareVersions_is_null_when_unparseable() =>
+        Assert.Null(UpdateService.CompareVersions("not-a-version", "0.2.1"));
 }
