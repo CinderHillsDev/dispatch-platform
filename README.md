@@ -4,12 +4,12 @@
 
 **Self-hosted .NET email relay - forward mail from your apps to any cloud provider**
 
-[![Build](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions/workflows/build.yml/badge.svg)](https://github.com/chrismuench/Dispatch-SMTP-Relay/actions)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)](https://chrismuench.github.io/Dispatch-SMTP-Relay/deployment/overview/)
+[![Build](https://github.com/CinderHillsDev/dispatch-relay/actions/workflows/build.yml/badge.svg)](https://github.com/CinderHillsDev/dispatch-relay/actions)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)](https://docs.dispatchrelay.app/deployment/overview/)
 
 Point your applications and devices at Dispatch over **SMTP** (the standard ports **25** and **587** by default - it falls back to **2525** only if 25 is already taken) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services - or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
 
-### 📚 **[Read the documentation →](https://chrismuench.github.io/Dispatch-SMTP-Relay/)**
+### 📚 **[Read the documentation →](https://docs.dispatchrelay.app/)**
 
 ![Dispatch Dashboard Screenshot](docs/images/dashboard.png)
 
@@ -45,7 +45,7 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 
 - **Two ways in** - SMTP (STARTTLS, optional AUTH) and a Mailgun-compatible HTTP/HTTPS API with per-key tokens.
 - **A dozen providers** - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services, generic SMTP - plus **Local** capture mode. CC/BCC, attachments, and custom headers everywhere.
-- **[Local Inbox](https://chrismuench.github.io/Dispatch-SMTP-Relay/sending/local-inbox/)** - a built-in mail trap: capture and inspect what your app sends, without delivering anything. Great for development and CI.
+- **[Local Inbox](https://docs.dispatchrelay.app/sending/local-inbox/)** - a built-in mail trap: capture and inspect what your app sends, without delivering anything. Great for development and CI.
 - **Durable spool** - instant `250 OK`, auto-retry with back-off, retry-from-UI for failures.
 - **Smart routing** - send by sender/recipient domain to different relays, with a catch-all default and a simulate tool.
 - **Live dashboard** - real-time counters, a searchable message log with sandboxed HTML preview, reports, and one-click provider testing.
@@ -59,8 +59,8 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 The fastest way to try Dispatch is Docker Compose - it brings up Dispatch **and** its database together:
 
 ```bash
-git clone https://github.com/chrismuench/Dispatch-SMTP-Relay.git
-cd Dispatch-SMTP-Relay
+git clone https://github.com/CinderHillsDev/dispatch-relay.git
+cd dispatch-relay
 docker compose up -d --build
 # dashboard → https://localhost:8420  (self-signed cert; default login password in docker-compose.yml)
 ```
@@ -69,21 +69,21 @@ Then open **https://localhost:8420**, set the admin password, add a relay, and p
 
 > **Tip:** Dispatch listens on the standard SMTP ports **25** and **587**. Install it on a host with **no other SMTP software** (Postfix, Sendmail, Exim, …) so those ports are free - otherwise Dispatch falls back to **2525**.
 
-➡️ Full guide: **[Quickstart](https://chrismuench.github.io/Dispatch-SMTP-Relay/start/quickstart/)** · **[How it works](https://chrismuench.github.io/Dispatch-SMTP-Relay/start/how-it-works/)**
+➡️ Full guide: **[Quickstart](https://docs.dispatchrelay.app/start/quickstart/)** · **[How it works](https://docs.dispatchrelay.app/start/how-it-works/)**
 
 ## Documentation
 
-Everything lives on the docs site: **https://chrismuench.github.io/Dispatch-SMTP-Relay/**
+Everything lives on the docs site: **https://docs.dispatchrelay.app/**
 
 | | |
 |---|---|
-| **[Deployment](https://chrismuench.github.io/Dispatch-SMTP-Relay/deployment/overview/)** | Docker, Linux, Windows, and the virtual appliance |
-| **[Relay providers](https://chrismuench.github.io/Dispatch-SMTP-Relay/providers/overview/)** | Per-provider setup and settings |
-| **[Sending mail](https://chrismuench.github.io/Dispatch-SMTP-Relay/sending/smtp/)** | SMTP, HTTP API, Local Inbox, message features |
-| **[Routing](https://chrismuench.github.io/Dispatch-SMTP-Relay/routing/)** | Route by sender/recipient domain |
-| **[Configuration](https://chrismuench.github.io/Dispatch-SMTP-Relay/configuration/overview/)** | Settings model + full config-key reference |
-| **[Security](https://chrismuench.github.io/Dispatch-SMTP-Relay/security/)** | Auth, access control, encryption, TLS |
-| **[API reference](https://chrismuench.github.io/Dispatch-SMTP-Relay/reference/api/)** | The HTTP ingestion API |
+| **[Deployment](https://docs.dispatchrelay.app/deployment/overview/)** | Docker, Linux, Windows, and the virtual appliance |
+| **[Relay providers](https://docs.dispatchrelay.app/providers/overview/)** | Per-provider setup and settings |
+| **[Sending mail](https://docs.dispatchrelay.app/sending/smtp/)** | SMTP, HTTP API, Local Inbox, message features |
+| **[Routing](https://docs.dispatchrelay.app/routing/)** | Route by sender/recipient domain |
+| **[Configuration](https://docs.dispatchrelay.app/configuration/overview/)** | Settings model + full config-key reference |
+| **[Security](https://docs.dispatchrelay.app/security/)** | Auth, access control, encryption, TLS |
+| **[API reference](https://docs.dispatchrelay.app/reference/api/)** | The HTTP ingestion API |
 
 ## Security
 
@@ -91,15 +91,15 @@ Safe by default: the dashboard is HTTPS-only, secrets are encrypted at rest (AES
 
 **Privacy first - no call home.** Dispatch never phones home: no telemetry, no analytics, no usage stats, and no automatic update polling. License verification is fully offline - the license key is validated locally against an embedded public key, nothing is sent to us. The only outbound connections it makes are to the mail providers you configure; updates are applied only from a signed package you upload yourself. Nothing about your install or your mail is sent to us or any third party.
 
-Full details: **[Security docs](https://chrismuench.github.io/Dispatch-SMTP-Relay/security/)**. Please report vulnerabilities privately by email to **security@dispatchrelay.app** rather than in public.
+Full details: **[Security docs](https://docs.dispatchrelay.app/security/)**. Please report vulnerabilities privately by email to **security@dispatchrelay.app** rather than in public.
 
 ## Building from source
 
 Prerequisites: the **.NET 10 SDK**, **Node.js 20+**, and **Docker** (for SQL).
 
 ```bash
-git clone https://github.com/chrismuench/Dispatch-SMTP-Relay.git
-cd Dispatch-SMTP-Relay
+git clone https://github.com/CinderHillsDev/dispatch-relay.git
+cd dispatch-relay
 docker compose up -d                       # SQL (Azure SQL Edge); schema auto-created on first run
 cd src/Dispatch.UI && npm install && npm run build && cd ../..
 rm -rf src/Dispatch.Web/wwwroot && mkdir -p src/Dispatch.Web/wwwroot
@@ -107,7 +107,7 @@ cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
 ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service
 ```
 
-`appsettings.Development.json` (git-ignored) needs at least the SQL connection string and an `AdminPassword`. Tests: `dotnet test` (Data integration tests run only when `DISPATCH_TEST_SQL` is set, auto-skipped otherwise). The docs site lives in [`website/`](website/) (Astro + Starlight).
+`appsettings.Development.json` (git-ignored) needs at least the SQL connection string and an `AdminPassword`. Tests: `dotnet test` (Data integration tests run only when `DISPATCH_TEST_SQL` is set, auto-skipped otherwise). The documentation site lives in its own repo (`dispatch-docs`, published at [docs.dispatchrelay.app](https://docs.dispatchrelay.app/)); the marketing site is `dispatch-website`.
 
 ## Adding a provider
 
