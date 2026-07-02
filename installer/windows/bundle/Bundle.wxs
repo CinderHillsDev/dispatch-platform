@@ -50,7 +50,10 @@
     <Chain>
       <!-- 1) SQL Server Express (before the MSI so msiserver isn't held). Permanent: uninstalling
               Dispatch leaves SQL Express in place. -->
+      <!-- DisplayName is shown by the bootstrapper as the current progress item; SQL Express can take
+           15-20 minutes and its progress bar may sit still, so the text reassures the user it isn't stuck. -->
       <ExePackage Id="InstallSqlExpress"
+                  DisplayName="Installing SQL Server Express - this can take 15-20 minutes; the progress bar may not move, which is normal. Please wait..."
                   SourceFile="!(bindpath.SqlLauncher)\InstallSqlExpress.exe"
                   InstallArguments="DispatchLog"
                   PerMachine="yes"
