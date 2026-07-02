@@ -11,7 +11,7 @@
 # Everything else is seeded into the SQL config table on first run and managed in the dashboard.
 
 # --- Stage 1: build the React dashboard -------------------------------------------------------
-FROM node:22-alpine AS ui
+FROM node:24-alpine AS ui
 WORKDIR /ui
 COPY src/Dispatch.UI/package*.json ./
 RUN npm ci
