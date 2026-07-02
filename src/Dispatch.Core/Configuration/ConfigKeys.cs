@@ -46,6 +46,9 @@ public static class ConfigKeys
     public const string WebUiAllowedCidrs = "webui.allowed_cidrs";              // JSON string[]
     public const string WebUiSessionTimeoutMinutes = "webui.session_timeout_minutes";
     public const string WebUiRequireHttps = "webui.require_https";
+    // Monotonic credential epoch: bumped on every admin-password change so existing cookies (which carry the
+    // epoch they were issued under) are rejected - i.e. changing the password signs out all other sessions.
+    public const string WebUiSessionEpoch = "webui.session_epoch";
 
     // Logging suppression toggles (also referenced by SqlLoggingSettings)
     public const string LoggingLogDelivered = "logging.log_delivered";

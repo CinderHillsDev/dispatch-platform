@@ -52,7 +52,7 @@ public static class AuthEndpoints
             }
 
             throttle.RecordSuccess(ip);
-            await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(AdminIdentity()));
+            await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(await AdminIdentityAsync(config, ctx.RequestAborted)));
             await audit.Audit("Auth", "Login succeeded", "Info", actor: "admin", sourceIp: ip);
             return Results.Ok(new { ok = true });
         });
@@ -75,20 +75,31 @@ public static class AuthEndpoints
                 return Results.BadRequest(new { error });
 
             await config.SetAsync(PasswordHashKey, BCrypt.Net.BCrypt.HashPassword(req.Password, 12), encrypted: false, ctx.RequestAborted);
+            // On a real password CHANGE (not first-run), bump the credential epoch so every OTHER existing
+            // session is invalidated (see OnValidatePrincipal). First-run has no prior sessions to revoke.
+            if (hasPassword)
+                await config.SetAsync(ConfigKeys.WebUiSessionEpoch, (await ReadEpochAsync(config, ctx.RequestAborted) + 1).ToString(),
+                    encrypted: false, ctx.RequestAborted);
             await audit.Audit("Auth", hasPassword ? "Admin password changed" : "Admin password set (first-run)", "Notice",
                 actor: "admin", sourceIp: ctx.Connection.RemoteIpAddress?.ToString());
 
-            // Sign the admin in immediately after first-run setup.
-            if (!hasPassword)
-                await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(AdminIdentity()));
+            // Re-issue THIS session's cookie with the new version+epoch so the acting admin stays signed in
+            // while all other sessions are dropped; also covers signing in right after first-run setup.
+            await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(await AdminIdentityAsync(config, ctx.RequestAborted)));
             return Results.Ok(new { ok = true });
         });
     }
 
-    // The admin identity, stamped with the running version so a later upgrade invalidates the cookie and
-    // forces a fresh sign-in (see OnValidatePrincipal in ServiceCollectionExtensions).
-    private static ClaimsIdentity AdminIdentity() => new(
-        [new Claim(ClaimTypes.Name, "admin"), new Claim("ver", Updates.UpdateService.CurrentVersion)],
+    public const string SessionEpochClaim = "epoch";
+
+    private static async Task<int> ReadEpochAsync(IConfigRepository config, CancellationToken ct) =>
+        int.TryParse(await config.GetAsync(ConfigKeys.WebUiSessionEpoch, ct), out var e) ? e : 0;
+
+    // The admin identity, stamped with the running version (so an upgrade forces re-login) and the credential
+    // epoch (so a password change invalidates other sessions) - both checked in OnValidatePrincipal.
+    private static async Task<ClaimsIdentity> AdminIdentityAsync(IConfigRepository config, CancellationToken ct) => new(
+        [new Claim(ClaimTypes.Name, "admin"), new Claim("ver", Updates.UpdateService.CurrentVersion),
+         new Claim(SessionEpochClaim, (await ReadEpochAsync(config, ct)).ToString())],
         CookieAuthenticationDefaults.AuthenticationScheme);
 
     // Exact-match common weak passwords, compared case-insensitively (spec §17.3 common-password check).

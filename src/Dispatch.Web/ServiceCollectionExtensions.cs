@@ -1,3 +1,4 @@
+using Dispatch.Core.Configuration;
 using Dispatch.Core.Logging;
 using Dispatch.Web.Auth;
 using Dispatch.Web.Ingestion;
@@ -52,7 +53,14 @@ public static class ServiceCollectionExtensions
                 // same version keeps sessions. Older cookies with no "ver" claim also fail closed here.
                 o.Events.OnValidatePrincipal = async c =>
                 {
-                    if (c.Principal?.FindFirst("ver")?.Value != Updates.UpdateService.CurrentVersion)
+                    var p = c.Principal;
+                    var verOk = p?.FindFirst("ver")?.Value == Updates.UpdateService.CurrentVersion;
+                    // Credential epoch: reject cookies issued before the last admin-password change. Read from
+                    // the cache and lag-tolerant - only reject when STRICTLY older, so bumping the epoch can't
+                    // momentarily sign out the just-re-issued acting admin during the cache-refresh window.
+                    var stored = c.HttpContext.RequestServices.GetService<ConfigCache>()?.GetInt(ConfigKeys.WebUiSessionEpoch, 0) ?? 0;
+                    var claim = int.TryParse(p?.FindFirst(AuthEndpoints.SessionEpochClaim)?.Value, out var e) ? e : 0;
+                    if (!verOk || claim < stored)
                     {
                         c.RejectPrincipal();
                         await c.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);

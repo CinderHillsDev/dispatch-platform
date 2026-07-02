@@ -256,7 +256,13 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
             if (entry is null) return path; // not a single-package wrapper; let the tar.gz reader reject it
 
             var inner = path + ".inner.tgz";
-            entry.ExtractToFile(inner, overwrite: true);
+            try
+            {
+                await using var zs = entry.Open();
+                await using var outFs = File.Create(inner);
+                await CopyCappedAsync(zs, outFs, ct);   // bounded, so a zip bomb can't fill the disk here
+            }
+            catch { try { File.Delete(inner); } catch { /* best-effort */ } throw; }
             log?.LogInformation("Unwrapped a .zip upload to its inner package '{Entry}'", entry.Name);
             try { File.Delete(path); } catch { /* best-effort */ }
             return inner;
@@ -301,7 +307,7 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
                 using var sha = SHA256.Create();
                 await using var outFs = File.Create(destPath);
                 await using var crypto = new CryptoStream(outFs, sha, CryptoStreamMode.Write);
-                await e.DataStream.CopyToAsync(crypto, ct);
+                await CopyCappedAsync(e.DataStream, crypto, ct);
                 await crypto.FlushFinalBlockAsync(ct);
                 return Convert.ToHexStringLower(sha.Hash!);
             }
@@ -310,6 +316,25 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
     }
 
     private static string Normalize(string entryName) => entryName.TrimStart('.', '/');
+
+    // Ceiling on decompressed output. Generous vs a real self-contained payload (~150-200 MB) but bounded,
+    // so a gzip/zip bomb (small compressed, huge decompressed) can't fill the disk before the hash is checked.
+    private const long MaxExtractedBytes = 3L * 1024 * 1024 * 1024; // 3 GiB
+
+    // Copy src -> dest, aborting past MaxExtractedBytes (decompression-bomb guard). Throws InvalidDataException.
+    private static async Task CopyCappedAsync(Stream src, Stream dest, CancellationToken ct)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int n;
+        while ((n = await src.ReadAsync(buffer, ct)) > 0)
+        {
+            total += n;
+            if (total > MaxExtractedBytes)
+                throw new InvalidDataException($"decompressed size exceeds the {MaxExtractedBytes / (1024 * 1024)} MB limit (possible decompression bomb)");
+            await dest.WriteAsync(buffer.AsMemory(0, n), ct);
+        }
+    }
 
     private static bool HashEquals(string a, string b) => CryptographicOperations.FixedTimeEquals(
         Encoding.ASCII.GetBytes(a.Trim().ToLowerInvariant()), Encoding.ASCII.GetBytes((b ?? "").Trim().ToLowerInvariant()));
