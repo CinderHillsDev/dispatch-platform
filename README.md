@@ -109,9 +109,9 @@ ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service
 
 `appsettings.Development.json` (git-ignored) needs at least the SQL connection string and an `AdminPassword`. Tests: `dotnet test` (Data integration tests run only when `DISPATCH_TEST_SQL` is set, auto-skipped otherwise). The docs site lives in [`website/`](website/) (Astro + Starlight).
 
-## Contributing
+## Adding a provider
 
-Contributions are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). **Adding a provider:** implement `IRelayProvider` in `Dispatch.Providers` (see `SendGridProvider.cs`), wire it into `RelayProviderFactory`, add the UI fields and tests. Good first issues are [labelled in the tracker](https://github.com/chrismuench/Dispatch-SMTP-Relay/issues?q=label%3A%22good+first+issue%22).
+Implement `IRelayProvider` in `Dispatch.Providers` (see `SendGridProvider.cs`), wire it into `RelayProviderFactory`, then add the UI fields and tests.
 
 ## Licence
 

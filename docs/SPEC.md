@@ -4113,9 +4113,7 @@ The Dashboard can poll this endpoint every 5 seconds to show the live In Flight 
 | Licence | Commercial (proprietary) |
 | Licence summary | Proprietary. A valid offline, node-locked license key is required to run Dispatch. |
 | Repository | github.com/yourorg/dispatch |
-| Contribution guide | CONTRIBUTING.md - PR checklist, coding style, test requirements |
 | Issue templates | Bug report, feature request, provider request |
-| Code of conduct | Contributor Covenant |
 | Release cadence | Semantic versioning; minor releases monthly; patch releases as needed |
 
 ### 19.9 Database Migration Runner
@@ -4485,9 +4483,7 @@ A background timer fires at the top of each minute, resets the slot that just ro
 | Licence | Commercial (proprietary) |
 | Licence summary | Proprietary. A valid offline, node-locked license key is required to run Dispatch. |
 | Repository | github.com/yourorg/dispatch |
-| Contribution guide | CONTRIBUTING.md - PR checklist, coding style, test requirements |
 | Issue templates | Bug report, feature request, provider request |
-| Code of conduct | Contributor Covenant |
 | Release cadence | Semantic versioning; minor releases monthly; patch releases as needed |
 
 ---
