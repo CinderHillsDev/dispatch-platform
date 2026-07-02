@@ -25,7 +25,7 @@
 17. [Security Considerations](#17-security-considerations)
 18. [CI/CD and Build Pipeline](#18-cicd-and-build-pipeline)
 19. [Claude Code Implementation Notes](#19-claude-code-implementation-notes)
-20. [Licence](#20-open-source--licence)
+20. [Licence](#20-licence)
 - [Appendix A - Suggested Future Providers](#appendix-a--suggested-future-providers)
 - [Appendix B - Suggested Future Features](#appendix-b--suggested-future-features)
 
