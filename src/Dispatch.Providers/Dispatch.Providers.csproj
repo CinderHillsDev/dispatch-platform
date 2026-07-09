@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.SimpleEmailV2" Version="4.0.14.5" />
+    <PackageReference Include="AWSSDK.SimpleEmailV2" Version="4.0.100.3" />
     <PackageReference Include="Azure.Communication.Email" Version="1.1.0" />
     <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />
