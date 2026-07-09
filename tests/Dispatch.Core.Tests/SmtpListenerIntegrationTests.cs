@@ -56,7 +56,6 @@ public sealed class SmtpListenerIntegrationTests
             {
                 Config = new RelayConfig { Id = 1, Name = "default" },
             }),
-            new Dispatch.Core.Licensing.LicenseGate(),
             new IntakeState(),
             new ConnectionTracker(),
             new CapturingLogRepository(),

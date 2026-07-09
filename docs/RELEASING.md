@@ -78,9 +78,9 @@ SmartScreen will warn on first run). To enable it:
 The next tagged release then signs the MSI and the bundle automatically. The signing steps key off
 `AZURE_SIGNING_ACCOUNT`; if it's unset, they're skipped.
 
-> Note: Dispatch is commercial, proprietary software, so free OSS code-signing programs (e.g. the
-> **SignPath Foundation**) do not apply - Azure Artifact Signing (a paid service tied to your own identity)
-> is the path here.
+> Note: code signing currently uses Azure Artifact Signing (a paid service tied to your own identity).
+> As an Apache-2.0 open-source project, Dispatch may also qualify for a free OSS code-signing program
+> such as the **SignPath Foundation**.
 
 ## Upgrade-package signing key (one-time)
 

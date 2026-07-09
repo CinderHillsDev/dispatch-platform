@@ -32,7 +32,6 @@ public sealed class SpoolWorkerPool : BackgroundService
     private readonly ILogger<SpoolWorkerPool> _log;
     private readonly SpoolOptions _spoolOptions;
     private readonly IRetrySettings _retry;
-    private readonly Dispatch.Core.Licensing.LicenseGate _license;
     private readonly Dispatch.Core.Audit.IAuditLog? _audit;
 
     private readonly ConcurrentDictionary<int, SemaphoreSlim> _semaphores = new();
@@ -51,7 +50,6 @@ public sealed class SpoolWorkerPool : BackgroundService
         RelayConcurrencyTracker concurrency,
         IOptions<SpoolOptions> spoolOptions,
         IRetrySettings retry,
-        Dispatch.Core.Licensing.LicenseGate license,
         ILogger<SpoolWorkerPool> log,
         Dispatch.Core.Audit.IAuditLog? audit = null)
     {
@@ -65,7 +63,6 @@ public sealed class SpoolWorkerPool : BackgroundService
         _concurrency = concurrency;
         _spoolOptions = spoolOptions.Value;
         _retry = retry;
-        _license = license;
         _log = log;
         _audit = audit;
     }
@@ -141,15 +138,6 @@ public sealed class SpoolWorkerPool : BackgroundService
             catch (OperationCanceledException)
             {
                 break;
-            }
-
-            // Licensing (grace-then-stop): while unlicensed past grace, pause relaying. Queued files stay in
-            // the spool untouched and flow again once a valid key is entered - nothing is dropped.
-            if (_license.EnforcementActive)
-            {
-                try { await Task.Delay(DoorbellTimeout, ct); }
-                catch (OperationCanceledException) { break; }
-                continue;
             }
 
             ClaimedFile? claimed;

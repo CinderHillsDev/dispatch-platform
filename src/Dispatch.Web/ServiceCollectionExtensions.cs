@@ -28,11 +28,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ApiKeyCache>();
         services.AddSingleton<Auth.LoginThrottle>();
         services.AddSingleton<ApiMessageHandler>();
-        // Licensing (offline, node-locked): the ingestion handler + dashboard need these. The enforcement
-        // worker itself is a hosted service registered by the service host (Program.cs).
-        services.AddSingleton<Dispatch.Core.Licensing.MachineIdentity>();
-        services.AddSingleton<Dispatch.Core.Licensing.LicenseService>();
-        services.AddSingleton<Dispatch.Core.Licensing.LicenseGate>();
         services.AddSingleton(Dispatch.Core.Updates.UpdateBundleVerifier.Default());
         services.AddSingleton<Updates.UpdateService>();
         services.AddScoped<ApiKeyMiddleware>();

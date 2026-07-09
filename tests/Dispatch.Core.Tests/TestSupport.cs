@@ -77,7 +77,6 @@ public static class TestData
             spool, resolver, factory, logRepo, loggingSettings ?? new AlwaysLogSettings(), counters, new MinuteCounterRing(), new RelayConcurrencyTracker(),
             Options.Create(new SpoolOptions { WorkerCount = workerCount }),
             new OptionsRetrySettings(retry ?? new RetryOptions { MaxRetries = 3, DelaysSeconds = [0.01, 0.02, 0.03] }),
-            new Dispatch.Core.Licensing.LicenseGate(),
             NullLogger<SpoolWorkerPool>.Instance);
     }
 

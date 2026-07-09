@@ -71,9 +71,4 @@ public static class ConfigKeys
     // Set true by installers that ship a platform updater (appliance / Linux / Windows), enabling the
     // web-UI "upload an upgrade package" flow. False (e.g. Docker) hides/refuses in-app updates.
     public const string UpdatesSelfManaged = "updates.self_managed";
-
-    // Licensing (offline, node-locked - no call home). See Dispatch.Core.Licensing.
-    public const string LicenseKey = "license.key";                 // the pasted license key
-    public const string LicenseMachineId = "license.machine_id";    // random GUID minted first run; node-lock anchor
-    public const string LicenseFirstRunUtc = "license.first_run_utc"; // grace-period anchor (ISO-8601 UTC)
 }

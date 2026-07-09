@@ -1,5 +1,5 @@
 # Dispatch SMTP Relay
-### Commercial .NET Email Relay - Forward mail from your apps to any cloud provider - Technical Specification v1.0
+### Open-source .NET Email Relay - Forward mail from your apps to any cloud provider - Technical Specification v1.0
 *June 2026*
 
 ---
@@ -33,7 +33,7 @@
 
 ## 1. Project Overview
 
-Dispatch is a lightweight, commercial SMTP relay server built on .NET 10. It accepts inbound messages over **SMTP** (ports 25/587) and a **developer-friendly HTTP API** (port 8025), then forwards every message to a configurable upstream provider such as Mailgun, SendGrid, or Azure Communication Services.
+Dispatch is a lightweight, open-source SMTP relay server built on .NET 10. It accepts inbound messages over **SMTP** (ports 25/587) and a **developer-friendly HTTP API** (port 8025), then forwards every message to a configurable upstream provider such as Mailgun, SendGrid, or Azure Communication Services.
 
 A small embedded web UI - served directly from the process on port 8420 - lets administrators view live message logs, manage API keys, and configure all settings from any browser without installing separate software. No Electron, no Avalonia, no external web server required.
 
@@ -45,7 +45,7 @@ A small embedded web UI - served directly from the process on port 8420 - lets a
 - Windows: installs as a Windows Service via MSI
 - Linux: runs as a systemd unit
 - Provider-agnostic relay - swap between Mailgun, SendGrid, SMTP, Azure Communication Services, or others through the UI without restarting
-- Commercial, proprietary - licensed per install with an offline, node-locked license key (30-day first-run grace)
+- Free and open source - released under the Apache License 2.0; no license key required to run
 
 ### 1.1 Implementation deltas (authoritative)
 
@@ -4110,8 +4110,8 @@ The Dashboard can poll this endpoint every 5 seconds to show the live In Flight 
 
 | Item | Detail |
 |---|---|
-| Licence | Commercial (proprietary) |
-| Licence summary | Proprietary. A valid offline, node-locked license key is required to run Dispatch. |
+| Licence | Apache License 2.0 |
+| Licence summary | Free and open source. No license key is required to run Dispatch. |
 | Repository | github.com/yourorg/dispatch |
 | Issue templates | Bug report, feature request, provider request |
 | Release cadence | Semantic versioning; minor releases monthly; patch releases as needed |
@@ -4480,8 +4480,8 @@ A background timer fires at the top of each minute, resets the slot that just ro
 
 
 |---|---|
-| Licence | Commercial (proprietary) |
-| Licence summary | Proprietary. A valid offline, node-locked license key is required to run Dispatch. |
+| Licence | Apache License 2.0 |
+| Licence summary | Free and open source. No license key is required to run Dispatch. |
 | Repository | github.com/yourorg/dispatch |
 | Issue templates | Bug report, feature request, provider request |
 | Release cadence | Semantic versioning; minor releases monthly; patch releases as needed |

@@ -13,10 +13,6 @@
   <ItemGroup>
     <!-- Release public key for verifying upgrade-bundle signatures (private key lives in a GH secret). -->
     <EmbeddedResource Include="Updates/dispatch-update-public.pem" />
-    <!-- License public key for verifying license keys offline (private key lives in the issuer tool). -->
-    <EmbeddedResource Include="Licensing/dispatch-license-public.pem" />
-    <!-- Revoked-license blacklist (seqIds); ships with each release to block leaked keys offline. -->
-    <EmbeddedResource Include="Licensing/dispatch-revoked-licenses.txt" />
   </ItemGroup>
 
   <ItemGroup>

@@ -267,25 +267,6 @@ export interface UpdateInfo {
   upgradeNotice: { from: string; to: string; atUtc: string } | null; // set once after a version change
 }
 
-export type LicenseState = "licensed" | "grace" | "unlicensed" | "expired" | "revoked" | "invalid";
-
-export interface LicenseStatus {
-  machineId: string;
-  state: LicenseState;
-  hasKey: boolean;
-  licensed: boolean;
-  licenseId: string | null;
-  perpetual: boolean;
-  expiresAt: string | null;
-  expired: boolean;
-  revoked: boolean;
-  inGracePeriod: boolean;
-  graceDaysRemaining: number;
-  graceEndsUtc: string;
-  enforcementActive: boolean;
-  error: string | null;
-}
-
 export const api = {
   stats: () => getJson<Stats>("/api/stats"),
   throughput: () => getJson<number[]>("/api/stats/throughput"),
@@ -387,11 +368,6 @@ export const api = {
   },
 
   storage: () => getJson<StorageUsage>("/api/storage"),
-
-  license: {
-    get: () => getJson<LicenseStatus>("/api/license"),
-    set: (key: string) => sendJson<LicenseStatus>("/api/license", "POST", { key }),
-  },
 
   updates: {
     status: () => getJson<UpdateInfo>("/api/updates/status"),

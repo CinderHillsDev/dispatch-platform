@@ -320,7 +320,6 @@ public static class WebEndpoints
         group.MapFailedMessages();  // /api/failed/* (see FailedMessageEndpoints)
         group.MapSmtpCredentials(); // /api/smtp-credentials (see SmtpCredentialEndpoints)
         group.MapUpdates();         // /api/updates/* (see UpdateEndpoints)
-        group.MapLicense();         // /api/license (see LicenseEndpoints)
 
         group.MapGet("/keys", async (IApiKeyRepository keys, CancellationToken ct) =>
             Results.Ok((await keys.ListAsync(includeRevoked: true, ct)).Select(Public)));

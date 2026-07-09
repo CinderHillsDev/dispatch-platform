@@ -22,7 +22,6 @@ public class ApiMessageHandlerTests
                 new SpoolDirectory(dir),
                 Options.Create(new ApiOptions { MaxMessageBytes = 10 }),
                 Resolver(maxBytes: 0),
-                new Dispatch.Core.Licensing.LicenseGate(),
                 NullLogger<ApiMessageHandler>.Instance);
 
             var json = """{"from":"a@x.com","to":["b@y.com"],"subject":"hi","text":"well over ten bytes"}""";
@@ -48,7 +47,6 @@ public class ApiMessageHandlerTests
                 new SpoolDirectory(dir),
                 Options.Create(new ApiOptions { MaxMessageBytes = 0 }),   // no global ceiling
                 Resolver(maxBytes: 10),                                   // tiny per-relay limit
-                new Dispatch.Core.Licensing.LicenseGate(),
                 NullLogger<ApiMessageHandler>.Instance);
 
             var json = """{"from":"a@x.com","to":["b@y.com"],"subject":"hi","text":"well over ten bytes"}""";
@@ -75,7 +73,6 @@ public class ApiMessageHandlerTests
         {
             var handler = new ApiMessageHandler(new SpoolDirectory(dir),
                 Options.Create(new ApiOptions { MaxMessageBytes = 0 }), Resolver(maxBytes: 0),
-                new Dispatch.Core.Licensing.LicenseGate(),
                 NullLogger<ApiMessageHandler>.Instance);
             var json = "{\"from\":\"a@x.com\",\"to\":[\"b@y.com\"],\"subject\":\"hi\",\"text\":\"body\",\"headers\":{\"" + header + "\":\"x\"}}";
 
@@ -95,7 +92,6 @@ public class ApiMessageHandlerTests
         {
             var handler = new ApiMessageHandler(new SpoolDirectory(dir),
                 Options.Create(new ApiOptions { MaxMessageBytes = 0 }), Resolver(maxBytes: 0),
-                new Dispatch.Core.Licensing.LicenseGate(),
                 NullLogger<ApiMessageHandler>.Instance);
             // The \r\n in the header value is real CR/LF after JSON decoding - a header-smuggling attempt.
             var json = "{\"from\":\"a@x.com\",\"to\":[\"b@y.com\"],\"subject\":\"hi\",\"text\":\"body\",\"headers\":{\"X-Evil\":\"a\\r\\nInjected: yes\"}}";
@@ -104,28 +100,6 @@ public class ApiMessageHandlerTests
 
             Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
             Assert.Empty(Directory.GetFiles(new SpoolDirectory(dir).IncomingDir, "*.eml"));
-        }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
-    }
-
-    [Fact]
-    public async Task Unlicensed_past_grace_is_rejected_with_503_and_writes_nothing()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "dispatch-apihandler", Guid.NewGuid().ToString("N"));
-        try
-        {
-            var gate = new Dispatch.Core.Licensing.LicenseGate();
-            gate.Set(true);   // enforcement active
-            var handler = new ApiMessageHandler(new SpoolDirectory(dir),
-                Options.Create(new ApiOptions { MaxMessageBytes = 0 }), Resolver(maxBytes: 0),
-                gate, NullLogger<ApiMessageHandler>.Instance);
-
-            var json = """{"from":"a@x.com","to":["b@y.com"],"subject":"hi","text":"body"}""";
-            var result = await handler.HandleAsync(JsonRequest(json), default);
-
-            Assert.Equal(StatusCodes.Status503ServiceUnavailable, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
-            Assert.False(Directory.Exists(new SpoolDirectory(dir).IncomingDir) &&
-                         Directory.GetFiles(new SpoolDirectory(dir).IncomingDir, "*.eml").Length > 0);
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true); }
     }

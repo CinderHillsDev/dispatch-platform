@@ -29,7 +29,6 @@ public sealed class CidrMailboxFilter : IMailboxFilter
     private readonly ConfigCache _config;
     private readonly ICounterRepository _counters;
     private readonly IRelayResolver _routing;
-    private readonly Dispatch.Core.Licensing.LicenseGate _license;
     private readonly IntakeState _intake;
     private readonly ConnectionTracker _connections;
     private readonly ILogRepository _logRepo;
@@ -46,7 +45,6 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         ConfigCache config,
         ICounterRepository counters,
         IRelayResolver routing,
-        Dispatch.Core.Licensing.LicenseGate license,
         IntakeState intake,
         ConnectionTracker connections,
         ILogRepository logRepo,
@@ -57,7 +55,6 @@ public sealed class CidrMailboxFilter : IMailboxFilter
         _config = config;
         _counters = counters;
         _routing = routing;
-        _license = license;
         _intake = intake;
         _connections = connections;
         _logRepo = logRepo;
@@ -83,16 +80,6 @@ public sealed class CidrMailboxFilter : IMailboxFilter
     public async Task<bool> CanAcceptFromAsync(
         ISessionContext context, IMailbox from, int size, CancellationToken cancellationToken)
     {
-        // Licensing (grace-then-stop): once unlicensed past the grace window, refuse new mail with a transient
-        // 4xx so senders queue and retry - entering a valid key on the dashboard resumes flow without loss.
-        if (_license.EnforcementActive)
-        {
-            await DenyAsync(context, from.AsAddress(), null, "Service not licensed", cancellationToken);
-            _log.LogWarning("Rejecting MAIL FROM {From}: unlicensed past grace period", from.AsAddress());
-            throw new SmtpResponseException(new SmtpResponse(
-                SmtpReplyCode.ServiceUnavailable, "Service not licensed, contact the administrator"));
-        }
-
         // Disk back-pressure (spec §14.1): reject when suspended so senders retry; delay when throttled
         // to slow the inbound rate. Checked first - under disk pressure we don't want to do more work.
         switch (_intake.Level)
