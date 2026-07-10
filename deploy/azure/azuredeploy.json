@@ -106,7 +106,7 @@
         ]
       }
     },
-    "cloudInit": "[base64(concat('#!/bin/bash\nset -euo pipefail\nexport DEBIAN_FRONTEND=noninteractive\nVER=', parameters('dispatchVersion'), '\nADMIN_PW=$(printf %s ', base64(parameters('dispatchAdminPassword')), ' | base64 -d)\nDB_PW=$(openssl rand -hex 24)\napt-get update -y\napt-get install -y curl tar openssl\ncd /root\ncurl -fSL https://github.com/CinderHillsDev/dispatch-platform/releases/download/v${VER}/dispatch-${VER}-linux.tar.gz -o dispatch.tar.gz\ntar -xzf dispatch.tar.gz\ncd dispatch-${VER}-linux\n./install.sh --install-postgres --db-password ${DB_PW} --admin-password \"${ADMIN_PW}\" --generate-cert\n'))]"
+    "cloudInit": "[base64(concat('#!/bin/bash\nset -euo pipefail\nexport DEBIAN_FRONTEND=noninteractive\n# Make the VM name resolvable locally: a custom computerName that is missing from /etc/hosts breaks the\n# node hostname lookup (hostname -f fails and .NET/openssl name resolution errors), which can stop the\n# service from starting. Add a loopback entry for the short hostname if one is not already present.\nHN=$(hostname); grep -qw \"$HN\" /etc/hosts || echo \"127.0.1.1 $HN\" >> /etc/hosts\nVER=', parameters('dispatchVersion'), '\nADMIN_PW=$(printf %s ', base64(parameters('dispatchAdminPassword')), ' | base64 -d)\nDB_PW=$(openssl rand -hex 24)\napt-get update -y\napt-get install -y curl tar openssl\ncd /root\ncurl -fSL https://github.com/CinderHillsDev/dispatch-platform/releases/download/v${VER}/dispatch-${VER}-linux.tar.gz -o dispatch.tar.gz\ntar -xzf dispatch.tar.gz\ncd dispatch-${VER}-linux\n./install.sh --install-postgres --db-password ${DB_PW} --admin-password \"${ADMIN_PW}\" --generate-cert\n'))]"
   },
   "resources": [
     {
