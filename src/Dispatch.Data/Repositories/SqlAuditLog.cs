@@ -56,17 +56,18 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
         if (filter.Cursor is { } c)
         {
             where.Append(" AND (logged_at < @CursorAt OR (logged_at = @CursorAt AND id < @CursorId))");
-            p.Add("CursorAt", c.LoggedAt, DbType.DateTime2);
+            p.Add("CursorAt", c.LoggedAt, DbType.DateTime);
             p.Add("CursorId", c.Id);
         }
 
         var sql = $"""
-            SELECT TOP (@Limit)
+            SELECT
                 id AS Id, logged_at AS LoggedAt, kind AS Kind, category AS Category, event AS Event,
                 severity AS Severity, actor AS Actor, source_ip AS SourceIp, detail AS Detail
             FROM audit_log
             {where}
-            ORDER BY logged_at DESC, id DESC;
+            ORDER BY logged_at DESC, id DESC
+            LIMIT @Limit;
             """;
 
         await using var cn = await factory.OpenAsync(ct);
@@ -84,11 +85,11 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
             // Noisy security events (allow-list denials, SMTP auth failures) are kept shorter.
             if (securityRetentionDays > 0)
                 total += await DeleteBatchedAsync(cn,
-                    "DELETE TOP (@Batch) FROM audit_log WHERE category IN ('Access','SmtpAuth') AND logged_at < DATEADD(DAY, -@Days, SYSUTCDATETIME());",
+                    "DELETE FROM audit_log WHERE ctid IN (SELECT ctid FROM audit_log WHERE category IN ('Access','SmtpAuth') AND logged_at < now() - @Days * interval '1 day' LIMIT @Batch);",
                     securityRetentionDays, ct);
             if (generalRetentionDays > 0)
                 total += await DeleteBatchedAsync(cn,
-                    "DELETE TOP (@Batch) FROM audit_log WHERE logged_at < DATEADD(DAY, -@Days, SYSUTCDATETIME());",
+                    "DELETE FROM audit_log WHERE ctid IN (SELECT ctid FROM audit_log WHERE logged_at < now() - @Days * interval '1 day' LIMIT @Batch);",
                     generalRetentionDays, ct);
             return total;
         }
@@ -105,7 +106,7 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
         {
             await using var cn = await factory.OpenAsync(ct);
             var rows = (await cn.QueryAsync(new CommandDefinition(
-                "SELECT TOP (@batch) * FROM audit_log ORDER BY logged_at ASC, id ASC;",
+                "SELECT * FROM audit_log ORDER BY logged_at ASC, id ASC LIMIT @batch;",
                 new { batch }, cancellationToken: ct))).ToList();
             if (rows.Count == 0) return 0;
 
@@ -114,7 +115,7 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
 
             var ids = rows.Select(r => Convert.ToInt64(((IDictionary<string, object>)r)["id"])).ToArray();
             return await cn.ExecuteAsync(new CommandDefinition(
-                "DELETE FROM audit_log WHERE id IN @ids;", new { ids }, cancellationToken: ct));
+                "DELETE FROM audit_log WHERE id = ANY(@ids);", new { ids }, cancellationToken: ct));
         }
         catch (Exception ex)
         {

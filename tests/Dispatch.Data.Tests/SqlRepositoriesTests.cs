@@ -33,7 +33,7 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         // Migration 0003 removed the seeded "Unconfigured" placeholder relay - the first-run wizard creates
         // the first real relay (which becomes the catch-all). No placeholder should remain.
         var placeholders = await cn.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM relays WHERE provider = 'Unconfigured' AND is_default = 1");
+            "SELECT COUNT(*) FROM relays WHERE provider = 'Unconfigured' AND is_default");
         Assert.Equal(0, placeholders);
     }
 
@@ -107,7 +107,7 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         {
             await cn.ExecuteAsync("""
                 INSERT INTO relay_log (logged_at, spool_id, event, status, from_address, from_domain, to_addresses, to_domain, subject)
-                VALUES (DATEADD(DAY, -100, SYSUTCDATETIME()), @spoolId, 'Delivered', 'OK', 'a@x.com', 'x.com', '[]', 'y.com', 's');
+                VALUES (now() - interval '100 days', @spoolId, 'Delivered', 'OK', 'a@x.com', 'x.com', '[]', 'y.com', 's');
                 """, new { spoolId });
         }
 
@@ -483,15 +483,18 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         Assert.Equal(2, byRule.Rows.Count);
         Assert.All(byRule.Rows, r => Assert.Equal(spoolId, r.SpoolId));
 
-        // Subject substring filter: matches case-insensitively; LIKE wildcards in the value are literal.
+        // Subject substring filter: case-sensitive (PostgreSQL LIKE); LIKE wildcards in the value are literal.
         await log.InsertAsync(new RelayLogEntry
         {
             Event = "Delivered", Status = "OK", SpoolId = Guid.NewGuid().ToString("N"), Subject = "Invoice #4242 ready",
             FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = ["b@" + domain], ToDomain = domain, RelayName = "alpha",
         });
-        var bySubject = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Subject = "invoice" });
+        var bySubject = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Subject = "Invoice" });
         Assert.Single(bySubject.Rows);
         Assert.Contains("Invoice", bySubject.Rows[0].Subject);
+        // Case-sensitive: the wrong case does not match.
+        var wrongCase = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Subject = "invoice" });
+        Assert.Empty(wrongCase.Rows);
         var noSubject = await query.QueryAsync(new MessageLogFilter { ToDomain = domain, Subject = "%nope%" });
         Assert.Empty(noSubject.Rows);
 

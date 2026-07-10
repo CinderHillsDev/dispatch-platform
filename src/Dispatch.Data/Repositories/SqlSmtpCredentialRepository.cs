@@ -23,7 +23,7 @@ public sealed class SqlSmtpCredentialRepository(SqlConnectionFactory factory) : 
         if (!BCrypt.Net.BCrypt.Verify(password, hash)) return false;
 
         await cn.ExecuteAsync(new CommandDefinition(
-            "UPDATE config_smtp_credentials SET last_used_at = SYSUTCDATETIME() WHERE username = @username",
+            "UPDATE config_smtp_credentials SET last_used_at = now() WHERE username = @username",
             new { username }, cancellationToken: ct));
         return true;
     }
@@ -41,10 +41,8 @@ public sealed class SqlSmtpCredentialRepository(SqlConnectionFactory factory) : 
     {
         var hash = BCrypt.Net.BCrypt.HashPassword(password, WorkFactor);
         const string sql = """
-            MERGE config_smtp_credentials AS t
-            USING (VALUES (@username)) AS s(username) ON t.username = s.username
-            WHEN MATCHED THEN UPDATE SET password_hash = @hash
-            WHEN NOT MATCHED THEN INSERT (username, password_hash) VALUES (@username, @hash);
+            INSERT INTO config_smtp_credentials (username, password_hash) VALUES (@username, @hash)
+            ON CONFLICT (username) DO UPDATE SET password_hash = @hash;
             """;
         await using var cn = await factory.OpenAsync(ct);
         await cn.ExecuteAsync(new CommandDefinition(sql, new { username, hash }, cancellationToken: ct));

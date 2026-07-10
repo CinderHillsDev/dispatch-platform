@@ -65,8 +65,8 @@ public static class ConfigDefaults
         [ConfigKeys.PurgeAuditRetentionDays] = "7",
         [ConfigKeys.PurgeAuditSecurityRetentionDays] = "7",
         [ConfigKeys.PurgeArchiveRetentionDays] = "0",   // size-pressure JSONL archives: 0 = keep forever
-        [ConfigKeys.PurgeSizeTriggerGb] = "9.5",
-        [ConfigKeys.PurgeSizeTargetGb] = "9.0",
+        [ConfigKeys.PurgeSizeTriggerGb] = "0",   // 0 = size-pressure disabled (Postgres has no hard size cap; opt-in)
+        [ConfigKeys.PurgeSizeTargetGb] = "0",
         [ConfigKeys.UpdatesSelfManaged] = "false",   // installers flip this on where a platform updater ships
     };
 

@@ -4,14 +4,7 @@
 -- relay_log row (Message Log) recorded them. Drop the FK so relay_id = 0 is a valid "no specific relay"
 -- bucket. Aggregate summaries SUM across all rows (including 0); per-relay views join/filter to relay_id > 0,
 -- so the denied bucket never appears as a phantom relay.
-DECLARE @fk sysname;
-SELECT @fk = fk.name
-FROM sys.foreign_keys fk
-WHERE fk.parent_object_id = OBJECT_ID('dbo.relay_counters')
-  AND fk.referenced_object_id = OBJECT_ID('dbo.relays');
-IF @fk IS NOT NULL
-BEGIN
-    -- EXEC() can't contain function calls inline, so build the statement into a variable first.
-    DECLARE @sql nvarchar(max) = N'ALTER TABLE dbo.relay_counters DROP CONSTRAINT ' + QUOTENAME(@fk);
-    EXEC sp_executesql @sql;
-END
+--
+-- The FK created inline in 0001 (relay_id int NOT NULL REFERENCES relays(id)) is auto-named by Postgres as
+-- <table>_<column>_fkey, so we drop it by that deterministic name (IF EXISTS makes this re-runnable).
+ALTER TABLE relay_counters DROP CONSTRAINT IF EXISTS relay_counters_relay_id_fkey;

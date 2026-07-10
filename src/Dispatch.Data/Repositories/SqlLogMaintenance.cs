@@ -11,9 +11,13 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
 
     public async Task<int> PurgeByRetentionAsync(string @event, int retentionDays, CancellationToken ct = default)
     {
+        // Postgres has no DELETE ... LIMIT, so bound each batch by ctid membership.
         const string sql = """
-            DELETE TOP (@BatchSize) FROM relay_log
-            WHERE event = @event AND logged_at < DATEADD(DAY, -@retentionDays, SYSUTCDATETIME());
+            DELETE FROM relay_log
+            WHERE ctid IN (
+                SELECT ctid FROM relay_log
+                WHERE event = @event AND logged_at < now() - @retentionDays * interval '1 day'
+                LIMIT @BatchSize);
             """;
         await using var cn = await factory.OpenAsync(ct);
 
@@ -31,34 +35,26 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
 
     public async Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default)
     {
-        const string sql = "SELECT CAST(SUM(size) AS BIGINT) * 8 * 1024 FROM sys.database_files WHERE type = 0;";
+        const string sql = "SELECT pg_database_size(current_database());";
         await using var cn = await factory.OpenAsync(ct);
         return await cn.ExecuteScalarAsync<long>(new CommandDefinition(sql, cancellationToken: ct));
     }
 
-    public async Task<long> GetDatabaseUsedBytesAsync(CancellationToken ct = default)
+    public async Task<(long TableBytes, long RowCount)> GetRelayLogStatsAsync(CancellationToken ct = default)
     {
-        // Used pages (not allocated file size) so the size-pressure loop terminates: this value drops as
-        // rows are deleted, whereas sys.database_files.size never shrinks on DELETE.
-        const string sql = "SELECT CAST(SUM(CAST(FILEPROPERTY(name, 'SpaceUsed') AS BIGINT)) AS BIGINT) * 8 * 1024 FROM sys.database_files WHERE type = 0;";
+        const string sql = """
+            SELECT pg_total_relation_size('relay_log')::bigint AS TableBytes,
+                   (SELECT count(*) FROM relay_log)::bigint     AS RowCount;
+            """;
         await using var cn = await factory.OpenAsync(ct);
-        return await cn.ExecuteScalarAsync<long>(new CommandDefinition(sql, cancellationToken: ct));
-    }
-
-    public async Task<bool> IsSizeCappedEditionAsync(CancellationToken ct = default)
-    {
-        // EngineEdition 4 = Express (the only edition with the 10 GB per-database data-file cap). 2/3 =
-        // Standard/Enterprise, 5/8 = Azure SQL DB/MI - none capped, so size-pressure must not run there.
-        const string sql = "SELECT CAST(SERVERPROPERTY('EngineEdition') AS INT);";
-        await using var cn = await factory.OpenAsync(ct);
-        return await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, cancellationToken: ct)) == 4;
+        return await cn.QuerySingleAsync<(long, long)>(new CommandDefinition(sql, cancellationToken: ct));
     }
 
     public async Task<int> ArchiveAndDeleteOldestRelayLogAsync(int batch, ArchiveRows archive, CancellationToken ct = default)
     {
         await using var cn = await factory.OpenAsync(ct);
         var rows = (await cn.QueryAsync(new CommandDefinition(
-            "SELECT TOP (@batch) * FROM relay_log ORDER BY logged_at ASC, id ASC;",
+            "SELECT * FROM relay_log ORDER BY logged_at ASC, id ASC LIMIT @batch;",
             new { batch }, cancellationToken: ct))).ToList();
         if (rows.Count == 0) return 0;
 
@@ -67,7 +63,16 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
 
         var ids = rows.Select(r => Convert.ToInt64(((IDictionary<string, object>)r)["id"])).ToArray();
         return await cn.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM relay_log WHERE id IN @ids;", new { ids }, cancellationToken: ct));
+            "DELETE FROM relay_log WHERE id = ANY(@ids);", new { ids }, cancellationToken: ct));
+    }
+
+    public async Task VacuumLogTablesAsync(CancellationToken ct = default)
+    {
+        // VACUUM cannot run inside a transaction block; each statement runs on its own. FULL rewrites the
+        // table and returns space to the OS so pg_database_size drops and the size-pressure trigger clears.
+        await using var cn = await factory.OpenAsync(ct);
+        await cn.ExecuteAsync(new CommandDefinition("VACUUM (FULL) relay_log;", cancellationToken: ct));
+        await cn.ExecuteAsync(new CommandDefinition("VACUUM (FULL) audit_log;", cancellationToken: ct));
     }
 
     // Materializes a Dapper row into a nullable-friendly read-only dictionary for archiving/serialization.

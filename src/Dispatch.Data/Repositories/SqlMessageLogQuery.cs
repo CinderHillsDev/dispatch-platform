@@ -24,16 +24,17 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         if (filter.Cursor is { } cursor)
         {
             where.Append(" AND (logged_at < @CursorLoggedAt OR (logged_at = @CursorLoggedAt AND id < @CursorId))");
-            p.Add("CursorLoggedAt", cursor.LoggedAt, DbType.DateTime2);
+            p.Add("CursorLoggedAt", cursor.LoggedAt, DbType.DateTime);
             p.Add("CursorId", cursor.Id);
         }
 
         var sql = $"""
-            SELECT TOP (@Limit)
+            SELECT
                 {RowColumns}
             FROM relay_log
             {where}
-            ORDER BY logged_at DESC, id DESC;
+            ORDER BY logged_at DESC, id DESC
+            LIMIT @Limit;
             """;
 
         await using var cn = await factory.OpenAsync(ct);
@@ -70,7 +71,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
             ) t
             WHERE rn = 1
             ORDER BY logged_at DESC, id DESC
-            OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY;
+            LIMIT @Limit OFFSET @Offset;
             """;
 
         await using var cn = await factory.OpenAsync(ct);
@@ -96,10 +97,10 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
     private static void AppendFilters(StringBuilder where, DynamicParameters p, MessageLogFilter filter)
     {
         // Bind dates as datetime2 to match the column precision.
-        if (filter.FromUtc is { } from) { where.Append(" AND logged_at >= @FromUtc"); p.Add("FromUtc", from, DbType.DateTime2); }
-        if (filter.ToUtc is { } to) { where.Append(" AND logged_at < @ToUtc"); p.Add("ToUtc", to, DbType.DateTime2); }
-        if (filter.Statuses is { Length: > 0 } s) { where.Append(" AND status IN @Statuses"); p.Add("Statuses", s); }
-        if (filter.Events is { Length: > 0 } ev) { where.Append(" AND event IN @Events"); p.Add("Events", ev); }
+        if (filter.FromUtc is { } from) { where.Append(" AND logged_at >= @FromUtc"); p.Add("FromUtc", from, DbType.DateTime); }
+        if (filter.ToUtc is { } to) { where.Append(" AND logged_at < @ToUtc"); p.Add("ToUtc", to, DbType.DateTime); }
+        if (filter.Statuses is { Length: > 0 } s) { where.Append(" AND status = ANY(@Statuses)"); p.Add("Statuses", s); }
+        if (filter.Events is { Length: > 0 } ev) { where.Append(" AND event = ANY(@Events)"); p.Add("Events", ev); }
         if (!string.IsNullOrWhiteSpace(filter.IngestSource)) { where.Append(" AND ingest_source = @IngestSource"); p.Add("IngestSource", filter.IngestSource); }
         if (!string.IsNullOrWhiteSpace(filter.FromDomain)) { where.Append(" AND from_domain = @FromDomain"); p.Add("FromDomain", filter.FromDomain); }
         if (!string.IsNullOrWhiteSpace(filter.ToDomain)) { where.Append(" AND to_domain = @ToDomain"); p.Add("ToDomain", filter.ToDomain); }
@@ -127,14 +128,15 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
     public async Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, int? apiKeyId, CancellationToken ct = default)
     {
         const string sql = """
-            SELECT TOP 1
+            SELECT
                 id AS Id, logged_at AS LoggedAt, event AS Event, status AS Status, spool_id AS SpoolId,
                 from_address AS FromAddress, to_domain AS ToDomain, subject AS Subject, relay_name AS RelayName,
                 provider AS Provider, duration_ms AS DurationMs, size_bytes AS SizeBytes,
                 ingest_source AS IngestSource, retry_attempt AS RetryAttempt, error AS Error
             FROM relay_log
             WHERE spool_id = @spoolId AND (@apiKeyId IS NULL OR api_key_id = @apiKeyId)
-            ORDER BY logged_at DESC, id DESC;
+            ORDER BY logged_at DESC, id DESC
+            LIMIT 1;
             """;
         await using var cn = await factory.OpenAsync(ct);
         return await cn.QuerySingleOrDefaultAsync<MessageLogRow>(
@@ -149,18 +151,19 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         var p = new DynamicParameters();
         p.Add("ApiKeyId", apiKeyId);
         p.Add("Limit", limit);
-        if (statuses is { Length: > 0 }) { where.Append(" AND status IN @Statuses"); p.Add("Statuses", statuses); }
+        if (statuses is { Length: > 0 }) { where.Append(" AND status = ANY(@Statuses)"); p.Add("Statuses", statuses); }
 
         // One row per message (latest event), matching the dashboard list - see GroupKey.
         var sql = $"""
-            SELECT TOP (@Limit) {RowColumns}
+            SELECT {RowColumns}
             FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY {GroupKey} ORDER BY logged_at DESC, id DESC) AS rn
                 FROM relay_log
                 {where}
             ) t
             WHERE rn = 1
-            ORDER BY logged_at DESC, id DESC;
+            ORDER BY logged_at DESC, id DESC
+            LIMIT @Limit;
             """;
         await using var cn = await factory.OpenAsync(ct);
         return (await cn.QueryAsync<MessageLogRow>(new CommandDefinition(sql, p, cancellationToken: ct))).ToList();
@@ -169,7 +172,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
     public async Task<MessageLogDetail?> GetByIdAsync(long id, CancellationToken ct = default)
     {
         const string sql = """
-            SELECT TOP 1
+            SELECT
                 id AS Id, logged_at AS LoggedAt, event AS Event, status AS Status, spool_id AS SpoolId,
                 retry_attempt AS RetryAttempt, from_address AS FromAddress, from_domain AS FromDomain,
                 to_addresses AS ToAddressesJson, to_domain AS ToDomain, subject AS Subject, size_bytes AS SizeBytes,
@@ -178,7 +181,8 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
                 duration_ms AS DurationMs, error AS Error, ingest_source AS IngestSource, source_ip AS SourceIp,
                 api_key_name AS ApiKeyName, tags AS TagsJson, x_mailer AS XMailer, attachment_count AS AttachmentCount
             FROM relay_log
-            WHERE id = @id;
+            WHERE id = @id
+            LIMIT 1;
             """;
         await using var cn = await factory.OpenAsync(ct);
         var raw = await cn.QuerySingleOrDefaultAsync<DetailRow>(

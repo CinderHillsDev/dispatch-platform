@@ -14,7 +14,7 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
     private const string SelectColumns =
         "id, name, provider, is_default AS IsDefault, enabled, max_concurrency AS MaxConcurrency, max_message_bytes AS MaxMessageBytes";
     private const string InsertedColumns =
-        "INSERTED.id, INSERTED.name, INSERTED.provider, INSERTED.is_default AS IsDefault, INSERTED.enabled, INSERTED.max_concurrency AS MaxConcurrency, INSERTED.max_message_bytes AS MaxMessageBytes";
+        "id, name, provider, is_default AS \"IsDefault\", enabled, max_concurrency AS \"MaxConcurrency\", max_message_bytes AS \"MaxMessageBytes\"";
 
     private readonly Lock _lock = new();
     private RelayRecord? _cachedDefault;
@@ -30,7 +30,7 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
 
         await using var cn = await factory.OpenAsync(ct);
         var row = await cn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(
-            $"SELECT TOP 1 {SelectColumns} FROM relays WHERE is_default = 1 AND enabled = 1", cancellationToken: ct));
+            $"SELECT {SelectColumns} FROM relays WHERE is_default AND enabled LIMIT 1", cancellationToken: ct));
 
         var record = row?.ToRecord();
         lock (_lock) { _cachedDefault = record; _cachedAtUtc = DateTime.UtcNow; }
@@ -60,9 +60,9 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
         // single-provider setup "just works" with no extra step. Subsequent relays are non-default.
         const string sql = $"""
             INSERT INTO relays (name, provider, max_concurrency, max_message_bytes, is_default)
-            OUTPUT {InsertedColumns}
             VALUES (@name, @provider, @maxConcurrency, @maxMessageBytes,
-                    CASE WHEN EXISTS (SELECT 1 FROM relays WHERE is_default = 1) THEN 0 ELSE 1 END);
+                    CASE WHEN EXISTS (SELECT 1 FROM relays WHERE is_default) THEN false ELSE true END)
+            RETURNING {InsertedColumns};
             """;
         await using var cn = await factory.OpenAsync(ct);
         var row = await cn.QuerySingleAsync<Row>(new CommandDefinition(
@@ -76,7 +76,7 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
     {
         const string sql = """
             UPDATE relays SET name = @name, provider = @provider, enabled = @enabled, max_concurrency = @maxConcurrency,
-                              max_message_bytes = @maxMessageBytes, updated_at = SYSUTCDATETIME()
+                              max_message_bytes = @maxMessageBytes, updated_at = now()
             WHERE id = @id;
             """;
         await using var cn = await factory.OpenAsync(ct);
@@ -95,8 +95,8 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
             // Preserve log history (relay_name is denormalised) but clear the FK; drop counters + credentials.
             await cn.ExecuteAsync(new CommandDefinition("UPDATE relay_log SET relay_id = NULL WHERE relay_id = @id", new { id }, tx, cancellationToken: ct));
             await cn.ExecuteAsync(new CommandDefinition("DELETE FROM relay_counters WHERE relay_id = @id", new { id }, tx, cancellationToken: ct));
-            await cn.ExecuteAsync(new CommandDefinition("DELETE FROM config WHERE [key] LIKE @prefix", new { prefix = $"relay:{id}:%" }, tx, cancellationToken: ct));
-            var n = await cn.ExecuteAsync(new CommandDefinition("DELETE FROM relays WHERE id = @id AND is_default = 0", new { id }, tx, cancellationToken: ct));
+            await cn.ExecuteAsync(new CommandDefinition("DELETE FROM config WHERE \"key\" LIKE @prefix", new { prefix = $"relay:{id}:%" }, tx, cancellationToken: ct));
+            var n = await cn.ExecuteAsync(new CommandDefinition("DELETE FROM relays WHERE id = @id AND NOT is_default", new { id }, tx, cancellationToken: ct));
             await tx.CommitAsync(ct);
             InvalidateCache();
             return n > 0;
@@ -118,8 +118,8 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
                 "SELECT 1 FROM relays WHERE id = @id", new { id }, tx, cancellationToken: ct));
             if (exists is null) { await tx.RollbackAsync(ct); return false; }
 
-            await cn.ExecuteAsync(new CommandDefinition("UPDATE relays SET is_default = 0 WHERE is_default = 1", transaction: tx, cancellationToken: ct));
-            await cn.ExecuteAsync(new CommandDefinition("UPDATE relays SET is_default = 1, enabled = 1 WHERE id = @id", new { id }, tx, cancellationToken: ct));
+            await cn.ExecuteAsync(new CommandDefinition("UPDATE relays SET is_default = false WHERE is_default", transaction: tx, cancellationToken: ct));
+            await cn.ExecuteAsync(new CommandDefinition("UPDATE relays SET is_default = true, enabled = true WHERE id = @id", new { id }, tx, cancellationToken: ct));
             await tx.CommitAsync(ct);
             InvalidateCache();
             return true;
