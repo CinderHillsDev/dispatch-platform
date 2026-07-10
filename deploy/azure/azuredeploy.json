@@ -169,7 +169,11 @@
       "apiVersion": "2023-09-01",
       "name": "[variables('nicName')]",
       "location": "[variables('loc')]",
-      "dependsOn": "[if(variables('createVnet'), createArray(resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName')), resourceId('Microsoft.Network/publicIPAddresses', variables('pipName')), resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))), createArray(resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName')), resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+      ],
       "properties": {
         "networkSecurityGroup": { "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" },
         "ipConfigurations": [
