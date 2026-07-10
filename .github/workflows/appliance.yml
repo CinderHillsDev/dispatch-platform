@@ -20,7 +20,7 @@ jobs:
   # single image, then uploads them as three separate downloads near the end. The name reflects that
   # it is not Hyper-V-only.
   build-appliances:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
 

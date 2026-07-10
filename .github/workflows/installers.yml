@@ -24,7 +24,7 @@ env:
 
 jobs:
   windows-installer:
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, x64]
     steps:
       - uses: actions/checkout@v5
 
@@ -246,7 +246,7 @@ jobs:
   # the Actions run page). This needs NO tag and creates NO release - releases are only for permanent
   # public download links. Grab "dispatch-linux-tarball" from the run to test install.sh --prebuilt.
   linux-tarball:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
 
@@ -347,7 +347,7 @@ jobs:
           [ "$tls_ok" = 1 ] || { echo "STARTTLS negotiation failed on all SMTP ports"; exit 1; }
 
   linux-installer:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
 

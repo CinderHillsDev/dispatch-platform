@@ -1,41 +1,39 @@
-# Dispatch SMTP Relay - full local stack (Dispatch + SQL), arm64-native on Apple Silicon.
+# Dispatch SMTP Relay - full local stack (Dispatch + PostgreSQL), arm64-native on Apple Silicon.
 #
 #   docker compose up --build        # build + run everything
 #   open https://localhost:8420      # dashboard (self-signed cert; log in with ADMIN password below)
 #
-# Azure SQL Edge is arm64-native so it runs without emulation on Apple Silicon. It speaks the SQL
-# Server wire protocol, so Dispatch talks to it unchanged. Edge is fine for local testing; production
-# should use SQL Server 2025 (the installers) or Azure SQL.
+# PostgreSQL backs the relay log, counters, and config. postgres:17 is multi-arch, so it runs natively on
+# Apple Silicon and x86 with no emulation.
 services:
-  sql:
-    image: mcr.microsoft.com/azure-sql-edge:latest
-    container_name: dispatch-sql
+  db:
+    image: postgres:17
+    container_name: dispatch-db
     environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "Dispatch_Dev_Pass123"
+      POSTGRES_PASSWORD: "Dispatch_Dev_Pass123"
+      POSTGRES_DB: "DispatchLog"
     ports:
-      - "1433:1433"
+      - "5432:5432"
     volumes:
-      - dispatch-sql-data:/var/opt/mssql
+      - dispatch-db-data:/var/lib/postgresql/data
     healthcheck:
-      # Edge has no sqlcmd; a TCP open on 1433 (bash /dev/tcp) is enough to gate Dispatch's start,
-      # and Dispatch retries via its restart policy if the server isn't accepting logins yet.
-      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/1433' || exit 1"]
+      # pg_isready ships in the postgres image; gate Dispatch's start until the server accepts connections.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d DispatchLog"]
       interval: 10s
       timeout: 5s
       retries: 18
-      start_period: 20s
+      start_period: 10s
     restart: unless-stopped
 
   dispatch:
     build: .
     container_name: dispatch
     depends_on:
-      sql:
+      db:
         condition: service_healthy
     environment:
       # The only two bootstrap settings (spec §12.1); everything else is managed in the dashboard.
-      ConnectionStrings__DispatchLog: "Server=sql,1433;Database=DispatchLog;User Id=sa;Password=Dispatch_Dev_Pass123;TrustServerCertificate=True;Encrypt=True"
+      ConnectionStrings__DispatchLog: "Host=db;Port=5432;Database=DispatchLog;Username=postgres;Password=Dispatch_Dev_Pass123"
       AdminPassword: "Dev_Admin_Passw0rd!"
     ports:
       - "8420:8420"   # dashboard
@@ -48,6 +46,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  dispatch-sql-data:
+  dispatch-db-data:
   dispatch-spool:
   dispatch-logs:

@@ -40,7 +40,7 @@ env:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, x64]
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
@@ -190,7 +190,7 @@ jobs:
           if-no-files-found: error
 
   linux:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
 
@@ -311,7 +311,7 @@ jobs:
   # Only runs for real tag releases (a dry-run workflow_dispatch skips the push).
   docker:
     if: ${{ github.ref_type == 'tag' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
 
@@ -352,7 +352,7 @@ jobs:
 
   publish:
     needs: [windows, linux]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8
