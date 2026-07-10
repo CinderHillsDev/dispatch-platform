@@ -28,6 +28,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ApiKeyCache>();
         services.AddSingleton<Auth.LoginThrottle>();
         services.AddSingleton<ApiMessageHandler>();
+        // Cloud detection (used to block outbound-port-25 SMTP relays on Azure, which blocks that port).
+        // TryAdd so tests can substitute a fake before this runs.
+        services.TryAddSingleton<Dispatch.Core.Platform.ICloudEnvironment, Dispatch.Core.Platform.AzureImdsEnvironment>();
         services.AddSingleton(Dispatch.Core.Updates.UpdateBundleVerifier.Default());
         services.AddSingleton<Updates.UpdateService>();
         services.AddScoped<ApiKeyMiddleware>();

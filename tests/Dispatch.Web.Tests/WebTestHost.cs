@@ -40,6 +40,8 @@ public sealed class WebTestHost : IAsyncLifetime
     public HttpClient ApiTls { get; private set; } = null!;
     public SpoolDirectory Spool { get; private set; } = null!;
     public Dispatch.Core.Maintenance.IntakeState Intake { get; private set; } = null!;
+    // Toggleable cloud detector: defaults to not-Azure (so most tests are unaffected and skip the real IMDS probe).
+    public FakeCloudEnvironment Cloud { get; } = new();
 
     public async Task InitializeAsync()
     {
@@ -111,6 +113,7 @@ public sealed class WebTestHost : IAsyncLifetime
         builder.Services.AddSingleton<IRelayResolver, RoutingEngine>();
         builder.Services.AddSingleton<Dispatch.Core.Audit.IAuditLog, FakeAuditLog>();
         builder.Services.AddSingleton<ILogRepository, NullLogRepository>();   // decorated by AddDispatchWeb
+        builder.Services.AddSingleton<Dispatch.Core.Platform.ICloudEnvironment>(Cloud);   // wins via AddDispatchWeb's TryAdd
         builder.Services.AddDispatchWeb();
 
         _app = builder.Build();
@@ -249,6 +252,12 @@ internal sealed class FakeRelaySettingsStore : Dispatch.Core.Relays.IRelaySettin
 internal sealed class FakeDatabaseHealth : IDatabaseHealth
 {
     public Task<bool> IsReachableAsync(CancellationToken ct = default) => Task.FromResult(true);
+}
+
+public sealed class FakeCloudEnvironment : Dispatch.Core.Platform.ICloudEnvironment
+{
+    public bool IsAzure { get; set; }
+    public ValueTask<bool> IsAzureAsync(CancellationToken ct = default) => new(IsAzure);
 }
 
 internal sealed class FakeLogMaintenance : ILogMaintenance
