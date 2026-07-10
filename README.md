@@ -71,6 +71,12 @@ Then open **https://localhost:8420**, set the admin password, add a relay, and p
 
 ➡️ Full guide: **[Quickstart](https://docs.dispatchrelay.app/start/quickstart/)** · **[How it works](https://docs.dispatchrelay.app/start/how-it-works/)**
 
+### One-click cloud deploy
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FCinderHillsDev%2Fdispatch-platform%2Fmain%2Fdeploy%2Fazure%2Fazuredeploy.json)
+
+Spins up an Ubuntu VM and installs Dispatch + PostgreSQL via cloud-init - no Marketplace account needed. See **[deploy/azure/](deploy/azure/)**.
+
 ## Documentation
 
 Everything lives on the docs site: **https://docs.dispatchrelay.app/**

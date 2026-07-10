@@ -1,0 +1,199 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Deploys Dispatch (open-source SMTP relay) on a single Ubuntu 24.04 VM. cloud-init runs the official install.sh, which installs PostgreSQL and Dispatch as a systemd service. Open source, Apache-2.0."
+  },
+  "parameters": {
+    "vmName": {
+      "type": "string",
+      "defaultValue": "dispatch",
+      "metadata": { "description": "Name for the virtual machine and related resources." }
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "azureuser",
+      "metadata": { "description": "Linux admin username (for SSH into the VM)." }
+    },
+    "authenticationType": {
+      "type": "string",
+      "defaultValue": "sshPublicKey",
+      "allowedValues": [ "sshPublicKey", "password" ],
+      "metadata": { "description": "SSH admin auth type. An SSH public key is recommended." }
+    },
+    "adminPasswordOrKey": {
+      "type": "securestring",
+      "metadata": { "description": "SSH public key (authenticationType=sshPublicKey) or admin password (authenticationType=password) for the Linux VM." }
+    },
+    "dispatchAdminPassword": {
+      "type": "securestring",
+      "metadata": { "description": "Dashboard admin password (used to log in at https://<host>:8420 after deployment)." }
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_B2s",
+      "metadata": { "description": "VM size. Standard_B2s (2 vCPU / 4 GB) is a fine starting point." }
+    },
+    "dispatchVersion": {
+      "type": "string",
+      "defaultValue": "0.5.0",
+      "metadata": { "description": "Dispatch release version to install (matches a GitHub release tag without the leading 'v')." }
+    },
+    "dnsLabelPrefix": {
+      "type": "string",
+      "defaultValue": "[toLower(concat(parameters('vmName'), '-', uniqueString(resourceGroup().id)))]",
+      "metadata": { "description": "Globally-unique DNS label for the public IP (becomes <label>.<region>.cloudapp.azure.com)." }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": { "description": "Azure region for all resources." }
+    }
+  },
+  "variables": {
+    "vnetName": "[concat(parameters('vmName'), '-vnet')]",
+    "subnetName": "default",
+    "nsgName": "[concat(parameters('vmName'), '-nsg')]",
+    "pipName": "[concat(parameters('vmName'), '-pip')]",
+    "nicName": "[concat(parameters('vmName'), '-nic')]",
+    "subnetRef": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('subnetName'))]",
+    "linuxConfiguration": {
+      "disablePasswordAuthentication": true,
+      "ssh": {
+        "publicKeys": [
+          {
+            "path": "[concat('/home/', parameters('adminUsername'), '/.ssh/authorized_keys')]",
+            "keyData": "[parameters('adminPasswordOrKey')]"
+          }
+        ]
+      }
+    },
+    "cloudInit": "[base64(concat('#!/bin/bash\nset -euo pipefail\nexport DEBIAN_FRONTEND=noninteractive\nVER=', parameters('dispatchVersion'), '\nADMIN_PW=$(printf %s ', base64(parameters('dispatchAdminPassword')), ' | base64 -d)\nDB_PW=$(openssl rand -hex 24)\napt-get update -y\napt-get install -y curl tar openssl\ncd /root\ncurl -fSL https://github.com/CinderHillsDev/dispatch-platform/releases/download/v${VER}/dispatch-${VER}-linux.tar.gz -o dispatch.tar.gz\ntar -xzf dispatch.tar.gz\ncd dispatch-${VER}-linux\n./install.sh --install-postgres --db-password ${DB_PW} --admin-password \"${ADMIN_PW}\" --generate-cert\n'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('nsgName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "SSH",
+            "properties": { "priority": 1000, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "*", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "22" }
+          },
+          {
+            "name": "Dashboard-HTTPS",
+            "properties": { "priority": 1010, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "*", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "8420" }
+          },
+          {
+            "name": "SMTP-Submission",
+            "properties": { "priority": 1020, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "*", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRanges": [ "25", "587" ] }
+          },
+          {
+            "name": "Ingestion-API",
+            "properties": { "priority": 1030, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "*", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "8025" }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('vnetName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [ "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" ],
+      "properties": {
+        "addressSpace": { "addressPrefixes": [ "10.20.0.0/16" ] },
+        "subnets": [
+          {
+            "name": "[variables('subnetName')]",
+            "properties": {
+              "addressPrefix": "10.20.0.0/24",
+              "networkSecurityGroup": { "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('pipName')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Standard" },
+      "properties": {
+        "publicIPAllocationMethod": "Static",
+        "dnsSettings": { "domainNameLabel": "[parameters('dnsLabelPrefix')]" }
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('nicName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": { "id": "[variables('subnetRef')]" },
+              "publicIPAddress": { "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))]" }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2023-09-01",
+      "name": "[parameters('vmName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [ "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]" ],
+      "properties": {
+        "hardwareProfile": { "vmSize": "[parameters('vmSize')]" },
+        "osProfile": {
+          "computerName": "[parameters('vmName')]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPasswordOrKey')]",
+          "linuxConfiguration": "[if(equals(parameters('authenticationType'), 'password'), json('null'), variables('linuxConfiguration'))]",
+          "customData": "[variables('cloudInit')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "ubuntu-24_04-lts",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "managedDisk": { "storageAccountType": "Premium_LRS" }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [ { "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]" } ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "dashboardUrl": {
+      "type": "string",
+      "value": "[concat('https://', reference(resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))).dnsSettings.fqdn, ':8420')]"
+    },
+    "sshCommand": {
+      "type": "string",
+      "value": "[concat('ssh ', parameters('adminUsername'), '@', reference(resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))).dnsSettings.fqdn)]"
+    },
+    "note": {
+      "type": "string",
+      "value": "Dispatch installs on first boot (a few minutes). The dashboard uses a self-signed certificate - expect a browser warning. Point apps at the FQDN on port 25/587 (SMTP) or 8025 (HTTP API)."
+    }
+  }
+}
