@@ -1,0 +1,127 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "vmName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "VM name",
+        "defaultValue": "dispatch",
+        "toolTip": "Names the virtual machine and its related resources.",
+        "constraints": { "required": true, "regex": "^[a-z][a-z0-9-]{1,30}[a-z0-9]$", "validationMessage": "3-32 chars: lowercase letters, digits and hyphens; must start with a letter." }
+      },
+      {
+        "name": "adminUsername",
+        "type": "Microsoft.Compute.UserNameTextBox",
+        "label": "Admin username",
+        "defaultValue": "azureuser",
+        "toolTip": "Linux admin username for SSH.",
+        "osPlatform": "Linux",
+        "constraints": { "required": true }
+      },
+      {
+        "name": "adminCredentials",
+        "type": "Microsoft.Compute.CredentialsCombo",
+        "label": {
+          "authenticationType": "Authentication type",
+          "password": "Password",
+          "confirmPassword": "Confirm password",
+          "sshPublicKey": "SSH public key"
+        },
+        "toolTip": {
+          "authenticationType": "SSH public key (recommended) or password for the Linux VM.",
+          "sshPublicKey": "Paste your SSH public key.",
+          "password": "Admin password for the Linux VM."
+        },
+        "osPlatform": "Linux",
+        "constraints": { "required": true }
+      },
+      {
+        "name": "dispatchAdminPassword",
+        "type": "Microsoft.Common.PasswordBox",
+        "label": { "password": "Dashboard admin password", "confirmPassword": "Confirm password" },
+        "toolTip": "Password to log in to the Dispatch dashboard at https://<host>:8420.",
+        "constraints": { "required": true },
+        "options": { "hideConfirmation": false }
+      }
+    ],
+    "steps": [
+      {
+        "name": "vmConfig",
+        "label": "VM",
+        "elements": [
+          {
+            "name": "vmSize",
+            "type": "Microsoft.Compute.SizeSelector",
+            "label": "VM size",
+            "toolTip": "Standard_B2s (2 vCPU / 4 GB) is a fine starting point.",
+            "recommendedSizes": [ "Standard_B2s", "Standard_B2ms", "Standard_D2s_v5" ],
+            "osPlatform": "Linux",
+            "imageReference": { "publisher": "Canonical", "offer": "ubuntu-24_04-lts", "sku": "server" },
+            "count": 1
+          },
+          {
+            "name": "dispatchVersion",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Dispatch version",
+            "defaultValue": "0.5.0",
+            "toolTip": "Release version to install (a GitHub release tag without the leading 'v').",
+            "constraints": { "required": true, "regex": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "validationMessage": "Use a semantic version like 0.5.0." }
+          }
+        ]
+      },
+      {
+        "name": "network",
+        "label": "Networking",
+        "elements": [
+          {
+            "name": "vnetCombo",
+            "type": "Microsoft.Network.VirtualNetworkCombo",
+            "label": { "virtualNetwork": "Virtual network", "subnets": "Subnets" },
+            "toolTip": {
+              "virtualNetwork": "Create a new VNet or select an existing one to deploy the VM into.",
+              "subnets": "Subnet the VM's network interface is placed in."
+            },
+            "defaultValue": { "name": "dispatch-vnet", "addressPrefixSize": "/16" },
+            "constraints": { "minAddressPrefixSize": "/24" },
+            "options": { "hideExisting": false },
+            "subnets": {
+              "subnet1": {
+                "label": "Dispatch subnet",
+                "defaultValue": { "name": "default", "addressPrefixSize": "/24" },
+                "constraints": { "minAddressPrefixSize": "/28", "minAddressCount": 1, "requireContiguousAddresses": false }
+              }
+            }
+          },
+          {
+            "name": "submissionSource",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Submission source",
+            "defaultValue": "VirtualNetwork",
+            "toolTip": "Who may reach the SMTP (25/587) and HTTP API (8025) submission ports. 'VirtualNetwork' (default) keeps them off the internet. Set a CIDR (e.g. 203.0.113.0/24), or 'Internet' only if you accept the risk.",
+            "constraints": { "required": true }
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "vmName": "[basics('vmName')]",
+      "adminUsername": "[basics('adminUsername')]",
+      "authenticationType": "[basics('adminCredentials').authenticationType]",
+      "adminPasswordOrKey": "[if(equals(basics('adminCredentials').authenticationType, 'password'), basics('adminCredentials').password, basics('adminCredentials').sshPublicKey)]",
+      "dispatchAdminPassword": "[basics('dispatchAdminPassword')]",
+      "vmSize": "[steps('vmConfig').vmSize]",
+      "dispatchVersion": "[steps('vmConfig').dispatchVersion]",
+      "submissionSource": "[steps('network').submissionSource]",
+      "vnetNewOrExisting": "[steps('network').vnetCombo.newOrExisting]",
+      "vnetName": "[steps('network').vnetCombo.name]",
+      "vnetResourceGroup": "[steps('network').vnetCombo.resourceGroup]",
+      "vnetAddressPrefix": "[first(steps('network').vnetCombo.addressPrefixes)]",
+      "subnetName": "[steps('network').vnetCombo.subnets.subnet1.name]",
+      "subnetAddressPrefix": "[steps('network').vnetCombo.subnets.subnet1.addressPrefix]",
+      "location": "[location()]"
+    }
+  }
+}

@@ -4,11 +4,13 @@ One-click deploy of Dispatch (the open-source SMTP relay) onto a single Ubuntu 2
 provisions the VM + networking and, on first boot, runs the official `install.sh --install-postgres`, which
 installs **PostgreSQL** and Dispatch as a systemd service with a self-signed dashboard certificate.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FCinderHillsDev%2Fdispatch-platform%2Fmain%2Fdeploy%2Fazure%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FCinderHillsDev%2Fdispatch-platform%2Fmain%2Fdeploy%2Fazure%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FCinderHillsDev%2Fdispatch-platform%2Fmain%2Fdeploy%2Fazure%2FcreateUiDefinition.json)
+
+The deploy form's **Networking** tab lets you **create a new VNet or pick an existing one** (and its subnet).
 
 ## What it creates
 
-A VM plus a VNet, public IP (with a DNS name), NIC, and an NSG opening:
+A VM plus a public IP (with a DNS name), NIC, and an NSG - and, unless you select an existing VNet, a new VNet. The NSG (attached to the NIC) opens:
 
 | Port | For | Open to (default) |
 |---|---|---|
@@ -33,6 +35,12 @@ if your apps send from outside the VNet and you accept the risk.
 | `vmSize` | `Standard_B2s` | 2 vCPU / 4 GB is a fine starting point. |
 | `dispatchVersion` | `0.5.0` | The [release](https://github.com/CinderHillsDev/dispatch-platform/releases) to install. |
 | `submissionSource` | `VirtualNetwork` | Who may reach the SMTP/API submission ports. VNet-only by default (not internet-exposed); set to a CIDR or `Internet` to widen. |
+| `vnetNewOrExisting` | `new` | `new` creates a VNet; `existing` deploys the VM into a VNet you already have. |
+| `vnetName` | `<vmName>-vnet` | New VNet's name, or the name of your existing VNet. |
+| `vnetResourceGroup` | *(deployment RG)* | Resource group of the existing VNet (only used when `vnetNewOrExisting=existing`). |
+| `vnetAddressPrefix` | `10.20.0.0/16` | Address space for a new VNet (ignored for existing). |
+| `subnetName` | `default` | Subnet for the VM's NIC. Created for a new VNet; must already exist for an existing one. |
+| `subnetAddressPrefix` | `10.20.0.0/24` | Subnet range for a new VNet (ignored for existing). |
 
 ## After deployment
 
@@ -61,6 +69,16 @@ SSH in with the **`sshCommand`** output to see logs: `journalctl -u dispatch -f`
 
 ## Customizing
 
-The template lives at [`azuredeploy.json`](azuredeploy.json). To deploy from a fork or a pinned commit,
-change the `Deploy to Azure` link's encoded URL to point at your raw `azuredeploy.json`, and adjust the
-release-download URL in the template's `cloudInit` variable if your fork publishes elsewhere.
+The template lives at [`azuredeploy.json`](azuredeploy.json) and the portal form at
+[`createUiDefinition.json`](createUiDefinition.json). To deploy from a fork or a pinned commit, change **both**
+encoded URLs in the `Deploy to Azure` link (the `uri/...` template and the `createUIDefinitionUri/...` form) to
+point at your raw files, and adjust the release-download URL in the template's `cloudInit` variable if your
+fork publishes elsewhere.
+
+You can also deploy from the CLI, e.g. into an existing VNet:
+
+```bash
+az deployment group create -g <rg> --template-file azuredeploy.json \
+  --parameters vnetNewOrExisting=existing vnetName=<my-vnet> vnetResourceGroup=<vnet-rg> subnetName=<my-subnet> \
+               adminPasswordOrKey="$(cat ~/.ssh/id_rsa.pub)" dispatchAdminPassword=<pw>
+```

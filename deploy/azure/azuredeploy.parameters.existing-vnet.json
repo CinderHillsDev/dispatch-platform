@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vmName": { "value": "dispatch" },
+    "adminUsername": { "value": "azureuser" },
+    "authenticationType": { "value": "sshPublicKey" },
+    "adminPasswordOrKey": { "value": "ssh-ed25519 AAAA...replace-with-your-public-key" },
+    "dispatchAdminPassword": { "value": "REPLACE-WITH-A-STRONG-PASSWORD" },
+    "vnetNewOrExisting": { "value": "existing" },
+    "vnetName": { "value": "my-existing-vnet" },
+    "vnetResourceGroup": { "value": "my-network-rg" },
+    "subnetName": { "value": "my-existing-subnet" }
+  }
+}

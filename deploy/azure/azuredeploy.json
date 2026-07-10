@@ -44,6 +44,37 @@
       "defaultValue": "VirtualNetwork",
       "metadata": { "description": "Who may reach the mail-submission ports (SMTP 25/587 and the HTTP API 8025). Defaults to 'VirtualNetwork' - only resources in this VM's VNet, so it is NOT exposed to the internet. Set to a specific CIDR (e.g. 203.0.113.0/24) if apps send from elsewhere; use 'Internet' only if you fully understand the risk (an internet-exposed mail port is a prime abuse target)." }
     },
+    "vnetNewOrExisting": {
+      "type": "string",
+      "defaultValue": "new",
+      "allowedValues": [ "new", "existing" ],
+      "metadata": { "description": "Create a new VNet or deploy the VM into an existing one. Choose 'existing' to reuse a VNet you already have (set vnetName, vnetResourceGroup and subnetName to match)." }
+    },
+    "vnetName": {
+      "type": "string",
+      "defaultValue": "[concat(parameters('vmName'), '-vnet')]",
+      "metadata": { "description": "VNet name. For vnetNewOrExisting='new' the VNet is created with this name; for 'existing' it must match the name of your existing VNet." }
+    },
+    "vnetResourceGroup": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": { "description": "Resource group of an existing VNet (only used when vnetNewOrExisting='existing'). Defaults to this deployment's resource group." }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.20.0.0/16",
+      "metadata": { "description": "Address space for a new VNet (ignored when vnetNewOrExisting='existing')." }
+    },
+    "subnetName": {
+      "type": "string",
+      "defaultValue": "default",
+      "metadata": { "description": "Subnet the VM's NIC is placed in. For a new VNet it is created; for an existing VNet it must already exist." }
+    },
+    "subnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.20.0.0/24",
+      "metadata": { "description": "Address range for the subnet in a new VNet (ignored when vnetNewOrExisting='existing')." }
+    },
     "dnsLabelPrefix": {
       "type": "string",
       "defaultValue": "[toLower(concat(parameters('vmName'), '-', uniqueString(resourceGroup().id)))]",
@@ -56,12 +87,11 @@
     }
   },
   "variables": {
-    "vnetName": "[concat(parameters('vmName'), '-vnet')]",
-    "subnetName": "default",
     "nsgName": "[concat(parameters('vmName'), '-nsg')]",
     "pipName": "[concat(parameters('vmName'), '-pip')]",
     "nicName": "[concat(parameters('vmName'), '-nic')]",
-    "subnetRef": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('subnetName'))]",
+    "createVnet": "[equals(parameters('vnetNewOrExisting'), 'new')]",
+    "subnetRef": "[resourceId(parameters('vnetResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnetName'))]",
     "linuxConfiguration": {
       "disablePasswordAuthentication": true,
       "ssh": {
@@ -103,19 +133,18 @@
       }
     },
     {
+      "condition": "[variables('createVnet')]",
       "type": "Microsoft.Network/virtualNetworks",
       "apiVersion": "2023-09-01",
-      "name": "[variables('vnetName')]",
+      "name": "[parameters('vnetName')]",
       "location": "[parameters('location')]",
-      "dependsOn": [ "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" ],
       "properties": {
-        "addressSpace": { "addressPrefixes": [ "10.20.0.0/16" ] },
+        "addressSpace": { "addressPrefixes": [ "[parameters('vnetAddressPrefix')]" ] },
         "subnets": [
           {
-            "name": "[variables('subnetName')]",
+            "name": "[parameters('subnetName')]",
             "properties": {
-              "addressPrefix": "10.20.0.0/24",
-              "networkSecurityGroup": { "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" }
+              "addressPrefix": "[parameters('subnetAddressPrefix')]"
             }
           }
         ]
@@ -137,11 +166,9 @@
       "apiVersion": "2023-09-01",
       "name": "[variables('nicName')]",
       "location": "[parameters('location')]",
-      "dependsOn": [
-        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
-        "[resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))]"
-      ],
+      "dependsOn": "[if(variables('createVnet'), createArray(resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName')), resourceId('Microsoft.Network/publicIPAddresses', variables('pipName')), resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))), createArray(resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName')), resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))))]",
       "properties": {
+        "networkSecurityGroup": { "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" },
         "ipConfigurations": [
           {
             "name": "ipconfig1",
