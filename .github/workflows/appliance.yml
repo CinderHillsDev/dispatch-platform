@@ -1,0 +1,180 @@
+name: Appliance
+
+# Builds the downloadable virtual appliances for ALL hypervisors in one job: customizes the Ubuntu 24.04
+# cloud image with libguestfs (no Hyper-V host / nested virt needed) into a Gen2/UEFI image with PostgreSQL
+# + Dispatch baked in, emits it as VHDX (Hyper-V), OVA (VMware), and qcow2 (KVM/Proxmox), then boots
+# it under QEMU/UEFI to prove the service comes up on first boot. Artifacts: dispatch-appliance-hyperv,
+# dispatch-appliance-vmware, dispatch-appliance-kvm.
+on:
+  # Dispatch-only: the Build workflow kicks this off automatically AFTER its tests + lint pass (see the
+  # trigger-appliance job in build.yml), so the appliance is never built from un-validated code and never
+  # races Build. Also runnable by hand from the Actions tab.
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  # ONE job builds all three appliance formats (Hyper-V VHDX, VMware OVA, KVM/Proxmox qcow2) from a
+  # single image, then uploads them as three separate downloads near the end. The name reflects that
+  # it is not Hyper-V-only.
+  build-appliances:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        run: |
+          ( cd src/Dispatch.UI && npm ci && npm run build )
+          rm -rf src/Dispatch.Web/wwwroot && mkdir -p src/Dispatch.Web/wwwroot
+          cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
+          test -f src/Dispatch.Web/wwwroot/index.html || { echo "embedded UI missing index.html"; exit 1; }
+
+      - name: Publish self-contained (linux-x64)
+        run: dotnet publish src/Dispatch.Service -c Release -r linux-x64 --self-contained true -o publish/linux
+
+      - name: Install image-build tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libguestfs-tools qemu-utils
+          # libguestfs's appliance must be able to read the host kernel image.
+          sudo chmod 0644 /boot/vmlinuz-* || true
+
+      - name: Build the appliance VHDX
+        env:
+          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('ci-{0}', github.run_number) }}
+        run: |
+          sudo env PREBUILT_DIR="$PWD/publish/linux" VERSION="$VERSION" \
+            OUT="$PWD/dispatch-appliance.vhdx" OVA_OUT="$PWD/dispatch-appliance.ova" \
+            QCOW2_OUT="$PWD/dispatch-appliance.qcow2" \
+            LIBGUESTFS_BACKEND=direct ./appliance/build-appliance.sh
+          sudo chown "$USER" dispatch-appliance.vhdx dispatch-appliance.ova dispatch-appliance.qcow2
+
+      - name: Validate the OVA (structure, OVF XML, manifest checksums)
+        run: |
+          echo "=== tar contents (must be ovf, then mf, then vmdk) ==="
+          tar -tf dispatch-appliance.ova
+          first=$(tar -tf dispatch-appliance.ova | head -1)
+          case "$first" in *.ovf) ;; *) echo "ERROR: first OVA entry must be the .ovf, got $first"; exit 1;; esac
+          mkdir -p ova-check && tar -xf dispatch-appliance.ova -C ova-check
+          python3 -c "import xml.dom.minidom,glob,sys; xml.dom.minidom.parse(glob.glob('ova-check/*.ovf')[0]); print('OVF XML parses')"
+          ( cd ova-check && while read -r line; do
+              f=$(echo "$line" | sed -n 's/^SHA256(\(.*\))=.*/\1/p'); h=$(echo "$line" | sed -n 's/.*= *//p')
+              [ -n "$f" ] || continue
+              act=$(sha256sum "$f" | cut -d' ' -f1)
+              [ "$act" = "$h" ] && echo "ok: $f" || { echo "ERROR: checksum mismatch for $f"; exit 1; }
+            done < ./*.mf )
+          echo "OVA structure + checksums valid"
+
+      # One self-contained download per hypervisor: each artifact downloads as a single zip (GitHub wraps
+      # it) holding that format's image + its README + helper - so the user unzips ONCE, no nested zip.
+      - name: Stage per-type downloads + checksums
+        run: |
+          mkdir -p out/hyperv out/vmware out/kvm
+          # Hyper-V: raw VHDX (GitHub compresses the artifact) + import helper + instructions.
+          mv dispatch-appliance.vhdx out/hyperv/
+          cp appliance/Import-DispatchAppliance.ps1 out/hyperv/
+          cp appliance/hyperv-README.txt out/hyperv/README.txt
+          ( cd out/hyperv && sha256sum dispatch-appliance.vhdx > dispatch-appliance.vhdx.sha256 )
+          # VMware: the OVA + instructions.
+          mv dispatch-appliance.ova out/vmware/
+          cp appliance/vmware-README.txt out/vmware/README.txt
+          ( cd out/vmware && sha256sum dispatch-appliance.ova > dispatch-appliance.ova.sha256 )
+          # KVM / Proxmox: qcow2 + import helpers + instructions.
+          mv dispatch-appliance.qcow2 out/kvm/
+          cp appliance/import-libvirt.sh appliance/import-proxmox.sh out/kvm/
+          cp appliance/kvm-README.txt out/kvm/README.txt
+          ( cd out/kvm && sha256sum dispatch-appliance.qcow2 > dispatch-appliance.qcow2.sha256 )
+
+      # Upload before the boot smoke so the artifacts are available even if the smoke fails.
+      - name: Upload Hyper-V appliance
+        uses: actions/upload-artifact@v6
+        with: { name: dispatch-appliance-hyperv, path: out/hyperv/*, if-no-files-found: error }
+      - name: Upload VMware appliance
+        uses: actions/upload-artifact@v6
+        with: { name: dispatch-appliance-vmware, path: out/vmware/*, if-no-files-found: error }
+      - name: Upload KVM/Proxmox appliance
+        uses: actions/upload-artifact@v6
+        with: { name: dispatch-appliance-kvm, path: out/kvm/*, if-no-files-found: error }
+
+      - name: Boot smoke (UEFI) - service comes up on first boot
+        run: |
+          sudo apt-get install -y qemu-system-x86 ovmf imagemagick
+          code=$(ls /usr/share/OVMF/OVMF_CODE*.fd | head -1)
+          varsrc=$(ls /usr/share/OVMF/OVMF_VARS*.fd | head -1)
+          cp "$varsrc" vars.fd
+          echo "OVMF: $code / $varsrc"
+          # -cpu host requires KVM; under the TCG fallback use a TCG-compatible CPU model.
+          if [ -e /dev/kvm ]; then echo "KVM available"; ACCEL="-enable-kvm -cpu host"; else echo "KVM NOT available - TCG (slow)"; ACCEL="-accel tcg -cpu max"; fi
+          # Boot the image as qcow2 (rules out QEMU's vhdx driver - Hyper-V reads the vhdx itself) and attach
+          # it as an explicit virtio-blk device with bootindex=0, so OVMF (empty NVRAM) actually boots it.
+          # -vga std + a QMP socket let us screenshot the VGA console (firmware/GRUB output goes there, not serial).
+          qemu-img convert -O qcow2 out/hyperv/dispatch-appliance.vhdx boot.qcow2
+          # shellcheck disable=SC2086
+          sudo qemu-system-x86_64 -machine q35 $ACCEL -m 4096 -smp 2 -no-reboot \
+            -drive if=pflash,format=raw,readonly=on,file="$code" \
+            -drive if=pflash,format=raw,file=vars.fd \
+            -drive file=boot.qcow2,format=qcow2,if=none,id=hd0 \
+            -device virtio-blk-pci,drive=hd0,bootindex=0 \
+            -netdev user,id=n0,hostfwd=tcp::8420-:8420,hostfwd=tcp::2526-:25 -device virtio-net-pci,netdev=n0 \
+            -vga std -display none -serial file:console.log -qmp unix:qmp.sock,server,nowait -daemonize 2>qemu.err \
+            || { echo "=== qemu failed to launch ==="; cat qemu.err; exit 1; }
+          screenshot() {  # capture the VGA framebuffer via QMP -> $1 (png)
+            sudo python3 appliance/qmp-screendump.py qmp.sock /tmp/screen.ppm || true
+            sudo convert /tmp/screen.ppm "$1" 2>/dev/null && echo "captured $1" || echo "no screenshot"
+          }
+          ok=0
+          for i in $(seq 1 90); do          # up to ~8 min (KVM boot is fast; this is mostly PostgreSQL first-run)
+            if curl -fsSk -m 3 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            [ "$i" = 18 ] && screenshot boot-90s.png   # ~90s in: capture whatever's on screen
+            sleep 5
+          done
+          if [ "$ok" != 1 ]; then
+            screenshot boot-final.png
+            echo "=== qemu.err ==="; cat qemu.err 2>/dev/null || true
+            echo "=== serial console ==="; cat console.log 2>/dev/null || echo "(serial console empty)"
+            echo "=== qemu still running? ==="; pgrep -f qemu-system >/dev/null && echo "(qemu running)" || echo "(qemu not running)"
+            # qemu (sudo) owns these root-only; make them readable so upload-artifact can collect them.
+            sudo chmod -f a+r boot-90s.png boot-final.png console.log qemu.err 2>/dev/null || true
+            echo "appliance did not serve /health within the timeout"; exit 1
+          fi
+          echo "appliance /health OK"
+
+          # Prove the appliance bound the privileged SMTP port (25, via CAP_NET_BIND_SERVICE on the systemd
+          # unit) and that STARTTLS negotiates with the self-signed fallback cert. Guest 25 is forwarded to
+          # host 2526; openssl completes a real TLS handshake (BEGIN CERTIFICATE) on success.
+          tls_ok=0
+          for _ in $(seq 1 12); do
+            if echo QUIT | openssl s_client -starttls smtp -connect localhost:2526 -crlf 2>/dev/null | grep -q 'BEGIN CERTIFICATE'; then
+              tls_ok=1; break
+            fi
+            sleep 5
+          done
+          if [ "$tls_ok" != 1 ]; then
+            echo "=== serial console ==="; sudo chmod -f a+r console.log 2>/dev/null || true; cat console.log 2>/dev/null || true
+            echo "appliance SMTP STARTTLS check failed on port 25 (forwarded to 2526)"; exit 1
+          fi
+          echo "appliance SMTP STARTTLS on port 25 OK"
+
+      - name: Upload boot diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: appliance-boot-diagnostics
+          path: |
+            boot-90s.png
+            boot-final.png
+            console.log
+            qemu.err
+          if-no-files-found: warn

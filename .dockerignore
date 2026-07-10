@@ -1,0 +1,17 @@
+# Keep the build context small + avoid copying host build output into the image.
+**/bin
+**/obj
+**/node_modules
+**/dist
+src/Dispatch.Web/wwwroot
+.git
+.github
+installer
+docs
+publish
+staging
+TestResults
+**/*.user
+.vs
+.vscode
+*.md

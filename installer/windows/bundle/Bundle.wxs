@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dispatch SMTP Relay - Windows bundle (WiX v4 Burn).
+
+  Chains: (1) install PostgreSQL (Windows service DispatchPostgres + DispatchLog database) via the
+  InstallPostgres.exe bootstrap, then (2) the Dispatch MSI, which writes appsettings.json pointing at
+  that local instance and registers/starts the service. The dashboard admin password is set on first run.
+
+  Build (Windows, WiX v6 toolset):
+    1) dotnet publish ..\..\..\src\Dispatch.Service -c Release -o ..\publish
+    2) wix build ..\Dispatch.wxs -d PublishDir=..\publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
+    3) dotnet build ..\postgres\PostgresLauncher.csproj -c Release   (-> InstallPostgres.exe)
+    4) wix build Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext ^
+         -bindpath "PgLauncher=..\postgres\bin\Release\net472" -bindpath "Msi=." ^
+         -o DispatchSetup.exe
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!-- Overridden from the git tag by release.yml (`wix build -d Version=1.2.3`); defaults for local builds. -->
+  <?ifndef Version?><?define Version="1.0.0"?><?endif?>
+
+  <Bundle Name="Dispatch SMTP Relay"
+          Version="$(var.Version)"
+          Manufacturer="CinderHills"
+          UpgradeCode="3f2a7c10-9b4e-4d2a-8e51-7c0d1a2b3c4d"
+          Compressed="yes">
+
+    <BootstrapperApplication>
+      <!-- hyperlinkLicense theme with an empty LicenseUrl shows the install UI with no license link.
+           LaunchTarget makes the success page show a checked "Launch" button that opens the dashboard in
+           the default browser (via `start`), so after clicking Finish the user lands on the dashboard instead
+           of being left wondering where the app is. We shell through cmd.exe /c start because LaunchTarget runs
+           an executable, not a URL; LaunchHidden keeps the transient cmd window from flashing. -->
+      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" LicenseUrl="" SuppressOptionsUI="yes"
+                                              LaunchTarget="[SystemFolder]cmd.exe"
+                                              LaunchArguments="/c start &quot;&quot; &quot;https://localhost:8420/&quot;"
+                                              LaunchHidden="yes" />
+    </BootstrapperApplication>
+
+    <!-- Skip the PostgreSQL step if the DispatchPostgres service already exists. -->
+    <util:RegistrySearch Id="PostgresInstalled"
+                         Root="HKLM"
+                         Key="SYSTEM\CurrentControlSet\Services\DispatchPostgres"
+                         Value="ImagePath"
+                         Variable="PostgresInstalled"
+                         Result="exists" />
+
+    <Chain>
+      <!-- 1) PostgreSQL (before the MSI so msiserver isn't held). Permanent: uninstalling Dispatch leaves
+              PostgreSQL in place. -->
+      <ExePackage Id="InstallPostgres"
+                  DisplayName="Installing PostgreSQL - this can take a few minutes. Please wait..."
+                  SourceFile="!(bindpath.PgLauncher)\InstallPostgres.exe"
+                  InstallArguments="DispatchLog"
+                  PerMachine="yes"
+                  Vital="yes"
+                  Permanent="yes"
+                  DetectCondition="PostgresInstalled">
+        <Payload SourceFile="!(bindpath.PgLauncher)\InstallPostgres.ps1" />
+      </ExePackage>
+
+      <!-- 2) Dispatch MSI. SQLCONN defaults to the local DispatchPostgres instance inside the MSI.
+              ARPSYSTEMCOMPONENT=1 hides the MSI so only the bundle shows in Add/Remove Programs. -->
+      <MsiPackage Id="DispatchMsi" SourceFile="!(bindpath.Msi)\Dispatch.msi" Vital="yes">
+        <MsiProperty Name="ARPSYSTEMCOMPONENT" Value="1" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+</Wix>

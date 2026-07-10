@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dispatch SMTP Relay - WiX v5 MSI source.
+
+  Build on Windows after publishing the service:
+    dotnet publish ..\..\src\Dispatch.Service -c Release -o publish
+    wix build Dispatch.wxs -d PublishDir=publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
+
+  Connection string: the MSI writes %ProgramData%\Dispatch\appsettings.json (spec §12.1 - connection
+  string + Web UI TLS cert only) via the WriteAppSettings custom action, defaulting SQLCONN to the local
+  PostgreSQL instance installed by the bundle (bundle\Bundle.wxs chains postgres\ first). The dashboard
+  admin password is set on first run via the web UI, so it is not collected here. Override for an existing
+  PostgreSQL server:  msiexec /i Dispatch.msi SQLCONN="Host=...;Port=5432;Database=DispatchLog;Username=...;Password=..."
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+
+  <!-- Version defaults to 1.0.0 for local builds; the release workflow overrides it from the git tag
+       with `wix build -d Version=1.2.3` (see .github/workflows/release.yml). -->
+  <?ifndef Version?><?define Version="1.0.0"?><?endif?>
+
+  <Package Name="Dispatch SMTP Relay"
+           Manufacturer="CinderHills"
+           Version="$(var.Version)"
+           UpgradeCode="6d6a0e2c-7d1e-4f4a-9d3a-2b9b1d5e0a10"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Dispatch is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Connection string written to appsettings.json. Defaults to the local PostgreSQL instance the bundle
+         installs (the dispatch role is trusted over loopback, so no password is stored). Override via
+         msiexec for an existing PostgreSQL server. -->
+    <Property Id="SQLCONN" Secure="yes"
+              Value="Host=127.0.0.1;Port=5432;Database=DispatchLog;Username=dispatch" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Dispatch" />
+    </StandardDirectory>
+
+    <!-- %ProgramData%\Dispatch\logs - the service's data dir (appsettings.json) and log location. Created
+         up front so the log directory always exists and is easy to find, even before the first start. -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DataFolder" Name="Dispatch">
+        <Directory Id="LogsFolder" Name="logs" />
+      </Directory>
+    </StandardDirectory>
+
+    <Component Id="LogsFolderComponent" Directory="LogsFolder" Guid="b1f2c3d4-0002-4a2b-9c3d-aa11bb22cc33" Permanent="yes">
+      <CreateFolder />   <!-- Permanent: keep logs (and the data dir) on uninstall for post-mortem. -->
+    </Component>
+
+    <!-- Harvest the published output (everything except the service exe, which is its own component). -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**">
+        <Exclude Files="$(var.PublishDir)\Dispatch.Service.exe" />
+      </Files>
+    </ComponentGroup>
+
+    <Component Id="ServiceComponent" Directory="INSTALLFOLDER" Guid="b1f2c3d4-0001-4a2b-9c3d-aa11bb22cc33">
+      <File Id="DispatchServiceExe" Source="$(var.PublishDir)\Dispatch.Service.exe" KeyPath="yes" />
+
+      <!-- LocalSystem: the local PostgreSQL instance trusts the 'dispatch' role over loopback (pg_hba.conf),
+           so the service connects with no stored password. Override SQLCONN with a Username/Password for an
+           existing PostgreSQL server. -->
+      <ServiceInstall Id="DispatchService"
+                      Name="Dispatch"
+                      DisplayName="Dispatch SMTP Relay"
+                      Description="Forwards mail from SMTP/HTTP to a configured upstream provider."
+                      Type="ownProcess"
+                      Start="auto"
+                      ErrorControl="normal"
+                      Account="LocalSystem"
+                      Arguments=" --contentRoot &quot;[CommonAppDataFolder]Dispatch&quot;" />
+      <ServiceControl Id="DispatchServiceControl"
+                      Name="Dispatch"
+                      Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+
+      <!-- Service environment: logs live under the ProgramData data dir (the Windows-conventional location;
+           the service CWD is system32). The at-rest key (.dispatch-key) defaults to the content root, which is
+           this same data dir (set via the contentRoot switch). The whole data dir is ACL-locked by
+           WriteAppSettings.js so the connection string, spool, key, and logs aren't readable by other users. -->
+      <RegistryValue Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\Dispatch" Name="Environment"
+                     Type="multiString" Value="DISPATCH_LOG_DIR=[CommonAppDataFolder]Dispatch\logs[~]DOTNET_ENVIRONMENT=Production" />
+
+      <fw:FirewallException Id="FwSmtp25" Name="Dispatch SMTP 25" Port="25" Protocol="tcp" Scope="any" />
+      <fw:FirewallException Id="FwSmtp587" Name="Dispatch SMTP 587" Port="587" Protocol="tcp" Scope="any" />
+      <fw:FirewallException Id="FwHttp" Name="Dispatch Dashboard" Port="8420" Protocol="tcp" Scope="any" />
+      <fw:FirewallException Id="FwApi" Name="Dispatch API" Port="8025" Protocol="tcp" Scope="any" />
+    </Component>
+
+    <!-- Write appsettings.json before the service first starts (spec §12.1). Deferred + impersonate=no so
+         it runs with elevation; the immediate Set CA passes the connection string + data dir as data. -->
+    <CustomAction Id="SetWriteAppSettingsData" Property="WriteAppSettingsCA"
+                  Value="[SQLCONN]|[CommonAppDataFolder]Dispatch" />
+    <CustomAction Id="WriteAppSettingsCA" Script="jscript" ScriptSourceFile="WriteAppSettings.js"
+                  Execute="deferred" Impersonate="no" Return="check" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetWriteAppSettingsData" Before="WriteAppSettingsCA" Condition="NOT REMOVE" />
+      <Custom Action="WriteAppSettingsCA" Before="StartServices" Condition="NOT REMOVE" />
+    </InstallExecuteSequence>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="ServiceComponent" />
+      <ComponentRef Id="LogsFolderComponent" />
+    </Feature>
+  </Package>
+</Wix>

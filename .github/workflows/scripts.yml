@@ -1,0 +1,61 @@
+name: Scripts
+
+# Static + behavioral checks for the PowerShell helpers (the Hyper-V import + Windows installer/smoke
+# scripts) which can't run on a normal install: parse + PSScriptAnalyzer on Linux pwsh, and Pester tests
+# (with the Hyper-V cmdlets mocked) on Windows. Not a substitute for a live Hyper-V import, but it turns
+# "carefully reviewed" into "parsed, linted, and logic-tested on every push".
+
+on:
+  push:
+    paths:
+      - "appliance/**.ps1"
+      - "installer/windows/**.ps1"
+      - ".github/workflows/scripts.yml"
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Parse + analyze PowerShell
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $dirs = 'appliance', 'installer/windows'
+          $fail = $false
+
+          # Hard syntax errors.
+          Get-ChildItem -Path $dirs -Recurse -Filter *.ps1 | ForEach-Object {
+            $errs = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errs) | Out-Null
+            if ($errs) {
+              $fail = $true
+              Write-Host "::error::Parse errors in $($_.FullName)"
+              $errs | ForEach-Object { Write-Host "  line $($_.Extent.StartLineNumber): $($_.Message)" }
+            }
+          }
+
+          # Static analysis - fail on Error severity only (Write-Host is intentional CLI output).
+          $results = foreach ($d in $dirs) { Invoke-ScriptAnalyzer -Path $d -Recurse -Severity Error -ExcludeRule PSAvoidUsingWriteHost }
+          if ($results) { $fail = $true; ($results | Format-Table -AutoSize | Out-String) | Write-Host }
+
+          if ($fail) { throw 'PowerShell parse/lint failed.' }
+          Write-Host 'OK: PowerShell parses and lints clean.'
+
+  pester:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Pester (Hyper-V import logic, cmdlets mocked)
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.5.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          Import-Module Pester
+          $cfg = New-PesterConfiguration
+          $cfg.Run.Path = 'appliance'
+          $cfg.Run.Exit = $true
+          $cfg.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $cfg

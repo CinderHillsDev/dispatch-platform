@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispatch SMTP Relay - apply a staged upgrade
+# Started (as root) by dispatch-update.path when the service stages a verified upgrade. Oneshot: it applies
+# the staged payload, restarts dispatch.service, and rolls back if the new version fails to come up.
+
+[Service]
+Type=oneshot
+ExecStart=/opt/dispatch/dispatch-update.sh
+# Intentionally unsandboxed - it must write /opt/dispatch and call systemctl. It runs only the shipped,
+# signature-verified updater script, and only when a verified bundle has been staged.

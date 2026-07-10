@@ -1,0 +1,446 @@
+using System.Diagnostics;
+using System.Formats.Tar;
+using System.IO.Compression;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Dispatch.Core.Audit;
+using Dispatch.Core.Configuration;
+using Dispatch.Core.Updates;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
+
+namespace Dispatch.Web.Updates;
+
+/// <summary>
+/// The cross-platform half of web-UI self-update. Accepts ONE uploaded upgrade package (a .tar.gz carrying
+/// manifest.json + manifest.json.sig + a self-contained payload per platform), authenticates it (signature
+/// over the manifest via the embedded release key), selects the payload matching THIS host's arch, verifies
+/// that payload's SHA-256, stages it under the content root, and hands an <see cref="ApplyRequest"/> to the
+/// platform updater (Linux systemd/bash or the Windows helper) which does the swap + restart + rollback and
+/// writes back <see cref="UpdateStatus"/>. The same package works on every install; only the apply differs.
+/// </summary>
+public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository config, IAuditLog audit, UpdateBundleVerifier verifier, ILogger<UpdateService>? log = null)
+{
+    private static readonly JsonSerializerOptions Json =
+        new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new JsonStringEnumConverter() } };
+
+    // Upper bound for an uploaded upgrade package. Generous (a payload is a self-contained runtime for one
+    // arch, ~150-200 MB) but not unbounded, so a bad or hostile upload can't fill the disk unchecked.
+    private const long MaxUploadBytes = 2L * 1024 * 1024 * 1024; // 2 GiB
+
+    private string UpdatesDir => Path.Combine(env.ContentRootPath, "updates");
+    private string NoticeFile => Path.Combine(UpdatesDir, "upgrade-notice.json");
+    private string VersionMarkerFile => Path.Combine(UpdatesDir, "version.marker");
+
+    public static string CurrentVersion => typeof(UpdateService).Assembly.GetName().Version?.ToString() ?? "dev";
+
+    /// <summary>A completed upgrade the dashboard congratulates the admin about on their next login.</summary>
+    public sealed record UpgradeNotice(
+        [property: JsonPropertyName("from")] string From,
+        [property: JsonPropertyName("to")] string To,
+        [property: JsonPropertyName("atUtc")] DateTime AtUtc);
+
+    /// <summary>Run once at startup: if the last-run version differs from the current one, record an upgrade
+    /// notice (from -> to) that the dashboard shows after the next login. First run just records the marker,
+    /// so a fresh install never shows a spurious "you upgraded" banner.</summary>
+    public void DetectStartupUpgrade()
+    {
+        try
+        {
+            Directory.CreateDirectory(UpdatesDir);
+            var prev = File.Exists(VersionMarkerFile) ? File.ReadAllText(VersionMarkerFile).Trim() : null;
+            var cur = CurrentVersion;
+            if (!string.IsNullOrEmpty(prev) && prev != cur)
+            {
+                File.WriteAllText(NoticeFile, JsonSerializer.Serialize(new UpgradeNotice(prev, cur, DateTime.UtcNow), Json));
+                log?.LogInformation("Detected upgrade {From} -> {To}", prev, cur);
+            }
+            File.WriteAllText(VersionMarkerFile, cur);
+        }
+        catch (Exception ex) { log?.LogWarning(ex, "Startup upgrade detection failed"); }
+    }
+
+    /// <summary>Clears the "you just upgraded" notice once the admin has seen it.</summary>
+    public void DismissNotice() { try { File.Delete(NoticeFile); } catch { /* already gone */ } }
+
+    private UpgradeNotice? ReadNotice()
+    {
+        try { return File.Exists(NoticeFile) ? JsonSerializer.Deserialize<UpgradeNotice>(File.ReadAllText(NoticeFile), Json) : null; }
+        catch { return null; }
+    }
+
+    public static string CurrentArch =>
+        (OperatingSystem.IsWindows() ? "win" : OperatingSystem.IsMacOS() ? "osx" : "linux") + "-" +
+        (RuntimeInformation.OSArchitecture switch
+        {
+            Architecture.Arm64 => "arm64",
+            Architecture.X64 => "x64",
+            var a => a.ToString().ToLowerInvariant(),
+        });
+
+    /// <summary>In-app updates apply where a platform updater ships: the installer drops a marker, or the
+    /// SQL flag is set. Docker/unknown installs have neither and refuse uploads.</summary>
+    public async Task<bool> IsSelfManagedAsync(CancellationToken ct)
+    {
+        if (File.Exists(Path.Combine(UpdatesDir, ".self-managed"))) return true;
+        return string.Equals(await config.GetAsync(ConfigKeys.UpdatesSelfManaged, ct), "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public async Task<object> StatusAsync(CancellationToken ct)
+    {
+        UpdateStatus? status = null;
+        var path = Path.Combine(UpdatesDir, "status.json");
+        try { if (File.Exists(path)) status = JsonSerializer.Deserialize<UpdateStatus>(await File.ReadAllTextAsync(path, ct), Json); }
+        catch { /* a partially-written status file just reads as Idle */ }
+
+        return new
+        {
+            currentVersion = CurrentVersion,
+            arch = CurrentArch,
+            selfManaged = await IsSelfManagedAsync(ct),
+            state = (status?.State ?? UpdateState.Idle).ToString(),
+            message = status?.Message ?? "",
+            stagedVersion = status?.Version,
+            updatedAtUtc = status?.UpdatedAtUtc,
+            upgradeNotice = ReadNotice(),
+        };
+    }
+
+    public sealed record UploadResult(bool Ok, int Status, string Message, string? Version = null);
+
+    /// <summary>Verify the uploaded package, select this host's payload, and queue it for the updater.</summary>
+    public async Task<UploadResult> HandleUploadAsync(HttpRequest req, string? sourceIp, CancellationToken ct)
+    {
+        if (!await IsSelfManagedAsync(ct))
+            return new(false, StatusCodes.Status409Conflict,
+                "In-app updates aren't available on this install type - update via your platform's normal method.");
+        if (!req.HasFormContentType)
+            return new(false, StatusCodes.Status400BadRequest, "Expected a multipart upload with the upgrade package in field 'package'.");
+
+        // Upgrade packages are large (hundreds of MB), so lift this request's body-size caps BEFORE reading
+        // the form - otherwise ReadFormAsync throws and the upload fails with a 500: Kestrel's
+        // MaxRequestBodySize defaults to ~30 MB and the multipart body-length limit to 128 MB. Safe here: the
+        // endpoint is admin-only and gated to self-managed installs (checked above), and we cap at
+        // MaxUploadBytes rather than removing the limit entirely. Skip when the form is already parsed or
+        // supplied (e.g. a pre-populated Request.Form in tests) so we don't clobber it.
+        if (req.HttpContext.Features.Get<IFormFeature>()?.Form is null)
+        {
+            var sizeFeature = req.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if (sizeFeature is { IsReadOnly: false }) sizeFeature.MaxRequestBodySize = MaxUploadBytes;
+            req.HttpContext.Features.Set<IFormFeature>(
+                new FormFeature(req, new FormOptions { MultipartBodyLengthLimit = MaxUploadBytes }));
+        }
+
+        IFormCollection form;
+        try { form = await req.ReadFormAsync(ct); }
+        catch (Exception ex) when (ex is BadHttpRequestException or InvalidDataException)
+        {
+            log?.LogWarning(ex, "Upgrade upload rejected while reading the multipart body");
+            return new(false, StatusCodes.Status413PayloadTooLarge,
+                $"The upload could not be read - it may exceed the {MaxUploadBytes / (1024 * 1024)} MB limit or be malformed.");
+        }
+        var pkg = form.Files["package"] ?? (form.Files.Count == 1 ? form.Files[0] : null);
+        if (pkg is null)
+            return new(false, StatusCodes.Status400BadRequest, "Upload the single upgrade package (.tar.gz) in field 'package'.");
+
+        Directory.CreateDirectory(UpdatesDir);
+        var pkgPath = Path.Combine(UpdatesDir, "incoming.pkg");
+
+        try
+        {
+            // Persist the upload, then (be forgiving) unwrap a GitHub-wrapped .zip that contains the real
+            // dispatch-upgrade-<ver>.tar.gz. Both are inside the try so an IO failure here (e.g. the disk is
+            // full) is reported with its real reason instead of surfacing as a blank 500.
+            await using (var fs = File.Create(pkgPath)) await pkg.CopyToAsync(fs, ct);
+            pkgPath = await UnwrapZipIfNeededAsync(pkgPath, ct);
+
+            // 1) Authenticate the manifest signature against the embedded release key (fail-closed).
+            await WriteStatusAsync(new(UpdateState.Verifying, null, "Verifying package signature...", DateTime.UtcNow), ct);
+            var manifestBytes = await ReadEntryAsync(pkgPath, "manifest.json", ct);
+            var sigBytes = await ReadEntryAsync(pkgPath, "manifest.json.sig", ct);
+            if (manifestBytes is null || sigBytes is null)
+                return await RejectAsync("the package is missing manifest.json / manifest.json.sig", sourceIp, ct);
+            if (!verifier.VerifyManifestSignature(manifestBytes, sigBytes))
+                return await RejectAsync("the signature is invalid (not signed by the Dispatch release key)", sourceIp, ct);
+
+            UpdateManifest? manifest;
+            try { manifest = JsonSerializer.Deserialize<UpdateManifest>(manifestBytes, Json); }
+            catch { manifest = null; }
+            if (manifest is null || string.IsNullOrWhiteSpace(manifest.Version))
+                return await RejectAsync("the manifest is unreadable", sourceIp, ct);
+
+            // 2) Compatibility: must carry a payload for this host's arch, and satisfy minFromVersion.
+            await WriteStatusAsync(new(UpdateState.Verifying, manifest.Version, $"Checking compatibility (platform {CurrentArch}, from {CurrentVersion})...", DateTime.UtcNow), ct);
+            if (manifest.Artifacts is null || !manifest.Artifacts.TryGetValue(CurrentArch, out var art) || art is null)
+                return await RejectAsync($"the package has no payload for this platform ({CurrentArch})", sourceIp, ct);
+            if (!VersionAtLeast(CurrentVersion, manifest.MinFromVersion))
+                return await RejectAsync($"this version ({CurrentVersion}) is older than the package minimum ({manifest.MinFromVersion})", sourceIp, ct);
+            // Block downgrades (rollback attack / reintroducing fixed vulns): refuse a package older than
+            // what's running. Same version is allowed (repair/reinstall); an unparseable pair is allowed
+            // through since the signature already vouches for the package's authenticity.
+            if (CompareVersions(manifest.Version, CurrentVersion) is < 0)
+                return await RejectAsync(
+                    $"that package is version {manifest.Version}, which is older than the installed version ({CurrentVersion}). Downgrades aren't allowed - upload {CurrentVersion} or newer.",
+                    sourceIp, ct);
+
+            // 3) Extract THIS arch's payload to the staging dir and confirm its sha256 matches the manifest.
+            // Create the staging tree with the execute bit guaranteed: under a restrictive process UMask
+            // (e.g. 0177) Directory.CreateDirectory would otherwise yield drw------- dirs that can't be
+            // descended into, so the nested create + payload write fail with "Permission denied".
+            var stageBase = Path.Combine(UpdatesDir, "staged");
+            Directory.CreateDirectory(stageBase);
+            EnsureTraversable(stageBase);
+            var stagedDir = Path.Combine(stageBase, manifest.Version);
+            TryDelete(stagedDir);
+            Directory.CreateDirectory(stagedDir);
+            EnsureTraversable(stagedDir);
+            var payloadPath = Path.Combine(stagedDir, "payload");
+            await WriteStatusAsync(new(UpdateState.Extracting, manifest.Version, $"Unpacking payload for {CurrentArch}...", DateTime.UtcNow), ct);
+            var sha = await ExtractAndHashAsync(pkgPath, art.File, payloadPath, ct);
+            if (sha is null) { TryDelete(stagedDir); return await RejectAsync($"payload '{art.File}' not found in the package", sourceIp, ct); }
+            await WriteStatusAsync(new(UpdateState.Extracting, manifest.Version, "Verifying payload checksum...", DateTime.UtcNow), ct);
+            if (!HashEquals(sha, art.Sha256)) { TryDelete(stagedDir); return await RejectAsync("the payload checksum does not match the manifest", sourceIp, ct); }
+
+            await File.WriteAllBytesAsync(Path.Combine(stagedDir, "manifest.json"), manifestBytes, ct);
+            await File.WriteAllBytesAsync(Path.Combine(stagedDir, "manifest.json.sig"), sigBytes, ct);
+
+            // 4) Hand off to the platform updater.
+            await WriteStatusAsync(new UpdateStatus(UpdateState.Staged, manifest.Version, "Upgrade staged; applying...", DateTime.UtcNow), ct);
+            var request = new ApplyRequest(manifest.Version, CurrentArch, stagedDir, CurrentVersion, DateTime.UtcNow);
+            var reqPath = Path.Combine(UpdatesDir, "apply.request");
+            var tmp = reqPath + ".tmp";
+            await File.WriteAllTextAsync(tmp, JsonSerializer.Serialize(request, Json), ct);
+            File.Move(tmp, reqPath, overwrite: true);
+
+            TriggerPlatformApply();
+
+            await audit.Lifecycle("Update requested",
+                $"Upgrade to {manifest.Version} ({CurrentArch}) uploaded, verified, and handed to the updater.", "Notice");
+            return new(true, StatusCodes.Status202Accepted,
+                $"Verified and staged {manifest.Version}; the updater will apply it and the dashboard will briefly restart.", manifest.Version);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Anything that goes wrong reading/verifying/staging the package (a malformed archive, a full
+            // disk, a permissions problem) is reported with its real reason - never a blank 500.
+            log?.LogWarning(ex, "Upgrade package could not be processed");
+            var hint = ex is InvalidDataException ? " (is it a valid dispatch-upgrade-<version>.tar.gz?)" : "";
+            return await RejectAsync($"the package could not be processed: {ex.Message}{hint}", sourceIp, ct);
+        }
+        finally { try { File.Delete(pkgPath); } catch { /* best-effort */ } }
+    }
+
+    // If the upload is a .zip (GitHub artifact wrapper) containing exactly one *.tar.gz, extract that inner
+    // package and return its path (deleting the .zip); otherwise return the original path unchanged. Best-
+    // effort - any problem just leaves the original file for the normal tar.gz reader to accept or reject.
+    private async Task<string> UnwrapZipIfNeededAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            var head = new byte[4];
+            await using (var fs = File.OpenRead(path))
+                if (await fs.ReadAsync(head.AsMemory(0, 4), ct) < 4) return path;
+            // ZIP local-file-header magic "PK\x03\x04"; gzip is 0x1F 0x8B, so this cleanly distinguishes them.
+            if (!(head[0] == 0x50 && head[1] == 0x4B && head[2] == 0x03 && head[3] == 0x04)) return path;
+
+            using var zip = ZipFile.OpenRead(path);
+            var entry = zip.Entries.FirstOrDefault(e => e.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+                        ?? (zip.Entries.Count == 1 ? zip.Entries[0] : null);
+            if (entry is null) return path; // not a single-package wrapper; let the tar.gz reader reject it
+
+            var inner = path + ".inner.tgz";
+            try
+            {
+                await using var zs = entry.Open();
+                await using var outFs = File.Create(inner);
+                await CopyCappedAsync(zs, outFs, ct);   // bounded, so a zip bomb can't fill the disk here
+            }
+            catch { try { File.Delete(inner); } catch { /* best-effort */ } throw; }
+            log?.LogInformation("Unwrapped a .zip upload to its inner package '{Entry}'", entry.Name);
+            try { File.Delete(path); } catch { /* best-effort */ }
+            return inner;
+        }
+        catch (Exception ex)
+        {
+            log?.LogWarning(ex, "Could not unwrap a .zip upload; using it as-is");
+            return path;
+        }
+    }
+
+    // Reads a single (small) entry's bytes from the .tar.gz package. Entry names may be prefixed "./".
+    private static async Task<byte[]?> ReadEntryAsync(string packagePath, string name, CancellationToken ct)
+    {
+        await using var fs = File.OpenRead(packagePath);
+        await using var gz = new GZipStream(fs, CompressionMode.Decompress);
+        await using var tar = new TarReader(gz);
+        TarEntry? e;
+        while ((e = await tar.GetNextEntryAsync(cancellationToken: ct)) is not null)
+        {
+            if (Normalize(e.Name) == name && e.DataStream is not null)
+            {
+                using var ms = new MemoryStream();
+                await e.DataStream.CopyToAsync(ms, ct);
+                return ms.ToArray();
+            }
+        }
+        return null;
+    }
+
+    // Streams a (possibly large) payload entry to disk while computing its SHA-256 (hex). Null if not found.
+    private static async Task<string?> ExtractAndHashAsync(string packagePath, string name, string destPath, CancellationToken ct)
+    {
+        await using var fs = File.OpenRead(packagePath);
+        await using var gz = new GZipStream(fs, CompressionMode.Decompress);
+        await using var tar = new TarReader(gz);
+        TarEntry? e;
+        while ((e = await tar.GetNextEntryAsync(cancellationToken: ct)) is not null)
+        {
+            if (Normalize(e.Name) == name && e.DataStream is not null)
+            {
+                using var sha = SHA256.Create();
+                await using var outFs = File.Create(destPath);
+                await using var crypto = new CryptoStream(outFs, sha, CryptoStreamMode.Write);
+                await CopyCappedAsync(e.DataStream, crypto, ct);
+                await crypto.FlushFinalBlockAsync(ct);
+                return Convert.ToHexStringLower(sha.Hash!);
+            }
+        }
+        return null;
+    }
+
+    private static string Normalize(string entryName) => entryName.TrimStart('.', '/');
+
+    // Ceiling on decompressed output. Generous vs a real self-contained payload (~150-200 MB) but bounded,
+    // so a gzip/zip bomb (small compressed, huge decompressed) can't fill the disk before the hash is checked.
+    private const long MaxExtractedBytes = 3L * 1024 * 1024 * 1024; // 3 GiB
+
+    // Copy src -> dest, aborting past MaxExtractedBytes (decompression-bomb guard). Throws InvalidDataException.
+    private static async Task CopyCappedAsync(Stream src, Stream dest, CancellationToken ct)
+    {
+        var buffer = new byte[81920];
+        long total = 0;
+        int n;
+        while ((n = await src.ReadAsync(buffer, ct)) > 0)
+        {
+            total += n;
+            if (total > MaxExtractedBytes)
+                throw new InvalidDataException($"decompressed size exceeds the {MaxExtractedBytes / (1024 * 1024)} MB limit (possible decompression bomb)");
+            await dest.WriteAsync(buffer.AsMemory(0, n), ct);
+        }
+    }
+
+    private static bool HashEquals(string a, string b) => CryptographicOperations.FixedTimeEquals(
+        Encoding.ASCII.GetBytes(a.Trim().ToLowerInvariant()), Encoding.ASCII.GetBytes((b ?? "").Trim().ToLowerInvariant()));
+
+    private async Task<UploadResult> RejectAsync(string why, string? ip, CancellationToken ct)
+    {
+        await audit.Audit("Update", $"Rejected an uploaded upgrade package: {why}.", "Warning", "admin", ip, ct: ct);
+        // Record the failure in status.json so the dashboard's progress view shows which step rejected it.
+        // Best-effort: if the reason is itself a write failure (e.g. a full disk), don't let this re-throw.
+        try { await WriteStatusAsync(new(UpdateState.Failed, null, $"Rejected: {why}", DateTime.UtcNow), ct); }
+        catch (Exception ex) { log?.LogWarning(ex, "Could not write the rejected-update status"); }
+        return new(false, StatusCodes.Status400BadRequest, $"Upgrade rejected: {why}.");
+    }
+
+    private async Task WriteStatusAsync(UpdateStatus s, CancellationToken ct)
+    {
+        Directory.CreateDirectory(UpdatesDir);
+        await File.WriteAllTextAsync(Path.Combine(UpdatesDir, "status.json"), JsonSerializer.Serialize(s, Json), ct);
+    }
+
+    // Linux: the systemd dispatch-update.path watcher picks up apply.request - nothing to do. Windows: there
+    // is no path watcher, so write the embedded updater script to the data dir and launch it DECOUPLED as
+    // SYSTEM via Task Scheduler, so it survives the service restart it performs.
+    private void TriggerPlatformApply()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try
+        {
+            var script = Path.Combine(UpdatesDir, "dispatch-update.ps1");
+            File.WriteAllText(script, EmbeddedWindowsUpdater());
+            Schtasks("/Create", "/TN", "DispatchUpdate", "/TR",
+                $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{script}\"",   // quote: data dir may contain spaces
+                "/SC", "ONCE", "/ST", "00:00", "/RU", "SYSTEM", "/RL", "HIGHEST", "/F");
+            Schtasks("/Run", "/TN", "DispatchUpdate");
+        }
+        catch (Exception ex) { log?.LogError(ex, "Failed to launch the Windows updater task"); }
+    }
+
+    private static void Schtasks(params string[] args)
+    {
+        var psi = new ProcessStartInfo("schtasks.exe")
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+        using var p = Process.Start(psi);
+        p?.WaitForExit(15000);
+    }
+
+    private static string EmbeddedWindowsUpdater()
+    {
+        var asm = Assembly.GetExecutingAssembly();
+        var name = Array.Find(asm.GetManifestResourceNames(), n => n.EndsWith("dispatch-update-windows.ps1", StringComparison.Ordinal))
+            ?? throw new InvalidOperationException("Embedded Windows updater script not found.");
+        using var s = asm.GetManifestResourceStream(name)!;
+        using var r = new StreamReader(s);
+        return r.ReadToEnd();
+    }
+
+    private static void TryDelete(string dir) { try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { /* best-effort */ } }
+
+    // Guarantee the owner can enter + write a directory even under a restrictive process UMask (which would
+    // otherwise strip the execute bit and make the dir undescendable). Linux/macOS only; no-op on Windows.
+    private static void EnsureTraversable(string dir)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try { File.SetUnixFileMode(dir, File.GetUnixFileMode(dir) | UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+        catch { /* best-effort */ }
+    }
+
+    /// <summary>True if <paramref name="version"/> &gt;= <paramref name="minimum"/> (dotted numeric); permissive on parse failure.</summary>
+    internal static bool VersionAtLeast(string version, string minimum) =>
+        !Version.TryParse(Core(version), out var v) || !Version.TryParse(Core(minimum), out var m) || v >= m;
+
+    private static string Core(string? s)
+    {
+        var head = (s ?? "").Split('-')[0];
+        return head.Contains('.') ? head : head + ".0";   // Version needs at least major.minor
+    }
+
+    // Compare two dotted numeric versions component-wise (major.minor.build.revision; missing parts = 0),
+    // ignoring any -prerelease/+build suffix. Returns <0 / 0 / >0, or null if either side isn't parseable.
+    // This normalizes 3-part release tags ("0.2.1") against the 4-part assembly version ("0.2.1.0") so an
+    // identical release doesn't read as a downgrade.
+    internal static int? CompareVersions(string? a, string? b)
+    {
+        static int[]? Parse(string? v)
+        {
+            if (string.IsNullOrWhiteSpace(v)) return null;
+            var core = v.Trim();
+            var cut = core.IndexOfAny(['-', '+']);
+            if (cut >= 0) core = core[..cut];
+            var parts = core.Split('.');
+            var nums = new int[4];
+            for (var i = 0; i < parts.Length && i < 4; i++)
+                if (!int.TryParse(parts[i], out nums[i])) return null;
+            return nums;
+        }
+        var pa = Parse(a);
+        var pb = Parse(b);
+        if (pa is null || pb is null) return null;
+        for (var i = 0; i < 4; i++)
+        {
+            var c = pa[i].CompareTo(pb[i]);
+            if (c != 0) return c;
+        }
+        return 0;
+    }
+}

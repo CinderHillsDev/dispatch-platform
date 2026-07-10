@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for a Dispatch upgrade request and run the updater
+# The (unprivileged) Dispatch service stages a verified bundle and drops this file; systemd then starts the
+# privileged updater. This keeps the service itself from needing root or systemctl access.
+
+[Path]
+PathExists=/var/lib/dispatch/updates/apply.request
+Unit=dispatch-updater.service
+
+[Install]
+WantedBy=multi-user.target

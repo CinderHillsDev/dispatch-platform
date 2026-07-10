@@ -1,0 +1,386 @@
+name: Release
+
+# Cut a release by pushing a semver tag:
+#   git tag v1.2.3 && git push origin v1.2.3
+#
+# This builds the distributable artifacts, stamps them with the tag version, optionally Authenticode-signs
+# the Windows installer via Azure Artifact Signing, and publishes a GitHub Release with:
+#   - DispatchSetup.exe          the single-file Windows installer (embeds the signed MSI + chains PostgreSQL)
+#   - dispatch-<ver>-linux.tar.gz       universal Linux bundle (x64 + arm64, self-contained)
+#   - SHA256SUMS                 checksums for all of the above
+#
+# Code signing is OPT-IN and dormant until you provision Azure Artifact Signing (renamed from Trusted
+# Signing, Jan 2026) and set these repo settings:
+#   Variables: AZURE_SIGNING_ENDPOINT (e.g. https://eus.codesigning.azure.net/),
+#              AZURE_SIGNING_ACCOUNT, AZURE_CERT_PROFILE
+#   Secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   (federated/OIDC service principal)
+# Until AZURE_SIGNING_ACCOUNT is set, the release still publishes - just unsigned.
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Allow a dry run against the current ref without tagging (publishes a draft prerelease).
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version for a manual dry-run build (e.g. 0.0.0-test)"
+        type: string
+        default: "0.0.0-dryrun"
+
+permissions:
+  contents: write   # create the GitHub Release
+  id-token: write   # Azure OIDC login for signing
+  packages: write   # push the container image to GHCR
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="${{ inputs.version }}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Building version $v"
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        shell: pwsh
+        run: |
+          Push-Location src/Dispatch.UI; npm ci; npm run build; Pop-Location
+          Remove-Item -Recurse -Force src/Dispatch.Web/wwwroot -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force src/Dispatch.Web/wwwroot | Out-Null
+          Copy-Item -Recurse -Force src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
+          if (-not (Test-Path src/Dispatch.Web/wwwroot/index.html)) { throw "embedded UI missing index.html" }
+
+      - name: Publish the service
+        # Self-contained: bundle the .NET runtime so the service runs on a clean Windows box without a
+        # separately-installed .NET 10 runtime (the bundle does not chain one). Matches the Linux build.
+        run: dotnet publish src/Dispatch.Service -c Release -r win-x64 --self-contained true -p:Version=${{ steps.ver.outputs.version }} -o installer/windows/publish
+
+      - name: Install the WiX toolset
+        shell: pwsh
+        env:
+          WIX_VERSION: "6.0.2"
+        run: |
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          wix extension add -g "WixToolset.Firewall.wixext/$env:WIX_VERSION"
+          wix extension add -g "WixToolset.BootstrapperApplications.wixext/$env:WIX_VERSION"
+          wix extension add -g "WixToolset.Util.wixext/$env:WIX_VERSION"
+
+      - name: Build the MSI
+        working-directory: installer/windows
+        run: wix build Dispatch.wxs -arch x64 -d PublishDir=publish -d Version=${{ steps.ver.outputs.version }} -ext WixToolset.Firewall.wixext -o Dispatch.msi
+
+      # --- Sign the MSI (opt-in) ----------------------------------------------------------------
+      - name: Azure login (signing)
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign the MSI
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/trusted-signing-action@fc390cf8ed0f14e248a542af1d838388a47c7a7c # v0.5
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}/installer/windows
+          files-folder-filter: msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Build the PostgreSQL launcher
+        run: dotnet build installer/windows/postgres/PostgresLauncher.csproj -c Release
+
+      - name: Build the bundle
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          wix build bundle/Bundle.wxs -d Version=${{ steps.ver.outputs.version }} `
+            -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext `
+            -bindpath "PgLauncher=postgres/bin/Release/net472" -bindpath "Msi=." -o DispatchSetup.exe
+
+      # --- Sign the Burn bundle (opt-in) --------------------------------------------------------
+      # A Burn bundle has an attached engine; the engine must be signed too, so detach it, sign it,
+      # reattach, then sign the final bundle (WiX-recommended; otherwise UAC flags the inner engine).
+      # installer/windows holds other .exe files (publish/, postgres/), so each Azure sign step
+      # targets a folder containing ONLY the one file to sign, and we copy the result back in place.
+      - name: Detach the bundle engine
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force engine | Out-Null
+          wix burn detach DispatchSetup.exe -engine engine/engine.exe
+
+      - name: Sign the engine
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/trusted-signing-action@fc390cf8ed0f14e248a542af1d838388a47c7a7c # v0.5
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}/installer/windows/engine
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Reattach the signed engine + stage bundle for signing
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          wix burn reattach DispatchSetup.exe -engine engine/engine.exe -o DispatchSetup.exe
+          New-Item -ItemType Directory -Force bundlesign | Out-Null
+          Copy-Item -Force DispatchSetup.exe bundlesign/DispatchSetup.exe
+
+      - name: Sign the bundle
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/trusted-signing-action@fc390cf8ed0f14e248a542af1d838388a47c7a7c # v0.5
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}/installer/windows/bundlesign
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Put the signed bundle back in place
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        working-directory: installer/windows
+        shell: pwsh
+        run: Copy-Item -Force bundlesign/DispatchSetup.exe DispatchSetup.exe
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows
+          # DispatchSetup.exe is the single distributable - it embeds the (signed) MSI and chains PostgreSQL.
+          path: installer/windows/DispatchSetup.exe
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="${{ inputs.version }}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        run: |
+          ( cd src/Dispatch.UI && npm ci && npm run build )
+          rm -rf src/Dispatch.Web/wwwroot
+          mkdir -p src/Dispatch.Web/wwwroot
+          cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
+          test -f src/Dispatch.Web/wwwroot/index.html || { echo "embedded UI missing index.html"; exit 1; }
+
+      - name: Publish self-contained (linux-x64 + linux-arm64 + win-x64)
+        run: |
+          v=${{ steps.ver.outputs.version }}
+          dotnet publish src/Dispatch.Service -c Release -r linux-x64   --self-contained true -p:Version=$v -o publish/x64
+          dotnet publish src/Dispatch.Service -c Release -r linux-arm64 --self-contained true -p:Version=$v -o publish/arm64
+          # win-x64 cross-published on Linux - the self-contained Windows payload for the one upgrade package.
+          dotnet publish src/Dispatch.Service -c Release -r win-x64     --self-contained true -p:Version=$v -o publish/win
+          # Stamp the version so install.sh names the release dir (/opt/dispatch/releases/<ver>).
+          for d in x64 arm64 win; do echo "$v" > "publish/$d/.dispatch-version"; done
+
+      - name: Assemble the universal Linux tarball
+        run: |
+          ver="${{ steps.ver.outputs.version }}"
+          stage="dispatch-${ver}-linux"
+          mkdir -p "staging/${stage}/bin-x64" "staging/${stage}/bin-arm64"
+          cp -r publish/x64/.   "staging/${stage}/bin-x64/"
+          cp -r publish/arm64/. "staging/${stage}/bin-arm64/"
+          cp installer/linux/install.sh installer/linux/dispatch.service \
+             installer/linux/dispatch-updater.service installer/linux/dispatch-update.path \
+             installer/linux/dispatch-update.sh "staging/${stage}/"
+          cp src/Dispatch.Core/Updates/dispatch-update-public.pem "staging/${stage}/"
+          chmod +x "staging/${stage}/install.sh" "staging/${stage}/dispatch-update.sh" \
+            "staging/${stage}/bin-x64/Dispatch.Service" "staging/${stage}/bin-arm64/Dispatch.Service"
+          cat > "staging/${stage}/README.txt" <<EOF
+          Dispatch SMTP Relay ${ver} - Linux (universal: x64 + arm64, self-contained; no .NET SDK required).
+
+          install.sh auto-detects your CPU arch (uses bin-x64 or bin-arm64) - no flags needed:
+            sudo ./install.sh --install-postgres --db-password '<StrongDbPassw0rd!>' --admin-password '<DashboardPassword!>'
+
+          Or use an existing PostgreSQL server:
+            sudo ./install.sh --sql-connection 'Host=...;Port=5432;Database=DispatchLog;Username=...;Password=...' --admin-password '<DashboardPassword!>'
+
+          Then open https://localhost:8420 (self-signed cert) and log in with the admin password you set.
+          EOF
+          tar -czf "${stage}.tar.gz" -C staging "${stage}"
+          ls -lh "${stage}.tar.gz"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux
+          path: dispatch-*-linux.tar.gz
+          if-no-files-found: error
+
+      # ONE cross-platform upgrade package for web-UI self-update: every platform's self-contained payload
+      # (linux-x64, linux-arm64, win-x64) plus a single signed manifest, in one .tar.gz. A host uploads
+      # this one file; the updater picks + applies the payload matching its arch and verifies its sha256.
+      # The manifest signature is checked against the embedded public key. Signing is gated on the secret;
+      # without it the package is unsigned and the app/updater refuse it.
+      - name: Build + sign the upgrade package
+        env:
+          SIGNING_KEY: ${{ secrets.DISPATCH_UPDATE_SIGNING_KEY }}
+        run: |
+          ver="${{ steps.ver.outputs.version }}"
+          built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          notes="https://github.com/${{ github.repository }}/releases/tag/v${ver}"
+          mkdir -p pkg
+          tar -czf pkg/linux-x64.tar.gz   -C publish/x64 .
+          tar -czf pkg/linux-arm64.tar.gz -C publish/arm64 .
+          ( cd publish/win && zip -qr - . ) > pkg/win-x64.zip
+          shx="$(sha256sum pkg/linux-x64.tar.gz   | awk '{print $1}')"
+          sha="$(sha256sum pkg/linux-arm64.tar.gz | awk '{print $1}')"
+          shw="$(sha256sum pkg/win-x64.zip        | awk '{print $1}')"
+          printf '{"name":"dispatch","version":"%s","minFromVersion":"0.0.0","builtAt":"%s","notesUrl":"%s","artifacts":{"linux-x64":{"file":"linux-x64.tar.gz","sha256":"%s"},"linux-arm64":{"file":"linux-arm64.tar.gz","sha256":"%s"},"win-x64":{"file":"win-x64.zip","sha256":"%s"}}}\n' \
+            "$ver" "$built" "$notes" "$shx" "$sha" "$shw" > pkg/manifest.json
+          if [ -n "$SIGNING_KEY" ]; then
+            keyfile="$(mktemp)"; printf '%s' "$SIGNING_KEY" > "$keyfile"
+            openssl dgst -sha256 -sign "$keyfile" -out pkg/manifest.json.sig pkg/manifest.json
+            # Self-check: the signature must verify against the committed public key before we ship it.
+            openssl dgst -sha256 -verify src/Dispatch.Core/Updates/dispatch-update-public.pem -signature pkg/manifest.json.sig pkg/manifest.json
+            rm -f "$keyfile"
+          else
+            echo "::error::DISPATCH_UPDATE_SIGNING_KEY is not set - refusing to publish an unsigned upgrade package (it would be rejected by every installer anyway). Set the signing-key secret to cut a release."
+            exit 1
+          fi
+          tar -czf "dispatch-upgrade-${ver}.tar.gz" -C pkg manifest.json manifest.json.sig linux-x64.tar.gz linux-arm64.tar.gz win-x64.zip
+          ls -lh "dispatch-upgrade-${ver}.tar.gz"
+
+      - name: Upload upgrade package
+        uses: actions/upload-artifact@v6
+        with:
+          name: upgrade-package
+          path: dispatch-upgrade-*.tar.gz
+          if-no-files-found: error
+
+  # Build + push the multi-arch container image (linux/amd64 + linux/arm64) to GHCR. One image tag
+  # serves both architectures; `docker pull ghcr.io/<owner>/dispatch-smtp-relay:<ver>` works on any host.
+  # Only runs for real tag releases (a dry-run workflow_dispatch skips the push).
+  docker:
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up QEMU (cross-arch emulation)
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # full semver + major.minor; `latest` only for stable (non-prerelease) tags.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - name: Build + push multi-arch image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publish:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+
+      - name: Stage release files + checksums
+        env:
+          VER: ${{ needs.windows.outputs.version }}
+        run: |
+          mkdir -p release
+          # Version the Windows asset names so each release's downloads are distinguishable
+          # (the Linux tarball already carries the version). Names match the README.
+          cp "dist/windows/DispatchSetup.exe" "release/DispatchSetup-${VER}-x64.exe"
+          cp dist/linux/dispatch-*-linux.tar.gz release/
+          cp dist/upgrade-package/* release/          # the single cross-platform upgrade package
+          ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.windows.outputs.version) }}
+          name: Dispatch ${{ needs.windows.outputs.version }}
+          draft: ${{ github.ref_type != 'tag' }}
+          prerelease: ${{ contains(needs.windows.outputs.version, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/DispatchSetup-*-x64.exe
+            release/dispatch-*-linux.tar.gz
+            release/dispatch-upgrade-*
+            release/SHA256SUMS

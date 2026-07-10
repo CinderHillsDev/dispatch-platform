@@ -1,0 +1,89 @@
+using Dispatch.Core.Configuration;
+using Dispatch.Core.Logging;
+using Dispatch.Web.Auth;
+using Dispatch.Web.Ingestion;
+using Dispatch.Web.Realtime;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+namespace Dispatch.Web;
+
+public static class ServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers the web/ingestion services: SignalR, the live-event stream, rate limiter, API-key
+    /// middleware, and the ingestion handler. Also wraps the registered <see cref="ILogRepository"/> in
+    /// <see cref="BroadcastingLogRepository"/> so persisted events drive the live feed. Call AFTER the
+    /// data layer is registered (so an inner <see cref="ILogRepository"/> exists to decorate).
+    /// </summary>
+    public static IServiceCollection AddDispatchWeb(this IServiceCollection services, bool secureCookies = false, int sessionTimeoutMinutes = 480)
+    {
+        services.AddSignalR();
+        services.AddSingleton<RelayEventStream>();
+        services.AddSingleton<ProviderTestService>();
+        services.AddSingleton<RateLimiter>();
+        services.AddSingleton<ApiKeyCache>();
+        services.AddSingleton<Auth.LoginThrottle>();
+        services.AddSingleton<ApiMessageHandler>();
+        services.AddSingleton(Dispatch.Core.Updates.UpdateBundleVerifier.Default());
+        services.AddSingleton<Updates.UpdateService>();
+        services.AddScoped<ApiKeyMiddleware>();
+        services.AddScoped<WebAuthMiddleware>();
+
+        // Optional web-UI cookie auth (enforced by WebAuthMiddleware only when configured).
+        services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+            .AddCookie(o =>
+            {
+                o.Cookie.Name = "dispatch.auth";
+                o.Cookie.HttpOnly = true;
+                o.Cookie.SameSite = SameSiteMode.Strict;
+                // Secure when the dashboard is fronted by TLS (WebUi:RequireHttps); SameAsRequest keeps the
+                // cookie working over plain HTTP in local dev. Set RequireHttps=true in production.
+                o.Cookie.SecurePolicy = secureCookies ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
+                o.ExpireTimeSpan = TimeSpan.FromMinutes(Math.Max(1, sessionTimeoutMinutes));   // spec §17.3 webui.session_timeout_minutes
+                o.SlidingExpiration = true;
+                o.Events.OnRedirectToLogin = c => { c.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
+                o.Events.OnRedirectToAccessDenied = c => { c.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+                // Invalidate sessions across a version change: the login cookie is stamped with the running
+                // version ("ver" claim); after an upgrade the process runs a new version, so existing cookies
+                // no longer match and everyone must sign in again for the new version. A plain restart at the
+                // same version keeps sessions. Older cookies with no "ver" claim also fail closed here.
+                o.Events.OnValidatePrincipal = async c =>
+                {
+                    var p = c.Principal;
+                    var verOk = p?.FindFirst("ver")?.Value == Updates.UpdateService.CurrentVersion;
+                    // Credential epoch: reject cookies issued before the last admin-password change. Read from
+                    // the cache and lag-tolerant - only reject when STRICTLY older, so bumping the epoch can't
+                    // momentarily sign out the just-re-issued acting admin during the cache-refresh window.
+                    var stored = c.HttpContext.RequestServices.GetService<ConfigCache>()?.GetInt(ConfigKeys.WebUiSessionEpoch, 0) ?? 0;
+                    var claim = int.TryParse(p?.FindFirst(AuthEndpoints.SessionEpochClaim)?.Value, out var e) ? e : 0;
+                    if (!verOk || claim < stored)
+                    {
+                        c.RejectPrincipal();
+                        await c.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                    }
+                };
+            });
+
+        // Decorate the existing ILogRepository registration with the broadcaster.
+        var inner = services.Single(d => d.ServiceType == typeof(ILogRepository));
+        services.Remove(inner);
+        services.AddSingleton<ILogRepository>(sp =>
+        {
+            var innerImpl = (ILogRepository)CreateInstance(sp, inner);
+            return new BroadcastingLogRepository(innerImpl, sp.GetRequiredService<RelayEventStream>());
+        });
+
+        return services;
+    }
+
+    private static object CreateInstance(IServiceProvider sp, ServiceDescriptor descriptor)
+    {
+        if (descriptor.ImplementationInstance is not null) return descriptor.ImplementationInstance;
+        if (descriptor.ImplementationFactory is not null) return descriptor.ImplementationFactory(sp);
+        return ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!);
+    }
+}

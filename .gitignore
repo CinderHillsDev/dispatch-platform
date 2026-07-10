@@ -1,0 +1,39 @@
+# .NET build output
+bin/
+obj/
+out/
+*.user
+*.suo
+.vs/
+
+# Node / React UI
+node_modules/
+dist/
+*.log
+
+# Local config & secrets
+appsettings.Development.json
+appsettings.Local.json
+*.pfx
+
+# Node / React UI build artifacts
+node_modules/
+dist/
+# Generated: UI build copied here for embedding (run npm build + copy)
+src/Dispatch.Web/wwwroot/
+
+# Spool / runtime data (the runtime spool dir; NOT the src/.../Spool source folder -
+# git's core.ignorecase makes a bare "spool/" match "Spool/", so scope it to the dev path)
+.dispatch-spool/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# At-rest encryption key (never commit)
+.dispatch-key
+**/.dispatch-key
