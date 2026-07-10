@@ -26,7 +26,7 @@ This zip contains:
 ------------------------------------------------------------------------------
  After import
 ------------------------------------------------------------------------------
-  * Start the VM. First boot configures SQL Server Express + Dispatch (allow a
+  * Start the VM. First boot configures PostgreSQL + Dispatch (allow a
     few minutes). The VM uses DHCP.
   * Browse to https://<vm-ip>:8420 (self-signed cert - accept the warning) and
     SET THE ADMIN PASSWORD on the first login.

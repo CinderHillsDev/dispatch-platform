@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   OVF descriptor for the Dispatch SMTP Relay VMware appliance (vSphere/ESXi). Generated from the same
-  Ubuntu 24.04 + SQL Server 2025 + Dispatch image as the Hyper-V VHDX. Conservative virtual hardware (EFI,
+  Ubuntu 24.04 + PostgreSQL + Dispatch image as the Hyper-V VHDX. Conservative virtual hardware (EFI,
   LSI Logic SCSI, E1000e NIC) for broad import compatibility; placeholders (@@...@@) are filled by
   build-appliance.sh. vmx-14 = ESXi 6.7+.
 -->

@@ -39,9 +39,9 @@ and publishes a **draft** release you can inspect and delete - nothing goes publ
 
 | Platform | Asset | Notes |
 |----------|-------|-------|
-| Windows  | **`DispatchSetup-<ver>-x64.exe`** | The single file. Installs SQL Server 2025 Express → the MSI → the service. |
-| Windows  | `Dispatch-<ver>-x64.msi` | Advanced: install against an existing SQL Server (`msiexec /i Dispatch-<ver>-x64.msi SQLCONN="..."`). |
-| Linux    | `dispatch-<ver>-linux.tar.gz` | Universal (x64 + arm64). Extract, then `sudo ./install.sh --install-sql ...` (auto-detects arch). |
+| Windows  | **`DispatchSetup-<ver>-x64.exe`** | The single file. Installs PostgreSQL → the MSI → the service. |
+| Windows  | `Dispatch-<ver>-x64.msi` | Advanced: install against an existing PostgreSQL (`msiexec /i Dispatch-<ver>-x64.msi SQLCONN="Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=..."`). |
+| Linux    | `dispatch-<ver>-linux.tar.gz` | Universal (x64 + arm64). Extract, then `sudo ./install.sh --install-postgres ...` (auto-detects arch). |
 | Upgrade  | `dispatch-upgrade-<ver>.tar.gz` | One cross-platform package for the **dashboard self-update** (Updates page). Upload it on any appliance/Linux/Windows install. |
 | Any      | `ghcr.io/chrismuench/dispatch-smtp-relay:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |
 | All      | `SHA256SUMS` | Verify downloads: `sha256sum -c SHA256SUMS`. |
@@ -115,5 +115,5 @@ name `DISPATCH_UPDATE_SIGNING_KEY`, value = the full PEM (`-----BEGIN PRIVATE KE
 ## CI vs. release builds
 
 [`installers.yml`](../.github/workflows/installers.yml) validates that the installer **sources compile**
-on every push that touches `installer/**` (and runs an opt-in end-to-end SQL-install smoke test). Those CI
+on every push that touches `installer/**` (and runs an opt-in end-to-end PostgreSQL-install smoke test). Those CI
 builds are intentionally **unsigned**. Signing happens only at release time, in `release.yml`.

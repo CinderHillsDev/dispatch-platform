@@ -9,8 +9,8 @@ namespace Dispatch.Core.Maintenance;
 
 /// <summary>
 /// Background retention + auto-purge (spec §6.10): deletes aged spool/failed and spool/captured files,
-/// purges old relay_log rows per event type, and runs a size-pressure purge when the database nears the
-/// SQL Server Express limit. Runs once on startup and then on a fixed interval. All work is best-effort -
+/// purges old relay_log rows per event type, and runs an optional size-pressure purge when the database
+/// exceeds a configured size cap. Runs once on startup and then on a fixed interval. All work is best-effort -
 /// a failure in one cycle is logged and never crashes the service.
 /// </summary>
 public sealed class PurgeWorker(

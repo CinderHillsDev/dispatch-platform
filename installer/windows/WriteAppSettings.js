@@ -1,6 +1,6 @@
 // Deferred custom action (adapted from the FluxDeploy installer pattern): writes appsettings.json into
-// the Dispatch data directory. Per spec §12.1, appsettings holds ONLY the SQL connection string and the
-// Web UI TLS cert path - everything else lives in the SQL config table. The admin password is set on first
+// the Dispatch data directory. Per spec §12.1, appsettings holds ONLY the PostgreSQL connection string and
+// the Web UI TLS cert path - everything else lives in the config table. The admin password is set on first
 // run via the dashboard, so it is NOT written here.
 // CustomActionData format: "sqlConn|dataDir"
 var data = Session.Property("CustomActionData");
@@ -21,7 +21,7 @@ if (parts.length >= 2) {
     var targetPath = fso.BuildPath(dataDir, "appsettings.json");
     // Don't clobber an existing config (preserves manual edits + upgrades).
     if (!fso.FileExists(targetPath)) {
-        // JSON-escape the connection string (backslashes for the .\INSTANCE form, quotes).
+        // JSON-escape the connection string (backslashes and quotes) so any value is written safely.
         var conn = sqlConn.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
         var json = "{\r\n"
             + '  "ConnectionStrings": {\r\n'

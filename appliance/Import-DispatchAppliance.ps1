@@ -5,7 +5,7 @@
 .DESCRIPTION
   Creates a Generation 2 VM, copies the appliance VHDX into the chosen storage location, sets the Secure
   Boot template to the Microsoft UEFI Certificate Authority (required for Linux), connects a virtual
-  switch (optionally on a specific VLAN), and (optionally) starts it. The appliance configures SQL Server
+  switch (optionally on a specific VLAN), and (optionally) starts it. The appliance configures PostgreSQL
   + Dispatch on first boot; browse to https://<vm-ip>:8420 and set the admin password.
 
   Run it with no networking/storage flags for a guided menu: it lists the host's virtual switches and
@@ -88,7 +88,7 @@ function Select-Storage([string]$Default) {
     Where-Object { $_.DriveLetter -and $_.Size -gt 0 } | Sort-Object DriveLetter | ForEach-Object {
       Write-Host ("  {0}:  {1:N0} GB free of {2:N0} GB  {3}" -f $_.DriveLetter, ($_.SizeRemaining / 1GB), ($_.Size / 1GB), $_.FileSystemLabel)
     }
-  Write-Host "  (The appliance disk is ~6-10 GB thin-provisioned; SQL + logs grow it over time.)"
+  Write-Host "  (The appliance disk is ~6-10 GB thin-provisioned; PostgreSQL + logs grow it over time.)"
   return (Read-WithDefault "VM storage folder" $Default)
 }
 
@@ -177,7 +177,7 @@ try {
   Set-VMProcessor -VM $vm -Count $CpuCount
   # Linux on Gen2 needs the Microsoft UEFI CA Secure Boot template (not the default Windows one).
   Set-VMFirmware -VM $vm -EnableSecureBoot On -SecureBootTemplate "MicrosoftUEFICertificateAuthority"
-  # SQL Server needs a stable working set; disable Dynamic Memory.
+  # PostgreSQL needs a stable working set; disable Dynamic Memory.
   Set-VMMemory -VM $vm -DynamicMemoryEnabled $false
   # Apply a VLAN tag to the adapter if requested (access mode = single tagged VLAN).
   if ($VlanId -gt 0) {
@@ -211,7 +211,7 @@ Write-Host ("Created '{0}' (Gen2, {1} vCPU, {2} GB, switch '{3}'{4}{5})." -f `
   $Name, $CpuCount, $MemoryGB, $SwitchName, $(if ($VlanId -gt 0) { ", VLAN $VlanId" } else { "" }), $(if ($AddToCluster) { ", clustered" } else { "" }))
 if ($Start) {
   Start-VM -VM $vm
-  Write-Host "Started. First boot configures SQL + Dispatch (a few minutes)."
+  Write-Host "Started. First boot configures PostgreSQL + Dispatch (a few minutes)."
 } else {
   Write-Host "Start it with:  Start-VM -Name '$Name'"
 }

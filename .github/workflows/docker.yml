@@ -1,6 +1,6 @@
 name: Docker
 
-# Builds the container image and runs the full stack (Dispatch + SQL via docker-compose), failing unless
+# Builds the container image and runs the full stack (Dispatch + PostgreSQL via docker-compose), failing unless
 # the service comes up and serves /health - the container equivalent of the installer smoke tests. Docker is
 # native on the runner, so this needs no QEMU/nested virtualization. The release workflow builds+pushes the
 # multi-arch image; this proves it actually runs before that.
@@ -24,20 +24,20 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Build image + start the stack (Dispatch + SQL)
+      - name: Build image + start the stack (Dispatch + PostgreSQL)
         run: docker compose up --build -d
 
       - name: Wait for the dashboard /health
         run: |
           ok=0
-          for _ in $(seq 1 60); do          # up to 5 min: image already built; SQL start + DB init + service
+          for _ in $(seq 1 60); do          # up to 5 min: image already built; PostgreSQL start + DB init + service
             if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
             sleep 5
           done
           if [ "$ok" != 1 ]; then
             echo "=== compose ps ==="; docker compose ps
             echo "=== dispatch logs ==="; docker compose logs --tail 150 dispatch || true
-            echo "=== sql logs ==="; docker compose logs --tail 40 sql || true
+            echo "=== postgresql logs ==="; docker compose logs --tail 40 db || true
             echo "dispatch /health did not respond"; exit 1
           fi
           echo "Docker stack /health OK"

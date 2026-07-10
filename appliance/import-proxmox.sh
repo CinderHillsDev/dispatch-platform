@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Import the Dispatch SMTP Relay appliance qcow2 into Proxmox VE as a UEFI (OVMF) VM. Run on the Proxmox
-# host. The appliance configures SQL Server + Dispatch on first boot; then browse to https://<vm-ip>:8420.
+# host. The appliance configures PostgreSQL + Dispatch on first boot; then browse to https://<vm-ip>:8420.
 #
 # Usage:
 #   ./import-proxmox.sh dispatch-appliance.qcow2 <vmid> [--storage local-lvm] [--bridge vmbr0]
@@ -50,6 +50,6 @@ qm set "$VMID" --scsi0 "$disk"
 qm set "$VMID" --boot order=scsi0
 
 echo
-echo "VM $VMID ($NAME) created. First boot configures SQL + Dispatch (a few minutes)."
+echo "VM $VMID ($NAME) created. First boot configures PostgreSQL + Dispatch (a few minutes)."
 if [ "$START" = 1 ]; then qm start "$VMID"; echo "Started."; else echo "Start it with:  qm start $VMID"; fi
 echo "Then browse to https://<vm-ip>:8420 and set the admin password."

@@ -4,11 +4,11 @@
 
 .DESCRIPTION
   Publishes the service, writes config to %ProgramData%\Dispatch, registers a Windows Service, and
-  opens the firewall. The SQL connection string and the dashboard admin password are supplied at
+  opens the firewall. The PostgreSQL connection string and the dashboard admin password are supplied at
   install time (the admin password is required - you'll be prompted if it isn't passed).
 
   Run from an elevated PowerShell:
-    .\install.ps1 -SqlConnection "Server=...;Database=DispatchLog;User Id=sa;Password=...;TrustServerCertificate=True;Encrypt=True"
+    .\install.ps1 -SqlConnection "Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=..."
 
   NOTE: This script has not been executed on the build machine (macOS). It is the Windows install path
   and should be validated on Windows. A WiX MSI (Dispatch.wxs) is also provided for packaged installs.

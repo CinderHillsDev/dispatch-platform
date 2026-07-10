@@ -6,8 +6,8 @@ using Dispatch.Data.Repositories;
 namespace Dispatch.Data.Tests;
 
 /// <summary>
-/// Integration tests against a real SQL Server (Azure SQL Edge). Auto-skip when DISPATCH_TEST_SQL is unset.
-/// Run with: DISPATCH_TEST_SQL="Server=localhost,1433;User Id=sa;Password=...;TrustServerCertificate=True;Encrypt=False" dotnet test
+/// Integration tests against a real PostgreSQL server. Auto-skip when DISPATCH_TEST_SQL is unset.
+/// Run with: DISPATCH_TEST_SQL="Host=localhost;Port=5432;Username=postgres;Password=..." dotnet test
 /// </summary>
 public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServerFixture>
 {
@@ -102,7 +102,7 @@ public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServe
         var maintenance = new SqlLogMaintenance(sql.Factory);
         var spoolId = Guid.NewGuid().ToString("N");
 
-        // Insert a Delivered row dated 100 days ago (bypassing the SYSUTCDATETIME default).
+        // Insert a Delivered row dated 100 days ago (bypassing the now() default).
         await using (var cn = await sql.Factory.OpenAsync())
         {
             await cn.ExecuteAsync("""

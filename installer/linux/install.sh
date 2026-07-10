@@ -3,28 +3,29 @@
 # Dispatch SMTP Relay - Linux installer.
 #
 # Publishes the service, lays out config/data directories, and installs a systemd unit. Per spec §12.1 the
-# only things written to appsettings.json are the SQL connection string, the install-time admin-password
-# seed, and (optionally) the Web UI TLS cert - everything else lives in the SQL config table and is managed
+# only things written to appsettings.json are the database connection string, the install-time admin-password
+# seed, and (optionally) the Web UI TLS cert - everything else lives in the config table and is managed
 # from the dashboard after first run (default ports: SMTP 25 & 587, dashboard 8420, API 8025). The service
 # runs as the unprivileged 'dispatch' user but the systemd unit grants CAP_NET_BIND_SERVICE so it can bind
 # 25/587; if 25 is already taken the listener falls back to 2525 automatically.
 # Recommendation: install on a host with no other SMTP software (Postfix, Sendmail, Exim, …) so 25/587 are free.
 #
 # Usage:
-#   # Use an existing SQL Server / Azure SQL:
-#   sudo ./install.sh --sql-connection "Server=...;Database=DispatchLog;User Id=...;Password=...;TrustServerCertificate=True;Encrypt=True" --admin-password "<pw>"
+#   # Use an existing PostgreSQL server:
+#   sudo ./install.sh --sql-connection "Host=...;Port=5432;Database=DispatchLog;Username=...;Password=..." --admin-password "<pw>"
 #
-#   # Or have the installer set up SQL Server Express locally (Ubuntu/Debian or RHEL/Fedora):
-#   sudo ./install.sh --install-sql --sa-password "<StrongSaPassw0rd!>" --admin-password "<pw>" [--generate-cert]
+#   # Or have the installer set up PostgreSQL locally (Ubuntu/Debian or RHEL/Fedora):
+#   sudo ./install.sh --install-postgres --db-password "<StrongDbPassw0rd!>" --admin-password "<pw>" [--generate-cert]
 #
 #   # From a release tarball (self-contained binaries; no .NET SDK / Node required on the box):
-#   sudo ./install.sh --prebuilt ./bin --install-sql --sa-password "<pw>" --admin-password "<pw>"
+#   sudo ./install.sh --prebuilt ./bin --install-postgres --db-password "<pw>" --admin-password "<pw>"
 #
 # Flags:
-#   --sql-connection <s>   Connection string for an existing server (omit when using --install-sql).
-#   --install-sql          Install SQL Server (Express, free) locally + create the DispatchLog DB. On arm64
-#                          (no SQL Server build) this runs Azure SQL Edge in a container instead - needs Docker.
-#   --sa-password <s>      SA password for --install-sql (required with --install-sql; must meet SQL policy).
+#   --sql-connection <s>   Connection string for an existing server (omit when using --install-postgres).
+#   --install-postgres     Install PostgreSQL locally + create the 'dispatch' role and DispatchLog DB.
+#                          (multi-arch: works on both amd64 and arm64). Alias: --install-sql.
+#   --db-password <s>      Password for the created 'dispatch' role (with --install-postgres; a strong
+#                          random one is generated if omitted).
 #   --admin-password <s>   Dashboard admin password seed (prompted if omitted).
 #   --generate-cert        Generate a self-signed PFX and serve the dashboard over HTTPS (spec §17.2).
 #   --http-port <n>        Firewall/URL dashboard port (default 8420; change in the dashboard to differ).
@@ -34,7 +35,7 @@
 #   --prebuilt <dir>       Install pre-published self-contained binaries from <dir> instead of building from
 #                          source. Used by the release tarball; needs neither the .NET SDK nor Node.
 #   --no-start             Stage the install but don't start the service (the unit is enabled, not started).
-#                          Used when baking the appliance image; first boot configures SQL and starts it.
+#                          Used when baking the appliance image; first boot configures PostgreSQL and starts it.
 #
 set -euo pipefail
 
@@ -51,8 +52,8 @@ SQL_CONNECTION=""
 ADMIN_PASSWORD=""
 SOURCE_DIR=""
 PREBUILT_DIR=""
-INSTALL_SQL="0"
-SA_PASSWORD=""
+INSTALL_POSTGRES="0"
+DB_PASSWORD=""
 GENERATE_CERT="0"
 TLS_CERT_PATH=""
 TLS_CERT_PASSWORD=""
@@ -62,8 +63,9 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --sql-connection) SQL_CONNECTION="$2"; shift 2;;
     --admin-password) ADMIN_PASSWORD="$2"; shift 2;;
-    --install-sql) INSTALL_SQL="1"; shift;;
-    --sa-password) SA_PASSWORD="$2"; shift 2;;
+    # --install-sql is a hidden backward-compatible alias for --install-postgres.
+    --install-postgres|--install-sql) INSTALL_POSTGRES="1"; shift;;
+    --db-password) DB_PASSWORD="$2"; shift 2;;
     --generate-cert) GENERATE_CERT="1"; shift;;
     --http-port) HTTP_PORT="$2"; shift 2;;
     --api-port) API_PORT="$2"; shift 2;;
@@ -71,7 +73,7 @@ while [[ $# -gt 0 ]]; do
     --source) SOURCE_DIR="$2"; shift 2;;
     --prebuilt) PREBUILT_DIR="$2"; shift 2;;
     # Stage the install without starting the service (the unit is enabled, not started). Used when building
-    # the prebuilt appliance image, where SQL is configured and the service is started on first boot.
+    # the prebuilt appliance image, where PostgreSQL is configured and the service is started on first boot.
     --no-start) NO_START="1"; shift;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
@@ -79,103 +81,60 @@ done
 
 [[ $EUID -eq 0 ]] || { echo "Please run as root (sudo)." >&2; exit 1; }
 
-# ---- Optional: install SQL Server Express locally -----------------------------------------------
-# Installs Microsoft's mssql-server (Express edition = free, set via MSSQL_PID), runs the unattended
-# setup, and creates the DispatchLog database. Best-effort across Debian/Ubuntu (apt) and RHEL/Fedora
-# (dnf/yum); validate on your target distro. Sets SQL_CONNECTION to the local SA connection.
-install_sql_server() {
-  [[ -n "$SA_PASSWORD" ]] || { echo "--sa-password is required with --install-sql." >&2; exit 1; }
+# ---- Optional: install PostgreSQL locally -------------------------------------------------------
+# Installs the distro's PostgreSQL packages, ensures the cluster is running, then creates a 'dispatch'
+# login role and a DispatchLog database owned by it. Best-effort across Debian/Ubuntu (apt) and
+# RHEL/Fedora (dnf/yum); validate on your target distro. PostgreSQL is multi-arch (amd64 + arm64), so no
+# architecture-specific fallback is needed. Sets SQL_CONNECTION to the local Npgsql connection.
+install_postgres() {
+  # If no password was supplied, generate a strong random one for the 'dispatch' role.
+  if [[ -z "$DB_PASSWORD" ]]; then
+    DB_PASSWORD="$(openssl rand -base64 24 2>/dev/null || head -c 18 /dev/urandom | base64)"
+    echo "==> No --db-password given; generated a random password for the 'dispatch' role."
+  fi
   . /etc/os-release
 
-  # SQL Server has no arm64 Linux build, so on arm64 fall back to Azure SQL Edge, which is arm64-native
-  # but ships only as a container image. This is a dev/test convenience - SQL Edge is deprecated by
-  # Microsoft; for production use an amd64 host with SQL Server, or point --sql-connection at an external
-  # instance.
   local arch; arch="$(uname -m)"
-  if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
-    install_sql_edge_container
-    return
-  fi
-
-  echo "==> Installing SQL Server (Express) for $ID $VERSION_ID ($arch)"
+  echo "==> Installing PostgreSQL for $ID $VERSION_ID ($arch)"
   if command -v apt-get >/dev/null 2>&1; then
-    # Prerequisites the rest of this function needs (a minimal cloud/VM image often lacks gnupg + the
-    # https apt transport); install them before using gpg so the key import can't fail with "gpg: not found".
     apt-get update -y || true
-    apt-get install -y curl ca-certificates gnupg apt-transport-https
-    # SQL Server 2025 (supports Ubuntu 24.04). The 2025 .list uses signed-by=/usr/share/keyrings/microsoft-prod.gpg,
-    # so install the Microsoft key there.
-    install -d -m 0755 /usr/share/keyrings
-    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-    chmod a+r /usr/share/keyrings/microsoft-prod.gpg
-    # Use the repo list for this distro release; fall back to the newest known LTS list if MS has no list
-    # for this exact ${VERSION_ID} yet (e.g. a brand-new Ubuntu before the SQL repo catches up).
-    curl -fsSL "https://packages.microsoft.com/config/${ID}/${VERSION_ID}/mssql-server-2025.list" -o /etc/apt/sources.list.d/mssql-server-2025.list || \
-      curl -fsSL "https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2025.list" -o /etc/apt/sources.list.d/mssql-server-2025.list
-    apt-get update -y
-    ACCEPT_EULA=Y MSSQL_PID=Express MSSQL_SA_PASSWORD="$SA_PASSWORD" apt-get install -y mssql-server
-    apt-get install -y mssql-tools18 unixodbc-dev || true
+    apt-get install -y postgresql postgresql-contrib
   elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
     local PM; PM="$(command -v dnf || command -v yum)"
-    curl -fsSL "https://packages.microsoft.com/config/rhel/${VERSION_ID%%.*}/mssql-server-2025.repo" -o /etc/yum.repos.d/mssql-server-2025.repo
-    ACCEPT_EULA=Y MSSQL_PID=Express MSSQL_SA_PASSWORD="$SA_PASSWORD" "$PM" install -y mssql-server
-    "$PM" install -y mssql-tools18 unixODBC-devel || true
-  else
-    echo "Unsupported package manager - install SQL Server manually and pass --sql-connection." >&2; exit 1
-  fi
-
-  echo "==> Running unattended SQL Server setup (Express edition)"
-  MSSQL_PID=Express MSSQL_SA_PASSWORD="$SA_PASSWORD" ACCEPT_EULA=Y /opt/mssql/bin/mssql-conf -n setup accept-eula
-  systemctl enable --now mssql-server
-
-  echo "==> Waiting for SQL Server and creating the DispatchLog database"
-  local sqlcmd; sqlcmd="$(command -v sqlcmd || echo /opt/mssql-tools18/bin/sqlcmd)"
-  for _ in $(seq 1 30); do
-    if "$sqlcmd" -S localhost -U sa -P "$SA_PASSWORD" -C -Q "SELECT 1" >/dev/null 2>&1; then break; fi
-    sleep 5
-  done
-  "$sqlcmd" -S localhost -U sa -P "$SA_PASSWORD" -C -Q "IF DB_ID('DispatchLog') IS NULL CREATE DATABASE [DispatchLog];"
-  SQL_CONNECTION="Server=localhost;Database=DispatchLog;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;Encrypt=True"
-}
-
-# ---- arm64 fallback: Azure SQL Edge in a container ---------------------------------------------
-# SQL Server is amd64-only on Linux; Azure SQL Edge speaks the same wire protocol and runs natively on
-# arm64. Needs a container runtime (docker/podman); the DispatchLog database is created by the service's
-# own DatabaseInitializer on first start, so no sqlcmd is required.
-install_sql_edge_container() {
-  echo "==> arm64 detected - SQL Server has no arm64 Linux build; using Azure SQL Edge (container) instead."
-  local runtime=""
-  if command -v docker >/dev/null 2>&1; then runtime="docker"
-  elif command -v podman >/dev/null 2>&1; then runtime="podman"
-  elif command -v apt-get >/dev/null 2>&1; then
-    echo "==> Installing a container runtime (docker.io)"
-    apt-get update -y || true
-    if apt-get install -y docker.io; then
-      systemctl enable --now docker || true
-      runtime="docker"
+    "$PM" install -y postgresql-server postgresql-contrib
+    # RHEL/Fedora ship an uninitialized cluster; initdb it once before starting (idempotent guard).
+    if [[ ! -s /var/lib/pgsql/data/PG_VERSION ]]; then
+      /usr/bin/postgresql-setup --initdb >/dev/null 2>&1 || postgresql-setup initdb >/dev/null 2>&1 || true
     fi
+  else
+    echo "Unsupported package manager - install PostgreSQL manually and pass --sql-connection." >&2; exit 1
   fi
-  [[ -n "$runtime" ]] || {
-    echo "No container runtime found and Docker could not be installed automatically." >&2
-    echo "Install Docker or Podman and re-run, or pass --sql-connection to an external SQL instance." >&2
-    exit 1
-  }
 
-  echo "==> Starting Azure SQL Edge via $runtime (instance 'dispatch-sql' on port 1433)"
-  "$runtime" rm -f dispatch-sql >/dev/null 2>&1 || true
-  "$runtime" run -d --name dispatch-sql \
-    -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=${SA_PASSWORD}" \
-    -p 1433:1433 -v dispatch-sql-data:/var/opt/mssql \
-    --restart unless-stopped \
-    mcr.microsoft.com/azure-sql-edge:latest
+  echo "==> Ensuring the PostgreSQL cluster is started"
+  systemctl enable --now postgresql
 
-  echo "==> Waiting for Azure SQL Edge to accept TCP on 1433"
-  for _ in $(seq 1 36); do
-    if (exec 3<>/dev/tcp/127.0.0.1/1433) 2>/dev/null; then exec 3>&- 3<&-; break; fi
-    sleep 5
+  echo "==> Waiting for PostgreSQL and creating the 'dispatch' role + DispatchLog database"
+  for _ in $(seq 1 30); do
+    if sudo -u postgres psql -tAc "SELECT 1" >/dev/null 2>&1; then break; fi
+    sleep 2
   done
-  # The service's DatabaseInitializer connects to master and creates DispatchLog on first start.
-  SQL_CONNECTION="Server=localhost,1433;Database=DispatchLog;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True;Encrypt=True"
+  # Idempotent role creation, guarded by a pg_roles check: create the login role only when absent, otherwise
+  # refresh its password so re-runs stay in sync with --db-password. The password is passed as a psql
+  # variable and quoted through format(%L), so it is safe even if it contains punctuation. \gexec runs the
+  # generated statement (CREATE/ALTER ROLE cannot be templated inline).
+  sudo -u postgres psql -v ON_ERROR_STOP=1 -v pw="$DB_PASSWORD" <<'PSQL'
+SELECT format('CREATE ROLE dispatch LOGIN PASSWORD %L', :'pw')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dispatch')\gexec
+SELECT format('ALTER ROLE dispatch LOGIN PASSWORD %L', :'pw')
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dispatch')\gexec
+PSQL
+  # Idempotent database creation, guarded by a pg_database check: CREATE DATABASE cannot run inside a
+  # transaction/DO block, so gate it with a \gexec that only fires when the database is absent.
+  sudo -u postgres psql -v ON_ERROR_STOP=1 <<'PSQL'
+SELECT 'CREATE DATABASE "DispatchLog" OWNER dispatch'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'DispatchLog')\gexec
+PSQL
+  SQL_CONNECTION="Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=${DB_PASSWORD}"
 }
 
 # ---- Optional: generate a self-signed TLS cert for the dashboard --------------------------------
@@ -193,8 +152,8 @@ generate_cert() {
   chmod 600 "$TLS_CERT_PATH"
 }
 
-[[ "$INSTALL_SQL" == "1" ]] && install_sql_server
-[[ -n "$SQL_CONNECTION" ]] || { echo "Provide --sql-connection, or use --install-sql." >&2; exit 1; }
+[[ "$INSTALL_POSTGRES" == "1" ]] && install_postgres
+[[ -n "$SQL_CONNECTION" ]] || { echo "Provide --sql-connection, or use --install-postgres." >&2; exit 1; }
 
 # Prompt for the admin password only when omitted AND running interactively. In a non-interactive run
 # (e.g. baking the appliance image) leave it unset - the dashboard requires the admin password to be set on
@@ -283,7 +242,7 @@ mkdir -p "$CONFIG_DIR" "$DATA_DIR/.dispatch-spool" "$LOG_DIR"
 
 echo "==> Writing $CONFIG_DIR/appsettings.json"
 # Spec §12.1: appsettings holds ONLY the connection string, the admin-password seed, and the Web UI TLS
-# cert. Ports/spool/retry/etc. are seeded into the SQL config table on first run and managed in the dashboard.
+# cert. Ports/spool/retry/etc. are seeded into the config table on first run and managed in the dashboard.
 WEBUI_TLS=""
 if [[ -n "$TLS_CERT_PATH" ]]; then
   WEBUI_TLS=",
@@ -297,7 +256,7 @@ cat > "$CONFIG_DIR/appsettings.json" <<JSON
 }
 JSON
 
-# The admin password is consumed once on first start: hashed into SQL, then the plaintext seed is wiped
+# The admin password is consumed once on first start: hashed into the database, then the plaintext seed is wiped
 # from appsettings.json by the service so the password lives only in the database. File is root/dispatch-only.
 chown -R dispatch:dispatch "$INSTALL_DIR" "$DATA_DIR" "$LOG_DIR" "$CONFIG_DIR"
 chmod 600 "$CONFIG_DIR/appsettings.json"

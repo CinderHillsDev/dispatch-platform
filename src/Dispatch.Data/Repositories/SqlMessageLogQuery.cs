@@ -96,7 +96,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
     // Shared filter clauses (no cursor/paging). Every user value is a parameter - never interpolated.
     private static void AppendFilters(StringBuilder where, DynamicParameters p, MessageLogFilter filter)
     {
-        // Bind dates as datetime2 to match the column precision.
+        // Bind dates as timestamp to match the timestamptz column type.
         if (filter.FromUtc is { } from) { where.Append(" AND logged_at >= @FromUtc"); p.Add("FromUtc", from, DbType.DateTime); }
         if (filter.ToUtc is { } to) { where.Append(" AND logged_at < @ToUtc"); p.Add("ToUtc", to, DbType.DateTime); }
         if (filter.Statuses is { Length: > 0 } s) { where.Append(" AND status = ANY(@Statuses)"); p.Add("Statuses", s); }

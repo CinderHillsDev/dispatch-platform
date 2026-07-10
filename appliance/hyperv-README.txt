@@ -63,7 +63,7 @@ This zip contains:
 ------------------------------------------------------------------------------
  Notes
 ------------------------------------------------------------------------------
-  * First boot configures SQL Server Express + Dispatch; allow a few minutes.
+  * First boot configures PostgreSQL + Dispatch; allow a few minutes.
   * The appliance is self-contained - no separate .NET runtime needed.
   * Full docs: https://chrismuench.github.io/Dispatch-SMTP-Relay/
 ==============================================================================

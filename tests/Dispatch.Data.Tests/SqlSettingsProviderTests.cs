@@ -6,7 +6,7 @@ namespace Dispatch.Data.Tests;
 
 /// <summary>
 /// Unit tests for the cached, SQL-config-backed settings providers (spec §12.3, §12.5). These exercise
-/// the override/fallback logic against an in-memory config store, so they need no SQL Server.
+/// the override/fallback logic against an in-memory config store, so they need no database.
 /// </summary>
 public class SqlSettingsProviderTests
 {

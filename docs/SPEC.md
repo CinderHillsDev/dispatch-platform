@@ -60,7 +60,7 @@ The shipped implementation intentionally diverges from a few details described l
 - **Config provider settings** are edited per-relay via `PUT /api/relays/{id}` (named relays, §10), not a global `PUT /api/config/provider`; live in-flight counts are part of `GET /api/stats/relays`. (Affects §9.3.)
 - **Default source-IP allow-lists are deployment-friendly, not loopback-only.** A loopback-only default makes the dashboard unreachable on the common deployment shapes (headless servers have no local browser; containers NAT every request). So the seeded defaults are: `webui.allowed_cidrs` and `api.allowed_cidrs` = **empty (allow all)** - these surfaces are gated by the dashboard password and API keys respectively, with the CIDR list as optional hardening; `listener.allowed_cidrs` = **loopback + private ranges** (`127.0.0.1/32`, `::1/128`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) so same-host apps, private LANs and Docker networks can submit mail while the SMTP listener is **not** an open internet relay out of the box. Operators tighten any of these in the dashboard. (Affects §12.6 defaults, §17.10.)
 - **Provider set is larger than §8 describes.** Implemented providers: `Unconfigured` (default), `Local`, `Smtp`, `Mailgun`, `SendGrid`, `AzureCommunication`, **`AmazonSes`, `Postmark`, `Resend`, `SparkPost`, `Smtp2Go`**. The five bold ones were on Appendix A ("future") but are shipped; their credential field schemas live in `RelayProviderSchema` (Core). Anywhere §8/§10.2 says the default relay provider is `None`, read `Unconfigured`. (Affects §8, §10.2, Appendix A.)
-- **Windows install is a WiX Burn bundle, not a WinForms wizard.** §15.2 describes a standalone .NET WinForms setup wizard; the actual installer is `DispatchSetup.exe`, a WiX Burn bundle (`bundle/Bundle.wxs`) that chains a thin `InstallSqlExpress.exe` launcher (runs `InstallSqlExpress.ps1` to install **SQL Server 2025 Express**, instance `DISPATCHSQL`) then the Dispatch MSI. There is no interactive multi-step UI and no certificate-generation step on Windows - automatic self-signed cert generation exists only on Linux via `install.sh --generate-cert`. (Affects §15.2, §17.2.)
+- **Windows install is a WiX Burn bundle, not a WinForms wizard.** §15.2 describes a standalone .NET WinForms setup wizard; the actual installer is `DispatchSetup.exe`, a WiX Burn bundle (`bundle/Bundle.wxs`) that chains a thin `InstallPostgres.exe` launcher (runs `InstallPostgres.ps1` to silently install a bundled **PostgreSQL** server and create the `DispatchLog` database) then the Dispatch MSI. There is no interactive multi-step UI and no certificate-generation step on Windows - automatic self-signed cert generation exists only on Linux via `install.sh --generate-cert`. (Affects §15.2, §17.2.)
 - **The ingestion API is HTTP-only; no API-TLS config keys.** There are no `api.tls_cert_path` / `api.tls_cert_password` config keys and no API-TLS UI controls - Kestrel serves the ingestion port over plain HTTP (terminate TLS at a reverse proxy if needed). The `webui.tls_cert_path` / `webui.tls_cert_password` settings live in **appsettings.json** (§12.2), not the SQL `config` table, so they are not rows in the §12.3 table. There is also no `webui.require_auth` key - the dashboard requires auth whenever an admin password hash is set. Two config keys exist that §12.3 omits: `listener.server_name` (default `Dispatch`) and `purge.captured_retention_days` (default `7`). (Affects §9.2, §12.3.)
 - **Some §-pseudocode signatures are illustrative.** The internal method shapes shown in §10.7 (`RoutingEngine.ResolveAsync`) and §11.5 (provider-test service) differ from the code - e.g. `ResolveAsync` returns `ValueTask<ResolvedRelay>` over `IReadOnlyList<string>` recipients, and starting a provider test is synchronous and returns a `TestRun`. Treat those listings as intent, not literal API.
 - **SMTP source-IP denial happens at MAIL FROM, not the greeting.** The CIDR allow-list and intake/back-pressure checks run in the mailbox filter (`CanAcceptFromAsync`); a disallowed source is refused there (and a `Denied` row is logged), rather than with a `554` at the SMTP banner. (Refines §5.3, §17.10.)
@@ -98,10 +98,10 @@ A configurable pool of background workers (default: 4) each claim one spool file
 - **Transient failure** → increment `relay_counters.retried`; write `Retrying` row to `relay_log` only if `logging.log_retrying = true`; update `.meta` sidecar; sleep back-off; retry
 - **Permanent failure** → increment `relay_counters.failed`; write `Failed` row to `relay_log` (always); move file to `failed/`
 
-SQL Server is only written to **after** the provider responds. If SQL Server is unavailable, mail still flows - the log entry will be missing from the UI until SQL recovers, but no messages are lost.
+PostgreSQL is only written to **after** the provider responds. If PostgreSQL is unavailable, mail still flows - the log entry will be missing from the UI until the database recovers, but no messages are lost.
 
-**SQL Server - Logging & Config Only**
-SQL Server Express holds `relay_log` (event history, configurable suppression), `relay_counters` (daily aggregates, always written), the `config` table, and the schema version table.
+**PostgreSQL - Logging & Config Only**
+PostgreSQL holds `relay_log` (event history, configurable suppression), `relay_counters` (daily aggregates, always written), the `config` table, and the schema version table.
 
 **Embedded Web UI Layer**
 ASP.NET Core minimal API hosts a React/Vite SPA on port 8420 (default). The UI reads `relay_log` for the Message Log, reads `spool/` directory counts for the queue depth widget, and streams live events via SignalR.
@@ -114,13 +114,13 @@ ASP.NET Core minimal API hosts a React/Vite SPA on port 8420 (default). The UI r
 | Relay dispatch | MailKit SmtpClient + provider SDKs |
 | **Durable queue** | **Local spool directory - `.eml` files, atomic directory moves** |
 | Worker wake signal | `FileSystemWatcher` + `Channel<string>` (filename only) |
-| Relay event log | SQL Server Express - `relay_log` (configurable) + `relay_counters` (always) |
-| Log ORM | Microsoft.Data.SqlClient + Dapper |
+| Relay event log | PostgreSQL - `relay_log` (configurable) + `relay_counters` (always) |
+| Log ORM | Npgsql + Dapper |
 | Web host | ASP.NET Core 10 minimal API |
 | Real-time log push | SignalR (Microsoft.AspNetCore.SignalR) |
 | Web UI framework | React 18 + Vite (compiled, embedded in assembly) |
-| Configuration store | SQL Server `config` table (connection string only in `appsettings.json`) |
-| Structured logging | Serilog - file sink + SQL Server sink (`relay_log`) + in-memory ring buffer |
+| Configuration store | PostgreSQL `config` table (connection string only in `appsettings.json`) |
+| Structured logging | Serilog - file sink + PostgreSQL sink (`relay_log`) + in-memory ring buffer |
 | Windows service host | .NET Worker Service (IHostedService) |
 | Windows installer | WiX Toolset v6 (MSI) |
 | Linux service | systemd unit file |
@@ -170,12 +170,12 @@ Dispatch/
 | Microsoft.AspNetCore.SignalR | Real-time log push to the browser UI | MIT |
 | SendGrid (v9.x) | SendGrid upstream relay via API | MIT |
 | Azure.Communication.Email | Azure Communication Services relay via API | MIT |
-| Microsoft.Data.SqlClient | SQL Server connection for relay_log writes | MIT |
+| Npgsql | PostgreSQL connection for relay_log writes | PostgreSQL (BSD-style) |
 | Dapper | Lightweight ORM for relay_log inserts and UI queries | Apache 2.0 |
 | System.Net.Http (built-in) | Mailgun upstream relay via REST (no SDK needed) | MIT |
 | Microsoft.Extensions.Hosting | Worker service host / DI / lifetime management | MIT |
 
-> **Note:** SQL Server is only ever written to *after* the provider responds. Configuration is in the SQL `config` table (loaded into memory at startup). If SQL goes down after startup, the cached config keeps services running. The web UI cannot save new settings while SQL is down, but mail continues to flow.
+> **Note:** PostgreSQL is only ever written to *after* the provider responds. Configuration is in the `config` table (loaded into memory at startup). If PostgreSQL goes down after startup, the cached config keeps services running. The web UI cannot save new settings while the database is down, but mail continues to flow.
 
 ---
 
@@ -220,7 +220,7 @@ The SMTP listener binds to all interfaces so connections arrive regardless of wh
 
 Default allow-list is `127.0.0.1/32` (localhost only). To accept from your local network, add your subnet - e.g. `192.168.1.0/24`. To accept from anywhere, set `0.0.0.0/0` (open relay - only do this with `Require AUTH` enabled).
 
-When **Require AUTH** is enabled, Dispatch validates credentials against a username/password list stored in the `config_smtp_credentials` table in SQL Server. The web UI provides a credential manager for this list.
+When **Require AUTH** is enabled, Dispatch validates credentials against a username/password list stored in the `config_smtp_credentials` table in PostgreSQL. The web UI provides a credential manager for this list.
 
 ---
 
@@ -228,7 +228,7 @@ When **Require AUTH** is enabled, Dispatch validates credentials against a usern
 
 ### 6.1 Design Principle
 
-The spool directory on the local filesystem is the durable queue. SQL Server is never on the critical path from SMTP receipt to `250 OK`. The flow is:
+The spool directory on the local filesystem is the durable queue. PostgreSQL is never on the critical path from SMTP receipt to `250 OK`. The flow is:
 
 ```
 SMTP DATA complete
@@ -245,17 +245,17 @@ Worker moves file to spool/processing/
        ▼
 Parse with MimeKit, run RoutingEngine → call IRelayProvider
        │
-       ├── Success ──► Write Delivered row to relay_log in SQL
+       ├── Success ──► Write Delivered row to relay_log in PostgreSQL
        │                Delete spool file
        │
        ├── Transient ─► Update retry sidecar (.meta file)
        │   failure      Sleep back-off interval, retry
        │
-       └── Permanent ─► Write Failed row to relay_log in SQL
+       └── Permanent ─► Write Failed row to relay_log in PostgreSQL
            failure      Move file to spool/failed/
 ```
 
-SQL Server is written to **only after** the provider responds. If SQL Server is down, mail still flows and spool files accumulate normally - the `relay_log` insert is fire-and-forget. A failed insert is logged to the Serilog file sink (so the event is never silently lost) and the spool file is still deleted on delivery success. The UI Message Log will have gaps for the outage period; no messages are lost.
+PostgreSQL is written to **only after** the provider responds. If PostgreSQL is down, mail still flows and spool files accumulate normally - the `relay_log` insert is fire-and-forget. A failed insert is logged to the Serilog file sink (so the event is never silently lost) and the spool file is still deleted on delivery success. The UI Message Log will have gaps for the outage period; no messages are lost.
 
 ### 6.2 Spool Directory Structure
 
@@ -577,7 +577,7 @@ Files in `spool/failed/` are surfaced in the web UI Message Log with status `Fai
 
 ### 6.10 Auto-Purge and Retention
 
-Dispatch manages data growth in two places: spool files on disk and log rows in SQL Server.
+Dispatch manages data growth in two places: spool files on disk and log rows in PostgreSQL.
 
 #### Spool File Purge
 
@@ -596,27 +596,32 @@ The `PurgeWorker` `IHostedService` runs every 6 hours (configurable) and deletes
 
 ```sql
 DELETE FROM relay_log
-WHERE logged_at < DATEADD(DAY, -@RetentionDays, SYSUTCDATETIME());
+WHERE logged_at < now() - (@RetentionDays * INTERVAL '1 day');
 ```
 
 Deletes run in batches of 1,000 rows with a 100 ms pause between batches to avoid lock contention.
 
-#### relay_log Purge - Size-Based Pressure
+#### relay_log Purge - Size-Based Pressure (optional)
 
-The purge worker also checks database size on every run and on service startup. If the `DispatchLog` database reaches **9.5 GB**, it deletes the oldest `relay_log` rows in batches of 500 until the database drops below **9.0 GB**:
+PostgreSQL imposes **no hard database-size cap**, so size-based pressure purging is an **optional, opt-in safety valve** rather than a mandatory guardrail. It is **disabled by default**; time-based retention (above) is the primary growth control. When an operator enables it and sets a `TriggerGb` threshold, the purge worker checks the database size on every run and on service startup via `pg_database_size(current_database())`. If the `DispatchLog` database reaches the configured `TriggerGb`, it deletes the oldest `relay_log` rows in batches of 500 until the database drops below `TargetGb`:
 
 ```csharp
 // Priority order for size-based purge (oldest first in each phase):
 // 1. relay_log rows (most numerous; no raw bytes)
-// SQL Server Express hard limit is 10 GB - 9.5 GB trigger leaves 500 MB buffer
+// Optional feature: only runs when Purge.SizePressure.Enabled = true and a TriggerGb is set.
+// PostgreSQL has no built-in size ceiling, so the operator picks a threshold that fits their disk.
 ```
+
+With the feature enabled and (for example) a 10 GB `TriggerGb` / 9.5 GB `TargetGb`:
 
 | Database size | Behaviour |
 |---|---|
-| < 8.0 GB | ✅ Normal |
-| 8.0 – 9.0 GB | 🟡 Warning shown in web UI and logs |
-| 9.0 – 9.5 GB | 🟠 Pressure purge imminent |
-| ≥ 9.5 GB | 🔴 Pressure purge runs immediately |
+| < 80% of TriggerGb | ✅ Normal |
+| 80 - 95% of TriggerGb | 🟡 Warning shown in web UI and logs |
+| 95 - 100% of TriggerGb | 🟠 Pressure purge imminent |
+| ≥ TriggerGb | 🔴 Pressure purge runs immediately |
+
+When the feature is disabled (the default), none of these thresholds apply and `relay_log` growth is bounded only by time-based retention.
 
 #### Purge Configuration
 
@@ -626,8 +631,9 @@ The purge worker also checks database size on every run and on service startup. 
   "ScheduleIntervalHours": 6,
   "SpoolFailedRetentionDays": 30,
   "SizePressure": {
-    "TriggerGb": 9.5,
-    "TargetGb":  9.0
+    "Enabled": false,
+    "TriggerGb": 10.0,
+    "TargetGb":  9.5
   },
   "Log": {
     "DeliveredRetentionDays": 30,
@@ -636,40 +642,40 @@ The purge worker also checks database size on every run and on service startup. 
 }
 ```
 
-### 6.11 SQL Server - Full Database Schema
+### 6.11 PostgreSQL - Full Database Schema
 
-SQL Server holds four tables. There is no `relay_queue` table.
+PostgreSQL holds four tables. There is no `relay_queue` table.
 
 **relays** - named relay configurations:
 
 ```sql
 CREATE TABLE relays (
-    id               INT IDENTITY  PRIMARY KEY,
-    name             NVARCHAR(128) NOT NULL UNIQUE,
-    provider         NVARCHAR(64)  NOT NULL,   -- Mailgun | SendGrid | AzureCommunication | Smtp | None
-    is_default       BIT           NOT NULL DEFAULT 0,
-    enabled          BIT           NOT NULL DEFAULT 1,
-    max_concurrency   INT           NOT NULL DEFAULT 4,    -- max simultaneous dispatches; 0 = unlimited
-    max_message_bytes INT           NOT NULL DEFAULT 0,    -- 0 = use provider type default
-    created_at        DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME(),
-    updated_at        DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
+    id               INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name             VARCHAR(128)  NOT NULL UNIQUE,
+    provider         VARCHAR(64)   NOT NULL,   -- Mailgun | SendGrid | AzureCommunication | Smtp | None
+    is_default       BOOLEAN       NOT NULL DEFAULT FALSE,
+    enabled          BOOLEAN       NOT NULL DEFAULT TRUE,
+    max_concurrency   INT          NOT NULL DEFAULT 4,    -- max simultaneous dispatches; 0 = unlimited
+    max_message_bytes INT          NOT NULL DEFAULT 0,    -- 0 = use provider type default
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 -- Enforce exactly one default relay
-CREATE UNIQUE INDEX IX_relays_default ON relays (is_default) WHERE is_default = 1;
+CREATE UNIQUE INDEX IX_relays_default ON relays (is_default) WHERE is_default = TRUE;
 ```
 
 **routing_rules** - ordered routing table:
 
 ```sql
 CREATE TABLE routing_rules (
-    id                INT IDENTITY  PRIMARY KEY,
+    id                INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     priority          INT           NOT NULL UNIQUE,
-    name              NVARCHAR(128) NOT NULL,
-    recipient_pattern NVARCHAR(256) NULL,
-    sender_pattern    NVARCHAR(256) NULL,
+    name              VARCHAR(128)  NOT NULL,
+    recipient_pattern VARCHAR(256)  NULL,
+    sender_pattern    VARCHAR(256)  NULL,
     relay_id          INT           NOT NULL REFERENCES relays(id),
-    enabled           BIT           NOT NULL DEFAULT 1,
-    created_at        DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
+    enabled           BOOLEAN       NOT NULL DEFAULT TRUE,
+    created_at        TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 ```
 
@@ -678,48 +684,48 @@ CREATE TABLE routing_rules (
 ```sql
 CREATE TABLE relay_log (
     -- Identity
-    id                  BIGINT IDENTITY   PRIMARY KEY,
-    logged_at           DATETIME2         NOT NULL DEFAULT SYSUTCDATETIME(),
-    spool_id            NVARCHAR(64)      NOT NULL,
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    logged_at           TIMESTAMPTZ       NOT NULL DEFAULT now(),
+    spool_id            VARCHAR(64)       NOT NULL,
 
     -- Event
-    event               NVARCHAR(32)      NOT NULL,
+    event               VARCHAR(32)       NOT NULL,
                                           -- Received | Delivered | Retrying | Failed
                                           -- TestSent | Denied
-    status              NVARCHAR(16)      NOT NULL,
+    status              VARCHAR(16)       NOT NULL,
                                           -- OK | Error | Denied
     retry_attempt       INT               NOT NULL DEFAULT 0,
 
     -- Envelope
-    from_address        NVARCHAR(512)     NOT NULL,
-    from_domain         NVARCHAR(255)     NOT NULL,   -- extracted, for indexed filtering
-    to_addresses        NVARCHAR(MAX)     NOT NULL,   -- JSON array of full addresses
-    to_domain           NVARCHAR(255)     NOT NULL,   -- first recipient domain, for indexed filtering
-    subject             NVARCHAR(998)     NOT NULL,
+    from_address        VARCHAR(512)      NOT NULL,
+    from_domain         VARCHAR(255)      NOT NULL,   -- extracted, for indexed filtering
+    to_addresses        TEXT              NOT NULL,   -- JSON array of full addresses
+    to_domain           VARCHAR(255)      NOT NULL,   -- first recipient domain, for indexed filtering
+    subject             VARCHAR(998)      NOT NULL,
     size_bytes          INT               NOT NULL DEFAULT 0,
 
     -- Routing
     relay_id            INT               NULL REFERENCES relays(id),
-    relay_name          NVARCHAR(128)     NULL,       -- denormalised - survives relay rename/delete
+    relay_name          VARCHAR(128)      NULL,       -- denormalised - survives relay rename/delete
     routing_rule_id     INT               NULL REFERENCES routing_rules(id),
-    routing_rule_name   NVARCHAR(128)     NULL,       -- denormalised - survives rule rename/delete
-    routing_matched     BIT               NOT NULL DEFAULT 0,  -- 0 = fell through to default
+    routing_rule_name   VARCHAR(128)      NULL,       -- denormalised - survives rule rename/delete
+    routing_matched     BOOLEAN           NOT NULL DEFAULT FALSE,  -- FALSE = fell through to default
 
     -- Provider outcome
-    provider            NVARCHAR(64)      NULL,
-    provider_message_id NVARCHAR(256)     NULL,       -- ID returned by provider (e.g. Mailgun message-id)
-    provider_response   NVARCHAR(MAX)     NULL,
+    provider            VARCHAR(64)       NULL,
+    provider_message_id VARCHAR(256)      NULL,       -- ID returned by provider (e.g. Mailgun message-id)
+    provider_response   TEXT              NULL,
     duration_ms         INT               NULL,
-    error               NVARCHAR(MAX)     NULL,
+    error               TEXT              NULL,
 
     -- Ingest source
-    ingest_source       NVARCHAR(16)      NOT NULL DEFAULT 'SMTP',  -- SMTP | API
-    source_ip           NVARCHAR(64)      NULL,
+    ingest_source       VARCHAR(16)       NOT NULL DEFAULT 'SMTP',  -- SMTP | API
+    source_ip           VARCHAR(64)       NULL,
     api_key_id          INT               NULL REFERENCES api_keys(id),
-    api_key_name        NVARCHAR(256)     NULL,       -- denormalised
+    api_key_name        VARCHAR(256)      NULL,       -- denormalised
 
     -- Tags (from HTTP API o:tag or SMTP X-Dispatch-Tag header)
-    tags                NVARCHAR(MAX)     NULL         -- JSON array e.g. ["welcome","onboarding"]
+    tags                TEXT              NULL         -- JSON array e.g. ["welcome","onboarding"]
 );
 
 -- Primary UI query: newest first; covers status/event filter + date range
@@ -761,7 +767,7 @@ CREATE INDEX IX_relay_log_purge
 
 > **Why denormalise `relay_name` and `routing_rule_name`?** If a relay is renamed or a rule is deleted, the historical log still shows the name that was in effect at dispatch time. The `relay_id` / `routing_rule_id` FK columns are kept for joins when the relay still exists, but `NULL`-able so log rows survive relay deletion.
 
-> **`from_domain` and `to_domain`** are extracted from the full address at insert time and stored as indexed columns. SQL Server cannot index a computed expression on a `NVARCHAR(MAX)` field like `to_addresses`, so extracting the first recipient domain into its own column is the only way to make domain filtering fast.
+> **`from_domain` and `to_domain`** are extracted from the full address at insert time and stored as indexed columns. PostgreSQL does support functional/expression indexes over a `TEXT` field like `to_addresses`, but extracting the first recipient domain into its own denormalised column keeps the domain filters simple and index-friendly, and lets the same column drive the covering indexes below.
 
 ```
 
@@ -769,7 +775,7 @@ CREATE INDEX IX_relay_log_purge
 
 ```sql
 CREATE TABLE relay_counters (
-    id          INT IDENTITY  PRIMARY KEY,
+    id          INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     date        DATE          NOT NULL,
     relay_id    INT           NOT NULL REFERENCES relays(id),
     received    BIGINT        NOT NULL DEFAULT 0,
@@ -783,14 +789,13 @@ CREATE TABLE relay_counters (
 CREATE INDEX IX_relay_counters_date ON relay_counters (date DESC);
 ```
 
-One row per relay per day. Counters are incremented atomically using `MERGE` / upsert:
+One row per relay per day. Counters are incremented atomically using an `INSERT ... ON CONFLICT` upsert:
 
 ```sql
-MERGE relay_counters AS target
-USING (VALUES (CAST(SYSUTCDATETIME() AS DATE), @relayId)) AS src (date, relay_id)
-ON target.date = src.date AND target.relay_id = src.relay_id
-WHEN MATCHED     THEN UPDATE SET delivered = delivered + 1
-WHEN NOT MATCHED THEN INSERT (date, relay_id, delivered) VALUES (src.date, src.relay_id, 1);
+INSERT INTO relay_counters (date, relay_id, delivered)
+VALUES ((now() AT TIME ZONE 'utc')::date, @relayId, 1)
+ON CONFLICT (date, relay_id)
+DO UPDATE SET delivered = relay_counters.delivered + 1;
 ```
 
 The Dashboard reads from `relay_counters` for all counters - never from `relay_log`. This means counters are accurate regardless of whether `relay_log` success logging is enabled or disabled.
@@ -799,10 +804,10 @@ The Dashboard reads from `relay_counters` for all counters - never from `relay_l
 
 ```sql
 CREATE TABLE config (
-    key        NVARCHAR(128)  NOT NULL PRIMARY KEY,
-    value      NVARCHAR(MAX)  NOT NULL,
-    encrypted  BIT            NOT NULL DEFAULT 0,
-    updated_at DATETIME2      NOT NULL DEFAULT SYSUTCDATETIME()
+    key        VARCHAR(128)   NOT NULL PRIMARY KEY,
+    value      TEXT           NOT NULL,
+    encrypted  BOOLEAN        NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ    NOT NULL DEFAULT now()
 );
 ```
 
@@ -810,31 +815,31 @@ CREATE TABLE config (
 
 ```sql
 CREATE TABLE api_keys (
-    id                   INT IDENTITY  PRIMARY KEY,
-    key_id               NVARCHAR(32)  NOT NULL UNIQUE,   -- first 12 chars of key, public
-    key_hash             NVARCHAR(512) NOT NULL,           -- bcrypt of full key
-    name                 NVARCHAR(256) NOT NULL,
-    created_at           DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME(),
-    last_used_at         DATETIME2     NULL,
+    id                   INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    key_id               VARCHAR(32)   NOT NULL UNIQUE,   -- first 12 chars of key, public
+    key_hash             VARCHAR(512)  NOT NULL,           -- bcrypt of full key
+    name                 VARCHAR(256)  NOT NULL,
+    created_at           TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    last_used_at         TIMESTAMPTZ   NULL,
     message_count        BIGINT        NOT NULL DEFAULT 0,
-    revoked              BIT           NOT NULL DEFAULT 0,
-    revoked_at           DATETIME2     NULL,
+    revoked              BOOLEAN       NOT NULL DEFAULT FALSE,
+    revoked_at           TIMESTAMPTZ   NULL,
     rate_limit_per_minute INT          NOT NULL DEFAULT 0,  -- 0 = use global default
-    scope                NVARCHAR(64) NOT NULL DEFAULT 'send'  -- reserved for future read-only keys
+    scope                VARCHAR(64)  NOT NULL DEFAULT 'send'  -- reserved for future read-only keys
 );
 
-CREATE INDEX IX_api_keys_lookup ON api_keys (key_id) WHERE revoked = 0;
+CREATE INDEX IX_api_keys_lookup ON api_keys (key_id) WHERE revoked = FALSE;
 ```
 
 **config_smtp_credentials** - SMTP sender allow-list:
 
 ```sql
 CREATE TABLE config_smtp_credentials (
-    id            INT IDENTITY  PRIMARY KEY,
-    username      NVARCHAR(256) NOT NULL UNIQUE,
-    password_hash NVARCHAR(512) NOT NULL,   -- bcrypt, cost factor 12
-    created_at    DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME(),
-    last_used_at  DATETIME2     NULL
+    id            INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    username      VARCHAR(256)  NOT NULL UNIQUE,
+    password_hash VARCHAR(512)  NOT NULL,   -- bcrypt, cost factor 12
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    last_used_at  TIMESTAMPTZ   NULL
 );
 ```
 
@@ -843,22 +848,22 @@ CREATE TABLE config_smtp_credentials (
 ```sql
 CREATE TABLE schema_version (
     version     INT           NOT NULL PRIMARY KEY,
-    script_name NVARCHAR(256) NOT NULL,
-    applied_at  DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
+    script_name VARCHAR(256)  NOT NULL,
+    applied_at  TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 ```
 
-### 6.12 SQL Server - Setup
+### 6.12 PostgreSQL - Setup
 
 | Item | Detail |
 |---|---|
-| Minimum version | SQL Server Express 2019 or 2022 (free) - full SQL Server editions also supported |
-| Linux support | Yes - via the official Microsoft SQL Server for Linux package |
+| Minimum version | PostgreSQL 14 or newer (free, open source) |
+| Linux support | Yes - via the distribution's `postgresql` package |
 | Database name | `DispatchLog` (renamed from `DispatchQueue` - it is a log store, not a queue) |
 | Connection string | Written to `appsettings.json` by the bootstrap installer; editable in the web UI |
 | Schema migration | Applied automatically on startup via embedded SQL scripts |
-| Auth modes | Windows Auth (Windows only) or SQL Auth username/password (both platforms) |
-| SQL down behaviour | Mail flows; `relay_log` inserts fire-and-forget (failed inserts logged to file sink; UI dark); `relay_counters` upserts also fire-and-forget; counters may have gaps during outage |
+| Auth modes | Password auth (`scram-sha-256`) via the Npgsql connection string; local peer/trust for the bundled instance |
+| DB down behaviour | Mail flows; `relay_log` inserts fire-and-forget (failed inserts logged to file sink; UI dark); `relay_counters` upserts also fire-and-forget; counters may have gaps during outage |
 | Setup flow | Handled entirely by the Dispatch Bootstrap Installer - see Sections 11 and 12 |
 
 
@@ -1020,15 +1025,15 @@ public class ApiMessageHandler(SpoolDirectory spool, IConfigCache config)
 
 ```sql
 CREATE TABLE api_keys (
-    id           INT IDENTITY     PRIMARY KEY,
-    key_id       NVARCHAR(32)     NOT NULL UNIQUE,   -- public identifier, prefix of key
-    key_hash     NVARCHAR(512)    NOT NULL,           -- bcrypt hash of full key
-    name         NVARCHAR(256)    NOT NULL,           -- human-readable label
-    created_at   DATETIME2        NOT NULL DEFAULT SYSUTCDATETIME(),
-    last_used_at DATETIME2        NULL,
+    id           INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    key_id       VARCHAR(32)      NOT NULL UNIQUE,   -- public identifier, prefix of key
+    key_hash     VARCHAR(512)     NOT NULL,           -- bcrypt hash of full key
+    name         VARCHAR(256)     NOT NULL,           -- human-readable label
+    created_at   TIMESTAMPTZ      NOT NULL DEFAULT now(),
+    last_used_at TIMESTAMPTZ      NULL,
     message_count BIGINT          NOT NULL DEFAULT 0,
-    revoked      BIT              NOT NULL DEFAULT 0,
-    revoked_at   DATETIME2        NULL,
+    revoked      BOOLEAN          NOT NULL DEFAULT FALSE,
+    revoked_at   TIMESTAMPTZ      NULL,
     rate_limit_per_minute INT     NOT NULL DEFAULT 100   -- 0 = use global default
 );
 ```
@@ -1078,7 +1083,7 @@ public class ApiKeyMiddleware(IApiKeyRepository keys) : IMiddleware
 Key verification does one SQL lookup (by `key_id` prefix, which is indexed) then a bcrypt compare. The bcrypt compare is the expensive step - cache the full key object in a short-lived memory cache (TTL: 30 seconds) keyed by the raw token to avoid bcrypt on every request under normal load.
 
 ```sql
-CREATE INDEX IX_api_keys_key_id ON api_keys (key_id) WHERE revoked = 0;
+CREATE INDEX IX_api_keys_key_id ON api_keys (key_id) WHERE revoked = FALSE;
 ```
 
 ### 7.8 Web UI - Settings: API Keys
@@ -1118,7 +1123,7 @@ A dedicated **API Keys** page under Settings:
 
 4. Key is stored bcrypt-hashed. The UI never shows it again.
 
-**Revoke:** clicking [✕] marks the key `revoked = 1` and sets `revoked_at`. Revoked keys are rejected immediately on the next request (no grace period). Revoked keys remain visible in the list for audit purposes and can be filtered out with a "Show revoked" toggle.
+**Revoke:** clicking [✕] marks the key `revoked = TRUE` and sets `revoked_at`. Revoked keys are rejected immediately on the next request (no grace period). Revoked keys remain visible in the list for audit purposes and can be filtered out with a "Show revoked" toggle.
 
 ### 7.9 Config Keys for the API
 
@@ -1238,11 +1243,11 @@ The Message Log is designed to handle millions of rows without degrading. Every 
 | Date range | Date picker (from / to) | Defaults to last 24 hours on first load |
 | Status | Multi-select chips: Delivered · Failed · Retrying · Denied · TestSent | Default: all |
 | Relay | Dropdown of named relays + "Any" | Filters on `relay_name` |
-| Routing rule | Dropdown of rule names + "Any" + "Default (no rule)" | Filters on `routing_rule_name`; "Default" = `routing_matched = 0` |
+| Routing rule | Dropdown of rule names + "Any" + "Default (no rule)" | Filters on `routing_rule_name`; "Default" = `routing_matched = FALSE` |
 | Ingest source | Toggle: All · SMTP · API | Filters on `ingest_source` |
 | Sender domain | Text field | Exact match on `from_domain`; indexed |
 | Recipient domain | Text field | Exact match on `to_domain`; indexed |
-| Tag | Text field | Filters using `JSON_VALUE`; slower - shown with a ⚠ indicator |
+| Tag | Text field | Filters using PostgreSQL JSON operators; slower - shown with a ⚠ indicator |
 | Subject | Text field | Full-text search; shown with a ⚠ indicator and note that it may be slow |
 | API key | Dropdown (when ingest source = API) | Filters on `api_key_id` |
 
@@ -1272,7 +1277,7 @@ Hidden by default (toggleable): Tag, Source IP, API Key, Provider Message ID.
 - Page size: 50 rows (configurable 25 / 50 / 100)
 - "Load more" button appends the next page below current results - no page numbers, no "go to page N"
 - Cursor is the `(logged_at, id)` tuple of the last visible row, passed as an opaque token
-- Why: `OFFSET 5000 FETCH 50` requires SQL Server to scan and discard 5,000 rows first; cursor pagination is O(1) regardless of depth
+- Why: `OFFSET 5000 LIMIT 50` requires PostgreSQL to scan and discard 5,000 rows first; cursor pagination is O(1) regardless of depth
 
 **No total row count displayed** - computing `COUNT(*)` on a filtered `relay_log` with millions of rows is expensive. The UI shows "Showing 50 of many" or "Showing 12" (when fewer than a page returned) - not "Page 3 of 14,829".
 
@@ -1342,7 +1347,7 @@ The **In Flight** counter per relay is served by `GET /api/relays/concurrency` -
 
 - Provider selector dropdown (Mailgun / SendGrid / Azure Communication Services / SMTP / None)
 - Provider-specific fields appear dynamically based on selection
-- All API keys and passwords stored AES-256 encrypted in the `config` table in SQL Server
+- All API keys and passwords stored AES-256 encrypted in the `config` table in PostgreSQL
 - **Send Test Email** button - runs a full provider test using the current (unsaved) form values; streams results live in an inline log panel (see Section 9)
 - Retry policy controls (attempts, delay intervals)
 
@@ -1470,15 +1475,15 @@ A **relay** is a named, independently configured provider instance. Each relay h
 
 ```sql
 CREATE TABLE relays (
-    id               INT IDENTITY   PRIMARY KEY,
-    name             NVARCHAR(128)  NOT NULL UNIQUE,   -- e.g. "Mailgun-EU", "SendGrid-Transactional"
-    provider         NVARCHAR(64)   NOT NULL,           -- Mailgun | SendGrid | AzureCommunication | Smtp | None
-    is_default       BIT            NOT NULL DEFAULT 0, -- exactly one row has is_default = 1
-    enabled          BIT            NOT NULL DEFAULT 1,
-    max_concurrency   INT            NOT NULL DEFAULT 4,    -- max simultaneous dispatches; 0 = unlimited
-    max_message_bytes INT            NOT NULL DEFAULT 0,    -- 0 = use provider type default (bytes)
-    created_at        DATETIME2      NOT NULL DEFAULT SYSUTCDATETIME(),
-    updated_at        DATETIME2      NOT NULL DEFAULT SYSUTCDATETIME()
+    id               INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name             VARCHAR(128)   NOT NULL UNIQUE,   -- e.g. "Mailgun-EU", "SendGrid-Transactional"
+    provider         VARCHAR(64)    NOT NULL,           -- Mailgun | SendGrid | AzureCommunication | Smtp | None
+    is_default       BOOLEAN        NOT NULL DEFAULT FALSE, -- exactly one row has is_default = TRUE
+    enabled          BOOLEAN        NOT NULL DEFAULT TRUE,
+    max_concurrency   INT           NOT NULL DEFAULT 4,    -- max simultaneous dispatches; 0 = unlimited
+    max_message_bytes INT           NOT NULL DEFAULT 0,    -- 0 = use provider type default (bytes)
+    created_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 -- Provider-specific settings stored as encrypted key-value pairs
@@ -1490,7 +1495,7 @@ Provider credentials for each relay are stored in the existing `config` table us
 
 **The default relay:**
 
-- Exactly one relay has `is_default = 1` at all times
+- Exactly one relay has `is_default = TRUE` at all times
 - On first run, a single relay named "Default" is created (provider: None) - the administrator edits it to set their provider
 - The default relay cannot be deleted - only edited or replaced (setting another relay as default demotes the current one automatically)
 - The default relay is used when no routing rule matches
@@ -1501,14 +1506,14 @@ Provider credentials for each relay are stored in the existing `config` table us
 
 ```sql
 CREATE TABLE routing_rules (
-    id               INT IDENTITY  PRIMARY KEY,
+    id               INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     priority         INT           NOT NULL,          -- lower number = evaluated first
-    name             NVARCHAR(128) NOT NULL,          -- human label, e.g. "Acme Corp → Mailgun EU"
-    recipient_pattern NVARCHAR(256) NULL,             -- NULL = match any recipient
-    sender_pattern   NVARCHAR(256) NULL,              -- NULL = match any sender
+    name             VARCHAR(128)  NOT NULL,          -- human label, e.g. "Acme Corp → Mailgun EU"
+    recipient_pattern VARCHAR(256) NULL,             -- NULL = match any recipient
+    sender_pattern   VARCHAR(256)  NULL,              -- NULL = match any sender
     relay_id         INT           NOT NULL REFERENCES relays(id),
-    enabled          BIT           NOT NULL DEFAULT 1,
-    created_at       DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
+    enabled          BOOLEAN       NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX IX_routing_rules_priority ON routing_rules (priority);
@@ -1716,8 +1721,8 @@ A **Routing Rules** page under Settings, below Relays:
 The `relay_log` table gains a `relay_id` column so every log entry records which named relay was used:
 
 ```sql
-ALTER TABLE relay_log ADD relay_id INT NULL REFERENCES relays(id);
-ALTER TABLE relay_log ADD relay_name NVARCHAR(128) NULL;  -- denormalised for display after relay deleted
+ALTER TABLE relay_log ADD COLUMN relay_id INT NULL REFERENCES relays(id);
+ALTER TABLE relay_log ADD COLUMN relay_name VARCHAR(128) NULL;  -- denormalised for display after relay deleted
 ```
 
 The Message Log UI adds a **Relay** column so administrators can see at a glance which relay handled each message.
@@ -1926,7 +1931,7 @@ public class ProviderTestService(IRelayProviderFactory factory,
 }
 ```
 
-**Completed test runs** are held in memory for 30 minutes then evicted (a `Timer`-based cleanup pass). They are never persisted to SQL Server - test runs are ephemeral UI state only.
+**Completed test runs** are held in memory for 30 minutes then evicted (a `Timer`-based cleanup pass). They are never persisted to PostgreSQL - test runs are ephemeral UI state only.
 
 ### 11.6 Per-Provider Log Detail
 
@@ -1961,22 +1966,22 @@ The test deliberately exercises the full code path a live message would take, so
 
 **`appsettings.json` contains exactly two things: the database connection string and the web UI TLS certificate path.**
 
-The TLS cert path is the one exception to the "everything in SQL" rule - ASP.NET Core needs it to start the HTTPS listener before the SQL connection is established, so it cannot live in the database. Everything else is in SQL.
+The TLS cert path is the one exception to the "everything in the database" rule - ASP.NET Core needs it to start the HTTPS listener before the PostgreSQL connection is established, so it cannot live in the database. Everything else is in PostgreSQL.
 
-Everything else - listener ports, SMTP auth credentials, spool directory, worker count, retry policy, provider selection, API keys, purge settings, web UI port and password - is stored in a `config` table in SQL Server and managed through the web UI. This means:
+Everything else - listener ports, SMTP auth credentials, spool directory, worker count, retry policy, provider selection, API keys, purge settings, web UI port and password - is stored in a `config` table in PostgreSQL and managed through the web UI. This means:
 
 - Minimal config file - only two fields, both written by the bootstrap installer
 - Settings changes from the web UI are live immediately - no file reload, no restart
-- All sensitive values (API keys, passwords) are encrypted at rest in SQL with a machine-specific key
-- Upgrading never has a "config file migration" problem - SQL schema migrations handle it
-- The service cannot start without SQL, but once running, all configuration is authoritative from the database
+- All sensitive values (API keys, passwords) are encrypted at rest in the database with a machine-specific key
+- Upgrading never has a "config file migration" problem - database schema migrations handle it
+- The service cannot start without PostgreSQL, but once running, all configuration is authoritative from the database
 
 ### 12.2 `appsettings.json` - Connection String and TLS Cert
 
 ```json
 {
   "ConnectionStrings": {
-    "DispatchLog": "Server=localhost\\SQLEXPRESS;Database=DispatchLog;Integrated Security=true;"
+    "DispatchLog": "Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=<db-password>"
   },
   "WebUi": {
     "TlsCertPath": "/etc/dispatch/cert.pfx",
@@ -1985,7 +1990,7 @@ Everything else - listener ports, SMTP auth credentials, spool directory, worker
 }
 ```
 
-The `WebUi.TlsCertPath` and `WebUi.TlsCertPassword` fields are stored in `appsettings.json` - not in the SQL `config` table - because ASP.NET Core needs them to start the HTTPS listener before SQL is reachable. The cert password is encrypted using the same machine-specific key as all other secrets. All other settings remain in SQL.
+The `WebUi.TlsCertPath` and `WebUi.TlsCertPassword` fields are stored in `appsettings.json` - not in the `config` table - because ASP.NET Core needs them to start the HTTPS listener before PostgreSQL is reachable. The cert password is encrypted using the same machine-specific key as all other secrets. All other settings remain in PostgreSQL.
 
 **File locations:**
 
@@ -2000,14 +2005,14 @@ All application settings live in a `config` table with a simple key-value struct
 
 ```sql
 CREATE TABLE config (
-    key        NVARCHAR(128)  NOT NULL PRIMARY KEY,
-    value      NVARCHAR(MAX)  NOT NULL,
-    encrypted  BIT            NOT NULL DEFAULT 0,
-    updated_at DATETIME2      NOT NULL DEFAULT SYSUTCDATETIME()
+    key        VARCHAR(128)   NOT NULL PRIMARY KEY,
+    value      TEXT           NOT NULL,
+    encrypted  BOOLEAN        NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ    NOT NULL DEFAULT now()
 );
 ```
 
-Values marked `encrypted = 1` are stored AES-256-GCM encrypted using a random 256-bit key persisted in a portable `.dispatch-key` file (access-restricted: mode 600 on Unix; ACL-locked on Windows, in the ProgramData data dir whose folder ACL the installer also restricts). The key is portable, so a DB backup restores on a different machine when the key file is restored too. If no writable key directory is available it falls back to a PBKDF2 machine-derived key (weaker). Earlier Windows builds used DPAPI (LocalMachine); those legacy values are still readable and migrate to AES on the next save. The encryption/decryption is transparent - the `ConfigRepository` handles it on read/write.
+Values marked `encrypted = TRUE` are stored AES-256-GCM encrypted using a random 256-bit key persisted in a portable `.dispatch-key` file (access-restricted: mode 600 on Unix; ACL-locked on Windows, in the ProgramData data dir whose folder ACL the installer also restricts). The key is portable, so a DB backup restores on a different machine when the key file is restored too. If no writable key directory is available it falls back to a PBKDF2 machine-derived key (weaker). Earlier Windows builds used DPAPI (LocalMachine); those legacy values are still readable and migrate to AES on the next save. The encryption/decryption is transparent - the `ConfigRepository` handles it on read/write.
 
 **Config keys:**
 
@@ -2056,8 +2061,9 @@ Values marked `encrypted = 1` are stored AES-256-GCM encrypted using a random 25
 | `purge.enabled` | bool | `true` | No |
 | `purge.schedule_interval_hours` | int | `6` | No |
 | `purge.spool_failed_retention_days` | int | `30` | No |
-| `purge.size_trigger_gb` | float | `9.5` | No |
-| `purge.size_target_gb` | float | `9.0` | No |
+| `purge.size_pressure_enabled` | bool | `false` | No |
+| `purge.size_trigger_gb` | float | `10.0` | No |
+| `purge.size_target_gb` | float | `9.5` | No |
 | `logging.log_delivered` | bool | `true` | No |
 | `logging.log_retrying` | bool | `true` | No |
 | `logging.log_denied` | bool | `true` | No |
@@ -2070,11 +2076,11 @@ SMTP sender credentials (the username/password pairs checked when `listener.requ
 
 ```sql
 CREATE TABLE config_smtp_credentials (
-    id           INT IDENTITY  PRIMARY KEY,
-    username     NVARCHAR(256) NOT NULL UNIQUE,
-    password_hash NVARCHAR(512) NOT NULL,   -- bcrypt, cost factor 12
-    created_at   DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME(),
-    last_used_at DATETIME2     NULL
+    id           INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    username     VARCHAR(256)  NOT NULL UNIQUE,
+    password_hash VARCHAR(512) NOT NULL,   -- bcrypt, cost factor 12
+    created_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    last_used_at TIMESTAMPTZ   NULL
 );
 ```
 
@@ -2082,7 +2088,7 @@ CREATE TABLE config_smtp_credentials (
 
 ### 12.5 Reading Config at Runtime
 
-At startup Dispatch loads the full config table into a `ConfigCache` in memory - one SQL query, all keys. This cache is the source of truth for `IRelayProvider`, `SpoolWorkerPool`, `PurgeWorker`, and all other consumers:
+At startup Dispatch loads the full config table into a `ConfigCache` in memory - one query, all keys. This cache is the source of truth for `IRelayProvider`, `SpoolWorkerPool`, `PurgeWorker`, and all other consumers:
 
 ```csharp
 public class ConfigCache(IConfigRepository repo)
@@ -2100,7 +2106,7 @@ public class ConfigCache(IConfigRepository repo)
 ```
 
 When the web UI saves a setting via `PUT /api/config/{section}`, the endpoint:
-1. Writes the updated key(s) to SQL
+1. Writes the updated key(s) to PostgreSQL
 2. Calls `ConfigCache.LoadAsync()` to refresh the in-memory cache
 3. Returns `200 OK`
 
@@ -2110,13 +2116,13 @@ Workers and services always read from `ConfigCache` - never from `IOptionsMonito
 
 When Dispatch starts and the `config` table is empty (first run after schema migration), it populates all keys with their default values. This means a freshly installed instance is immediately usable with sensible defaults - the administrator only needs to configure the relay provider.
 
-### 12.7 Config and SQL Outage
+### 12.7 Config and Database Outage
 
-The `ConfigCache` is loaded at startup. If SQL goes down after startup, the in-memory cache remains valid and all services continue with the last-known settings. Config writes (from the web UI) fail with a visible error while SQL is down - the user is told to try again once SQL recovers. Mail flow is unaffected.
+The `ConfigCache` is loaded at startup. If PostgreSQL goes down after startup, the in-memory cache remains valid and all services continue with the last-known settings. Config writes (from the web UI) fail with a visible error while the database is down - the user is told to try again once PostgreSQL recovers. Mail flow is unaffected.
 
-### 12.8 Startup Failure - SQL Unavailable
+### 12.8 Startup Failure - Database Unavailable
 
-If SQL Server cannot be reached at startup, Dispatch cannot load its config and cannot start. It logs a clear error to the file sink and exits with a non-zero code. The systemd unit (Linux) and Windows Service manager will retry on the configured restart interval. This is the correct behaviour - without config, there is nothing safe to do.
+If PostgreSQL cannot be reached at startup, Dispatch cannot load its config and cannot start. It logs a clear error to the file sink and exits with a non-zero code. The systemd unit (Linux) and Windows Service manager will retry on the configured restart interval. This is the correct behaviour - without config, there is nothing safe to do.
 
 The connection string in `appsettings.json` is the only dependency Dispatch has at startup. If that file is missing or the connection string is wrong, the bootstrap should be re-run.
 
@@ -2130,7 +2136,7 @@ Dispatch stores relay event logs in **two places** with different purposes:
 
 | Store | What | Purpose |
 |---|---|---|
-| `relay_log` (SQL Server) | One row per relay lifecycle event | Web UI Message Log - searchable, filterable, auto-purged |
+| `relay_log` (PostgreSQL) | One row per relay lifecycle event | Web UI Message Log - searchable, filterable, auto-purged |
 | File (rolling daily) | Full Serilog structured output | Diagnostics, crash analysis, support - kept on disk |
 | Console | Full Serilog output | Foreground / Docker / journalctl live tail |
 | InMemoryRingBuffer | Last 1,000 events | Real-time SignalR push to the Dashboard |
@@ -2479,7 +2485,7 @@ GET /health
 ```json
 {
   "status":  "degraded",
-  "message": "SQL Server unavailable - mail flow unaffected; UI log unavailable",
+  "message": "PostgreSQL unavailable - mail flow unaffected; UI log unavailable",
   ...
 }
 ```
@@ -2516,7 +2522,7 @@ Windows installation uses two separate artefacts that run in sequence:
 
 | Artefact | Role |
 |---|---|
-| `DispatchSetup.exe` | **Bootstrap installer** - handles SQL Server detection/install and database setup, then hands off to the MSI |
+| `DispatchSetup.exe` | **Bootstrap installer** - handles PostgreSQL detection/install and database setup, then hands off to the MSI |
 | `Dispatch-{version}-x64.msi` | **Application installer** - installs binaries, registers the Windows Service, creates shortcuts |
 
 Users always run `DispatchSetup.exe`. The MSI is never run directly in normal usage.
@@ -2537,10 +2543,10 @@ The bootstrap is a standalone .NET 10 WinForms application (single-file, self-co
              │
              ▼
 ┌─────────────────────────────────────────────┐
-│  SQL Server Setup                           │
+│  PostgreSQL Setup                           │
 │                                             │
-│  ● Install SQL Server Express (recommended) │
-│  ○ Connect to an existing SQL Server        │
+│  ● Install PostgreSQL (recommended)         │
+│  ○ Connect to an existing PostgreSQL        │
 │                                   [Next]    │
 └─────────────────────────────────────────────┘
              │
@@ -2551,10 +2557,10 @@ The bootstrap is a standalone .NET 10 WinForms application (single-file, self-co
      │                │
      ▼                ▼
 ┌──────────┐   ┌──────────────────────────────┐
-│ Download │   │  Connection Details          │
-│ & silent │   │  Server:   [____________]    │
-│ install  │   │  Auth:     ● Windows Auth    │
-│ SQL Expr │   │            ○ SQL Auth        │
+│ Silent   │   │  Connection Details          │
+│ install  │   │  Host:     [____________]    │
+│ bundled  │   │  Port:     [5432_______]     │
+│ Postgres │   │  Database: [DispatchLog__]   │
 └──────────┘   │  Username: [____________]    │
      │         │  Password: [____________]    │
      │         │              [Test Connection]│
@@ -2591,49 +2597,45 @@ The bootstrap is a standalone .NET 10 WinForms application (single-file, self-co
 └─────────────────────────────────────────────┘
 ```
 
-#### SQL Server Detection Logic
+#### PostgreSQL Detection Logic
 
 On launch, the bootstrap silently attempts to connect to the following candidates in order:
 
-1. `localhost\SQLEXPRESS` - default SQL Server Express named instance
-2. `localhost` - default SQL Server instance
-3. Any instance advertised by SQL Server Browser on the local machine (via `SqlDataSourceEnumerator`)
+1. `localhost:5432` - a PostgreSQL server on the default port
+2. Any PostgreSQL Windows service already registered on the local machine (enumerated via the Service Control Manager)
 
-If a reachable instance is found, the wizard pre-selects **Connect to an existing SQL Server** and pre-fills the server name. The user can confirm or change it.
+If a reachable instance is found, the wizard pre-selects **Connect to an existing PostgreSQL** and pre-fills the host/port. The user can confirm or change it.
 
-If no instance is found, the wizard pre-selects **Install SQL Server Express (recommended)**.
+If no instance is found, the wizard pre-selects **Install PostgreSQL (recommended)**.
 
-#### SQL Server Express Silent Install
+#### PostgreSQL Silent Install
 
-When the user chooses to install SQL Server Express, the bootstrap:
+When the user chooses to install PostgreSQL, the bootstrap installs a **PostgreSQL server bundled with the setup package** - no download is required at install time. The bootstrap:
 
-1. Downloads `SQLEXPR_x64_ENU.exe` from the official Microsoft URL (shown to the user with progress bar)
-2. Verifies the SHA-256 checksum against a value hardcoded in the bootstrap before running it
-3. Launches the installer silently:
+1. Verifies the SHA-256 checksum of the bundled PostgreSQL installer against a value hardcoded in the bootstrap before running it
+2. Launches the installer silently (unattended), initialising a data directory, setting the superuser password, and registering the Windows service on port `5432`:
 
 ```
-SQLEXPR_x64_ENU.exe /Q /ACTION=Install /FEATURES=SQLEngine
-  /INSTANCENAME=SQLEXPRESS
-  /SQLSVCACCOUNT="NT AUTHORITY\NETWORK SERVICE"
-  /SQLSYSADMINACCOUNTS="BUILTIN\Administrators"
-  /TCPENABLED=1
-  /NPENABLED=0
-  /IACCEPTSQLSERVERLICENSETERMS
+postgresql-installer.exe --mode unattended --unattendedmodeui none \
+  --superpassword "<generated>" --serverport 5432 \
+  --servicename DispatchPostgres --datadir "C:\ProgramData\Dispatch\pgdata"
 ```
 
-4. Waits for completion and verifies the service is running before proceeding
+3. Waits for completion and verifies the service is running before proceeding
+4. Creates the `DispatchLog` database and a least-privilege `dispatch` role (see below)
 
 #### Connection Details Screen
 
-When the user chooses **Connect to an existing SQL Server**:
+When the user chooses **Connect to an existing PostgreSQL**:
 
-- **Server** - free-text field, accepts `hostname`, `hostname\instance`, `hostname,port`
-- **Auth mode** - Windows Auth (default) or SQL Auth
-- **Username / Password** - shown only when SQL Auth is selected
+- **Host** - free-text field, accepts `hostname` or an IP address
+- **Port** - defaults to `5432`
+- **Database** - defaults to `DispatchLog`
+- **Username / Password** - the PostgreSQL role and password Dispatch connects with
 - **Test Connection** button - attempts `SELECT 1` and reports success or the exact error message
 - The user cannot proceed until Test Connection succeeds
 
-The bootstrap needs `db_creator` rights on the target instance (to create the `DispatchLog` database). After initial setup, Dispatch only needs `db_datawriter` + `db_datareader` on that database. The bootstrap creates a dedicated `dispatch` SQL login with minimal rights after database creation (when SQL Auth is used).
+The bootstrap needs `CREATEDB` rights on the target server (to create the `DispatchLog` database). After initial setup, Dispatch only needs `SELECT` / `INSERT` / `UPDATE` / `DELETE` on that database's tables. The bootstrap creates a dedicated least-privilege `dispatch` PostgreSQL role after database creation.
 
 #### Database Initialisation
 
@@ -2658,7 +2660,7 @@ The MSI finds the pre-written `appsettings.json` in `ProgramData` and does not t
 
 ### 15.3 MSI (`Dispatch-{version}-x64.msi`)
 
-Authored with WiX Toolset v6. Targets x64 Windows 10 / Server 2019 and later. The MSI assumes SQL Server and the database are already configured (by the bootstrap) - it does not interact with SQL Server.
+Authored with WiX Toolset v6. Targets x64 Windows 10 / Server 2019 and later. The MSI assumes PostgreSQL and the database are already configured (by the bootstrap) - it does not interact with PostgreSQL.
 
 **MSI Actions:**
 
@@ -2792,7 +2794,7 @@ Bootstrap detects existing install
 │  New:        v1.1.0                     │
 │                                         │
 │  ● Upgrade (recommended)                │
-│  ○ Change SQL Server connection         │
+│  ○ Change PostgreSQL connection         │
 │                                         │
 │                              [Upgrade]  │
 └─────────────────────────────────────────┘
@@ -2830,7 +2832,7 @@ Before stopping the service, the bootstrap calls `POST /api/service/drain` (or r
 
 #### 11.4.3 Database Schema Migration
 
-The bootstrap applies schema migrations as part of every upgrade, before the MSI runs. Migrations are idempotent SQL scripts embedded in the bootstrap EXE, numbered sequentially:
+The bootstrap applies schema migrations as part of every upgrade, before the MSI runs. Migrations are idempotent PostgreSQL scripts embedded in the bootstrap EXE, numbered sequentially:
 
 ```
 Dispatch.Bootstrap.Windows/
@@ -2846,8 +2848,8 @@ A `schema_version` table tracks which scripts have been applied:
 ```sql
 CREATE TABLE IF NOT EXISTS schema_version (
     version      INT           NOT NULL PRIMARY KEY,
-    script_name  NVARCHAR(256) NOT NULL,
-    applied_at   DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
+    script_name  VARCHAR(256)  NOT NULL,
+    applied_at   TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 ```
 
@@ -2861,7 +2863,7 @@ Each migration script is wrapped in a transaction with a `ROLLBACK` on error, so
 |---|---|
 | `appsettings.json` | **Preserved** - contains only the connection string; MSI never overwrites it |
 | Encryption keys / secrets | **Preserved** - machine-specific key derived from OS; no key material stored in files |
-| Queue data in SQL Server | **Preserved** - only additive schema changes; no destructive migrations |
+| Queue data in PostgreSQL | **Preserved** - only additive schema changes; no destructive migrations |
 | Delivered / failed message history | **Preserved** - purge policy unchanged |
 | Firewall rules | **Recreated** - old rules removed, new rules added by the new MSI (same ports unless overridden) |
 | Windows Service registration | **Preserved** - `ServiceInstall` uses the same service name; WiX handles the update |
@@ -2871,7 +2873,7 @@ Each migration script is wrapped in a transaction with a `ROLLBACK` on error, so
 
 The MSI uses Windows Installer's built-in transactional rollback. If the MSI step fails mid-install, Windows Installer reverts file copies and registry changes automatically. The bootstrap re-starts the previous service version if the MSI rolls back.
 
-Database schema migrations are **not** automatically rolled back (SQL Server DDL is not transactional across all statement types). If a migration fails:
+Database schema migrations are **not** automatically rolled back across the whole upgrade (each migration runs in its own transaction, but earlier migrations that already committed stay applied). If a migration fails:
 
 1. The bootstrap logs the exact failed script and SQL error
 2. The service is not started
@@ -2884,22 +2886,22 @@ Database schema migrations are **not** automatically rolled back (SQL Server DDL
 #### 11.4.6 Silent Upgrade
 
 ```bat
-:: Upgrade non-interactively - reads SQL Server connection from appsettings.json
+:: Upgrade non-interactively - reads PostgreSQL connection from appsettings.json
 DispatchSetup-1.1.0-x64.exe --silent --upgrade
 
 :: Upgrade with explicit connection (overrides stored connection string)
-DispatchSetup-1.1.0-x64.exe --silent --upgrade --server "DBSERVER\SQLEXPRESS" --auth windows
+DispatchSetup-1.1.0-x64.exe --silent --upgrade --host DBSERVER --port 5432 --user dispatch --password <p>
 ```
 
-The `--upgrade` flag tells the bootstrap to skip the SQL Server setup wizard and go straight to migration + MSI. Without it in silent mode, the bootstrap will still detect an existing install and upgrade automatically, but `--upgrade` makes the intent explicit and skips any interactive prompts.
+The `--upgrade` flag tells the bootstrap to skip the PostgreSQL setup wizard and go straight to migration + MSI. Without it in silent mode, the bootstrap will still detect an existing install and upgrade automatically, but `--upgrade` makes the intent explicit and skips any interactive prompts.
 
 ### 15.5 Silent / Unattended Install
 
-For environments where SQL Server is already present, the full install can be scripted:
+For environments where PostgreSQL is already present, the full install can be scripted:
 
 ```bat
-:: Step 1 - run bootstrap in unattended mode (skips wizard, uses existing SQL Server)
-DispatchSetup.exe --silent --server "DBSERVER\SQLEXPRESS" --auth windows
+:: Step 1 - run bootstrap in unattended mode (skips wizard, uses existing PostgreSQL)
+DispatchSetup.exe --silent --host DBSERVER --port 5432 --user dispatch --password <p>
 
 :: Step 2 - the bootstrap launches the MSI automatically when done
 :: Or launch the MSI directly after a manual bootstrap run:
@@ -2911,11 +2913,11 @@ The bootstrap accepts the following CLI flags for unattended mode:
 | Flag | Description |
 |---|---|
 | `--silent` | Skip wizard UI; exit with code 0 on success, non-zero on failure |
-| `--upgrade` | Explicit upgrade mode - skip SQL Server wizard, drain queue, migrate, install MSI |
-| `--server <name>` | SQL Server instance to connect to |
-| `--auth windows` | Use Windows Authentication (default) |
-| `--auth sql --user <u> --password <p>` | Use SQL Authentication |
-| `--install-sqlexpress` | Download and install SQL Server Express instead of connecting |
+| `--upgrade` | Explicit upgrade mode - skip PostgreSQL wizard, drain queue, migrate, install MSI |
+| `--host <name>` | PostgreSQL host to connect to |
+| `--port <n>` | PostgreSQL port (default 5432) |
+| `--user <u> --password <p>` | PostgreSQL role and password Dispatch connects with |
+| `--install-postgres` | Install the bundled PostgreSQL server instead of connecting |
 | `--no-launch-msi` | Run database setup only; do not launch the MSI |
 | `--smtp-port <n>` | Override SMTP firewall rule port passed to MSI (default 25) |
 | `--submission-port <n>` | Override submission firewall rule port passed to MSI (default 587) |
@@ -2928,11 +2930,11 @@ The bootstrap accepts the following CLI flags for unattended mode:
 
 ### 16.1 Overview - Two-Part Delivery
 
-Linux installation mirrors the Windows approach: a bootstrap script handles SQL Server detection/install and database setup, then installs the Dispatch service.
+Linux installation mirrors the Windows approach: a bootstrap script handles PostgreSQL detection/install and database setup, then installs the Dispatch service.
 
 | Artefact | Role |
 |---|---|
-| `install.sh` | **Bootstrap script** - interactive wizard in the terminal; handles SQL Server and hands off to service install |
+| `install.sh` | **Bootstrap script** - interactive wizard in the terminal; handles PostgreSQL and hands off to service install |
 | `Dispatch-{version}-linux-x64.tar.gz` | Application binary + default config; extracted by `install.sh` |
 
 ### 16.2 Bootstrap Script (`install.sh`)
@@ -2946,40 +2948,37 @@ The script is a bash wizard that runs interactively in the terminal. It requires
   Dispatch Setup
 =============================================
 
-Checking for SQL Server...
+Checking for PostgreSQL...
 
-  No SQL Server instance found on this machine.
+  No PostgreSQL instance found on this machine.
 
-SQL Server Setup
-  1) Install SQL Server Express (recommended, free)
-  2) Connect to an existing SQL Server
+PostgreSQL Setup
+  1) Install PostgreSQL (recommended, free)
+  2) Connect to an existing PostgreSQL
 
 Choice [1]: _
 ```
 
-**If option 1 - Install SQL Server Express:**
+**If option 1 - Install PostgreSQL:**
 ```
-Downloading Microsoft SQL Server 2025 Express...
-Adding Microsoft package repository...
-Installing mssql-server...
-Running initial configuration (SA password required)...
-  SA Password: ________
+Adding the distribution's PostgreSQL package...
+Installing postgresql...
+Running initial configuration (dispatch role password required)...
+  DB Password: ________
   Confirm:     ________
-Starting SQL Server service...  ✓
-SQL Server installed and running.
+Starting PostgreSQL service...  ✓
+PostgreSQL installed and running.
 ```
 
 **If option 2 - Connect to existing:**
 ```
-Server (e.g. myserver or myserver\instance): _
-Authentication:
-  1) Windows/Kerberos
-  2) SQL Auth (username + password)
-Choice [2]: _
+Host (e.g. localhost or 10.0.0.5): _
+Port [5432]: _
+Database [DispatchLog]: _
 Username: _
 Password: _
 
-Testing connection...  ✓  Connected to SQL Server 2025 Express
+Testing connection...  ✓  Connected to PostgreSQL
 ```
 
 **Then for both paths:**
@@ -3012,49 +3011,43 @@ Installing Dispatch service...
 =============================================
 ```
 
-#### SQL Server Detection
+#### PostgreSQL Detection
 
-The script checks for a running `sqlservr` process and attempts `sqlcmd -S localhost -Q "SELECT 1"`. If successful it pre-selects option 2 and displays the detected instance name.
+The script checks for a running `postgres` process and attempts `psql -h localhost -c "SELECT 1"`. If successful it pre-selects option 2 and displays the detected host/port.
 
-#### SQL Server Express Silent Install (Linux)
+#### PostgreSQL Silent Install (Linux)
 
 ```bash
-# Add Microsoft package repository
-curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor \
-  -o /usr/share/keyrings/microsoft-prod.gpg
-curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2025.list \
-  -o /etc/apt/sources.list.d/mssql-server-2025.list
-
+# Install the distribution's PostgreSQL package (Debian/Ubuntu shown; RHEL/Fedora uses dnf)
 apt-get update
-apt-get install -y mssql-server
+apt-get install -y postgresql
 
-# Run mssql-conf setup in non-interactive mode
-MSSQL_SA_PASSWORD="$sa_password" \
-MSSQL_PID=Express \
-/opt/mssql/bin/mssql-conf -n setup accept-eula
+systemctl enable postgresql
+systemctl start postgresql
 
-systemctl enable mssql-server
-systemctl start mssql-server
+# Create the database and a least-privilege role (run as the postgres superuser)
+sudo -u postgres psql -c "CREATE ROLE dispatch LOGIN PASSWORD '$db_password';"
+sudo -u postgres psql -c "CREATE DATABASE \"DispatchLog\" OWNER dispatch;"
 ```
 
-The SA password is prompted interactively and validated for SQL Server complexity requirements before being used. It is never written to disk.
+The `dispatch` role password is prompted interactively before being used. It is never written to disk (only into the mode-600 `appsettings.json` connection string).
 
 #### Database Initialisation
 
 After a successful connection:
 
-1. `sqlcmd` creates `DispatchLog` if it does not exist
+1. `psql` creates `DispatchLog` if it does not exist
 2. Embedded schema SQL scripts are applied in order
-3. A dedicated `dispatch` SQL login is created with `db_datawriter` + `db_datareader` rights only
-4. The SQL Server connection string is written to `/etc/dispatch/appsettings.json` (connection string only - no other settings)
+3. A dedicated least-privilege `dispatch` PostgreSQL role is created with only `SELECT` / `INSERT` / `UPDATE` / `DELETE` on the Dispatch tables
+4. The PostgreSQL connection string is written to `/etc/dispatch/appsettings.json` (connection string only - no other settings)
 
 ### 16.3 systemd Unit
 
 ```ini
 [Unit]
 Description=Dispatch SMTP Relay SMTP Relay Server
-After=network.target mssql-server.service
-Wants=mssql-server.service
+After=network.target postgresql.service
+Wants=postgresql.service
 
 [Service]
 Type=notify
@@ -3073,24 +3066,24 @@ SyslogIdentifier=dispatch
 WantedBy=multi-user.target
 ```
 
-`After=mssql-server.service` ensures SQL Server is running before Dispatch starts. If the user connected to a remote SQL Server the `Wants`/`After` lines for `mssql-server.service` are omitted by the install script.
+`After=postgresql.service` ensures PostgreSQL is running before Dispatch starts. If the user connected to a remote PostgreSQL the `Wants`/`After` lines for `postgresql.service` are omitted by the install script.
 
 ### 16.4 Unattended / CI Install
 
 ```bash
-# Install SQL Server Express and Dispatch non-interactively
+# Install PostgreSQL and Dispatch non-interactively
 curl -sSL https://github.com/yourorg/dispatch/releases/latest/download/install.sh | \
   sudo bash -s -- \
-    --install-sqlexpress \
-    --sa-password "Str0ngP@ssword!" \
+    --install-postgres \
+    --db-password "Str0ngP@ssword!" \
     --silent
 
 # Or connect to an existing instance
 curl -sSL .../install.sh | \
   sudo bash -s -- \
-    --server "10.0.0.5" \
-    --auth sql \
-    --user dotrelay_setup \
+    --host "10.0.0.5" \
+    --port 5432 \
+    --user dispatch_setup \
     --password "SetupP@ss!" \
     --silent
 ```
@@ -3107,7 +3100,7 @@ sudo journalctl -u dispatch -f
 # Restart service
 sudo systemctl restart dispatch
 
-# Re-run setup (e.g. to change SQL Server connection)
+# Re-run setup (e.g. to change PostgreSQL connection)
 sudo /usr/local/bin/dispatch-setup
 ```
 
@@ -3128,7 +3121,7 @@ Existing installation detected: v1.0.0
 New version: v1.1.0
 
   1) Upgrade to v1.1.0 (recommended)
-  2) Change SQL Server connection and upgrade
+  2) Change PostgreSQL connection and upgrade
   3) Exit
 
 Choice [1]: _
@@ -3153,7 +3146,7 @@ Before stopping the service, `install.sh` calls `curl -sk -X POST https://localh
 
 #### 12.6.3 Database Schema Migration
 
-Identical migration logic to the Windows bootstrap (see Section 11.4.3). The `install.sh` script extracts and runs the numbered SQL scripts embedded in the tarball against the configured SQL Server instance using `sqlcmd`. The `schema_version` table ensures only unapplied scripts run.
+Identical migration logic to the Windows bootstrap (see Section 11.4.3). The `install.sh` script extracts and runs the numbered SQL scripts embedded in the tarball against the configured PostgreSQL instance using `psql`. The `schema_version` table ensures only unapplied scripts run.
 
 #### 12.6.4 Configuration Preservation
 
@@ -3161,7 +3154,7 @@ Identical migration logic to the Windows bootstrap (see Section 11.4.3). The `in
 |---|---|
 | `/etc/dispatch/appsettings.json` | **Preserved** - contains only the connection string; `install.sh` never overwrites it |
 | Encryption keys / secrets | **Preserved** - derived from `/etc/machine-id` at runtime; no key material stored |
-| Queue data in SQL Server | **Preserved** - additive-only migrations |
+| Queue data in PostgreSQL | **Preserved** - additive-only migrations |
 | Log files in `/var/log/dispatch/` | **Preserved** - never touched by the upgrade |
 | systemd unit file | **Replaced** - new unit file installed; `systemctl daemon-reload` run automatically |
 | Binary at `/usr/local/bin/dispatch` | **Replaced** - old binary overwritten atomically |
@@ -3437,7 +3430,7 @@ This validation applies to `relay:{id}:smtp.host` only. Provider SDK endpoints (
 - The script's SHA-256 is published on the GitHub release page and verified by a second download before execution (the install page includes a `curl | sha256sum` verification step)
 - The script is pinned to a specific release tag URL, not `latest`, so it cannot be silently replaced
 
-**SQL Server Express download:** the bootstrap verifies the SHA-256 of the downloaded installer against a hardcoded value before executing it. A mismatch aborts installation with a clear error.
+**PostgreSQL installer:** the bootstrap verifies the SHA-256 of the bundled (or downloaded) PostgreSQL installer against a hardcoded value before executing it. A mismatch aborts installation with a clear error.
 
 **NuGet packages:** all dependencies are locked via `packages.lock.json`. CI fails on lock file changes that are not accompanied by a manual review comment.
 
@@ -3776,7 +3769,7 @@ app.MapFallbackToFile("index.html", new StaticFileOptions
 
 ### 19.5 Configuration Encryption
 
-`SecureConfig` encrypts/decrypts sensitive values stored in the SQL `config` table (rows where `encrypted = 1`). The connection string in `appsettings.json` is stored in plaintext - it grants access only to a least-privilege `dispatch_app` SQL login, so exposure risk is low and file-level OS permissions provide the primary protection.
+`SecureConfig` encrypts/decrypts sensitive values stored in the `config` table (rows where `encrypted = TRUE`). The connection string in `appsettings.json` is stored in plaintext - it grants access only to a least-privilege `dispatch` PostgreSQL role, so exposure risk is low and file-level OS permissions provide the primary protection.
 
 ```csharp
 public static class SecureConfig
@@ -3789,7 +3782,7 @@ public static class SecureConfig
 }
 ```
 
-`ConfigRepository` calls `Encrypt()` before writing any row with `encrypted = 1` and `Decrypt()` transparently after reading. The raw plaintext never touches `appsettings.json`. Never log or surface the decrypted value - only write it to the provider SDK call.
+`ConfigRepository` calls `Encrypt()` before writing any row with `encrypted = TRUE` and `Decrypt()` transparently after reading. The raw plaintext never touches `appsettings.json`. Never log or surface the decrypted value - only write it to the provider SDK call.
 
 ### 19.6 In-Memory Ring Buffer Sink (Serilog)
 
@@ -3815,7 +3808,7 @@ public class RingBufferSink : ILogEventSink
 
 ### 19.7 Routing and Provider Resolution
 
-The `RoutingEngine` is called on every spool file dispatch. Relay configs and routing rules are loaded from SQL via the `IRelayRepository` and `IRoutingRuleRepository` - cache them with a short TTL (e.g. 5 seconds) in the repositories so rule changes propagate quickly without a SQL query per message:
+The `RoutingEngine` is called on every spool file dispatch. Relay configs and routing rules are loaded from PostgreSQL via the `IRelayRepository` and `IRoutingRuleRepository` - cache them with a short TTL (e.g. 5 seconds) in the repositories so rule changes propagate quickly without a database query per message:
 
 ```csharp
 // SpoolWorkerPool.ProcessAsync()
@@ -3836,34 +3829,32 @@ var result   = await provider.SendAsync(message, ct);
 
 `Dispatch.Bootstrap.Windows` is a .NET 10 WinForms project published as a self-contained single-file EXE. It has no .NET runtime prerequisite - use `PublishSingleFile=true` with `SelfContained=true`.
 
-**SQL Server detection:**
+**PostgreSQL detection:**
 
 ```csharp
 public static async Task<List<string>> DetectLocalInstancesAsync()
 {
     var found = new List<string>();
 
-    // 1. Try well-known default instance names
-    foreach (var candidate in new[] { @"localhost\SQLEXPRESS", "localhost" })
+    // 1. Try a PostgreSQL server on the default port
+    foreach (var candidate in new[] { "localhost:5432" })
     {
-        if (await TryConnectAsync($"Server={candidate};Integrated Security=true;Timeout=2"))
+        var parts = candidate.Split(':');
+        if (await TryConnectAsync($"Host={parts[0]};Port={parts[1]};Timeout=2"))
             found.Add(candidate);
     }
 
-    // 2. Enumerate via SQL Server Browser (best-effort - Browser may be disabled)
+    // 2. Enumerate any registered PostgreSQL Windows services (best-effort)
     try
     {
-        var table = SqlDataSourceEnumerator.Instance.GetDataSources();
-        foreach (DataRow row in table.Rows)
+        foreach (var svc in ServiceController.GetServices())
         {
-            var server   = row["ServerName"].ToString()!;
-            var instance = row["InstanceName"].ToString()!;
-            var name     = string.IsNullOrEmpty(instance) ? server : $@"{server}\{instance}";
-            if (!found.Contains(name, StringComparer.OrdinalIgnoreCase))
-                found.Add(name);
+            if (svc.ServiceName.StartsWith("postgresql", StringComparison.OrdinalIgnoreCase) &&
+                !found.Contains(svc.ServiceName, StringComparer.OrdinalIgnoreCase))
+                found.Add(svc.ServiceName);
         }
     }
-    catch { /* Browser disabled - ignore */ }
+    catch { /* service enumeration unavailable - ignore */ }
 
     return found;
 }
@@ -3874,16 +3865,17 @@ public static async Task<List<string>> DetectLocalInstancesAsync()
 ```csharp
 public static async Task InitialiseDatabaseAsync(string connectionString)
 {
-    // 1. Create database if it doesn't exist
-    var builder = new SqlConnectionStringBuilder(connectionString)
-        { InitialCatalog = "master" };
+    // 1. Create database if it doesn't exist (connect to the default 'postgres' db first;
+    //    CREATE DATABASE cannot run inside a transaction and has no IF NOT EXISTS clause).
+    var builder = new NpgsqlConnectionStringBuilder(connectionString)
+        { Database = "postgres" };
 
-    using (var conn = new SqlConnection(builder.ToString()))
+    using (var conn = new NpgsqlConnection(builder.ToString()))
     {
-        await conn.ExecuteAsync("""
-            IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = 'DispatchLog')
-                CREATE DATABASE DispatchLog;
-            """);
+        var exists = await conn.ExecuteScalarAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'DispatchLog')");
+        if (!exists)
+            await conn.ExecuteAsync("CREATE DATABASE \"DispatchLog\"");
     }
 
     // 2. Apply embedded schema scripts in order
@@ -3892,7 +3884,7 @@ public static async Task InitialiseDatabaseAsync(string connectionString)
                            .Where(n => n.Contains(".Schema.") && n.EndsWith(".sql"))
                            .OrderBy(n => n);
 
-    using var db = new SqlConnection(connectionString);
+    using var db = new NpgsqlConnection(connectionString);
     foreach (var name in scripts)
     {
         using var stream = assembly.GetManifestResourceStream(name)!;
@@ -4124,19 +4116,16 @@ The migration runner is shared by both the Windows bootstrap (`Dispatch.Bootstra
 public class MigrationRunner(string connectionString)
 {
     private const string EnsureVersionTable = """
-        IF NOT EXISTS (
-            SELECT 1 FROM sys.tables WHERE name = 'schema_version'
-        )
-        CREATE TABLE schema_version (
+        CREATE TABLE IF NOT EXISTS schema_version (
             version     INT           NOT NULL PRIMARY KEY,
-            script_name NVARCHAR(256) NOT NULL,
-            applied_at  DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
+            script_name VARCHAR(256)  NOT NULL,
+            applied_at  TIMESTAMPTZ   NOT NULL DEFAULT now()
         );
         """;
 
     public async Task<MigrationResult> RunAsync(CancellationToken ct = default)
     {
-        using var conn = new SqlConnection(connectionString);
+        using var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync(ct);
 
         // Ensure tracking table exists
@@ -4174,9 +4163,9 @@ public class MigrationRunner(string connectionString)
             using var tx = await conn.BeginTransactionAsync(ct);
             try
             {
-                // Split on GO statements (SQL Server batch separator)
-                foreach (var batch in SplitOnGo(sql))
-                    await conn.ExecuteAsync(batch, transaction: tx);
+                // PostgreSQL has no GO batch separator - each file is executed as one script
+                // (Npgsql happily runs a multi-statement command in a single ExecuteAsync).
+                await conn.ExecuteAsync(sql, transaction: tx);
 
                 await conn.ExecuteAsync(
                     "INSERT INTO schema_version (version, script_name) VALUES (@v, @n)",
@@ -4201,10 +4190,6 @@ public class MigrationRunner(string connectionString)
         var filename = Path.GetFileName(resourceName);
         return int.Parse(filename[..4]);   // e.g. "0003_add_tags.sql" → 3
     }
-
-    private static IEnumerable<string> SplitOnGo(string sql) =>
-        Regex.Split(sql, @"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)
-             .Where(b => !string.IsNullOrWhiteSpace(b));
 }
 
 public record MigrationResult(int AppliedCount, List<string> Scripts);
@@ -4446,12 +4431,12 @@ When success logging is **on**, the sparkline reads from `relay_log`:
 
 ```sql
 -- 60 one-minute buckets, last 60 minutes - hits IX_relay_log_status_date
-SELECT DATEADD(MINUTE, DATEDIFF(MINUTE, 0, logged_at), 0) AS bucket,
-       COUNT(*)                                             AS delivered
+SELECT date_trunc('minute', logged_at) AS bucket,
+       COUNT(*)                          AS delivered
 FROM   relay_log
 WHERE  status    = 'OK'
-  AND  logged_at >= DATEADD(MINUTE, -60, SYSUTCDATETIME())
-GROUP BY DATEADD(MINUTE, DATEDIFF(MINUTE, 0, logged_at), 0)
+  AND  logged_at >= now() - INTERVAL '60 minutes'
+GROUP BY date_trunc('minute', logged_at)
 ORDER BY bucket;
 ```
 

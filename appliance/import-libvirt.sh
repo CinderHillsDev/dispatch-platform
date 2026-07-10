@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Import the Dispatch SMTP Relay appliance qcow2 into KVM/libvirt as a UEFI VM (virt-install --import).
-# The appliance configures SQL Server + Dispatch on first boot; then browse to https://<vm-ip>:8420.
+# The appliance configures PostgreSQL + Dispatch on first boot; then browse to https://<vm-ip>:8420.
 #
 # Usage:
 #   sudo ./import-libvirt.sh dispatch-appliance.qcow2 [--name dispatch] [--memory 4096] [--vcpus 2]
@@ -54,7 +54,7 @@ virt-install \
 # qemu-guest-agent then reports the VM's IP to libvirt ("virsh domifaddr <vm> --source agent").
 
 echo
-echo "VM '$NAME' defined. First boot configures SQL + Dispatch (a few minutes)."
+echo "VM '$NAME' defined. First boot configures PostgreSQL + Dispatch (a few minutes)."
 [ "$START" = 1 ] || echo "Start it with:  virsh start $NAME"
 echo "Find its IP with:  virsh domifaddr $NAME"
 echo "Then browse to https://<vm-ip>:8420 and set the admin password."
