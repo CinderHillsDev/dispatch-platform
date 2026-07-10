@@ -6,10 +6,17 @@ name: Appliance
 # it under QEMU/UEFI to prove the service comes up on first boot. Artifacts: dispatch-appliance-hyperv,
 # dispatch-appliance-vmware, dispatch-appliance-kvm.
 on:
-  # Dispatch-only: the Build workflow kicks this off automatically AFTER its tests + lint pass (see the
-  # trigger-appliance job in build.yml), so the appliance is never built from un-validated code and never
-  # races Build. Also runnable by hand from the Actions tab.
+  # Runs AFTER a release is published - linked to the release, but it never blocks or races it (the release
+  # is already out; this attaches the appliance images to it). The Build workflow also kicks this off after
+  # its tests + lint pass (see trigger-appliance in build.yml), producing CI artifacts from validated code.
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Attach the built appliances to this release tag (e.g. v0.5.0). Blank = CI artifacts only."
+        required: false
+        default: ""
 
 env:
   DOTNET_NOLOGO: "true"
@@ -21,6 +28,11 @@ jobs:
   # it is not Hyper-V-only.
   build-appliances:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to attach appliance images to the release
+    env:
+      # The release tag to attach to: the published release's tag, or a manually-supplied one. Blank = none.
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
     steps:
       - uses: actions/checkout@v5
 
@@ -53,9 +65,9 @@ jobs:
 
       - name: Build the appliance VHDX
         env:
-          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('ci-{0}', github.run_number) }}
+          VERSION: ${{ env.RELEASE_TAG != '' && env.RELEASE_TAG || format('ci-{0}', github.run_number) }}
         run: |
-          sudo env PREBUILT_DIR="$PWD/publish/linux" VERSION="$VERSION" \
+          sudo env PREBUILT_DIR="$PWD/publish/linux" VERSION="${VERSION#v}" \
             OUT="$PWD/dispatch-appliance.vhdx" OVA_OUT="$PWD/dispatch-appliance.ova" \
             QCOW2_OUT="$PWD/dispatch-appliance.qcow2" \
             LIBGUESTFS_BACKEND=direct ./appliance/build-appliance.sh
@@ -107,6 +119,29 @@ jobs:
       - name: Upload KVM/Proxmox appliance
         uses: actions/upload-artifact@v6
         with: { name: dispatch-appliance-kvm, path: out/kvm/*, if-no-files-found: error }
+
+      # When linked to a release (release: published, or a manual release_tag), attach the images to it.
+      # Uploaded before the boot smoke so a smoke failure doesn't withhold the artifacts.
+      - name: Attach appliances to the release
+        if: ${{ env.RELEASE_TAG != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${RELEASE_TAG#v}"
+          mkdir -p rel
+          # The Hyper-V VHDX is large and sparse; gzip it (GitHub release assets cap at 2 GB per file).
+          gzip -c out/hyperv/dispatch-appliance.vhdx > "rel/dispatch-appliance-${VER}-hyperv.vhdx.gz"
+          cp out/vmware/dispatch-appliance.ova       "rel/dispatch-appliance-${VER}-vmware.ova"
+          cp out/kvm/dispatch-appliance.qcow2        "rel/dispatch-appliance-${VER}-kvm.qcow2"
+          for f in rel/*; do
+            sz=$(stat -c%s "$f"); mb=$((sz / 1024 / 1024))
+            echo "$(basename "$f"): ${mb} MB"
+            if [ "$sz" -gt $((2 * 1024 * 1024 * 1024)) ]; then
+              echo "::warning::$(basename "$f") is ${mb} MB, over the 2 GB release-asset limit - skipping."
+            else
+              gh release upload "$RELEASE_TAG" "$f" --clobber
+            fi
+          done
 
       - name: Boot smoke (UEFI) - service comes up on first boot
         run: |
