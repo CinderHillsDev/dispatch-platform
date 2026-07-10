@@ -20,7 +20,7 @@ public sealed class PurgeOptions
     /// <summary>Noisier security audit events (allow-list denials, SMTP auth failures) kept this long (0 = forever).</summary>
     public int AuditSecurityRetentionDays { get; set; } = 7;
 
-    /// <summary>Weekly JSONL archive files written by the Express size-pressure purge are deleted after this
+    /// <summary>Weekly JSONL archive files written by the size-pressure purge are deleted after this
     /// many days (0 = keep forever - the default, since they're emergency exports).</summary>
     public int ArchiveRetentionDays { get; set; }
 
@@ -37,7 +37,10 @@ public sealed class PurgeOptions
 
     public sealed class SizePressureOptions
     {
-        public double TriggerGb { get; set; } = 9.5;   // SQL Server Express 10 GB limit − 0.5 GB buffer
-        public double TargetGb { get; set; } = 9.0;
+        // Optional physical DB-size cap (pg_database_size). 0 = disabled (the default): PostgreSQL has no
+        // hard size limit, so size-pressure is opt-in. Set TriggerGb > 0 to have the purge archive + delete
+        // the oldest history (then VACUUM FULL) once the database grows past TriggerGb, down to TargetGb.
+        public double TriggerGb { get; set; }
+        public double TargetGb { get; set; }
     }
 }

@@ -6,7 +6,7 @@
 --     composite (spool_id, logged_at, id) serves either direction with a seek instead of a scan.
 --
 --  2. Per-API-key message list (RecentByApiKeyAsync / GET /api/v1/messages) filters api_key_id and orders
---     by logged_at DESC. A filtered index (api_key_id IS NOT NULL) keeps it tiny - the vast majority of
+--     by logged_at DESC. A partial index (api_key_id IS NOT NULL) keeps it tiny - the vast majority of
 --     rows are SMTP ingest with a NULL api_key_id and are excluded from the index entirely.
 --
 -- Other access paths are already covered: the unfiltered/date-range list orders by (logged_at DESC, id
@@ -15,9 +15,7 @@
 -- subject/tag use leading-wildcard LIKE and are inherently non-sargable (would need full-text), so no
 -- index is added for them. Guarded so the migration is re-runnable.
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_relay_log_spool_id' AND object_id = OBJECT_ID('relay_log'))
-    CREATE INDEX IX_relay_log_spool_id ON relay_log (spool_id, logged_at, id);
+CREATE INDEX IF NOT EXISTS IX_relay_log_spool_id ON relay_log (spool_id, logged_at, id);
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_relay_log_api_key' AND object_id = OBJECT_ID('relay_log'))
-    CREATE INDEX IX_relay_log_api_key ON relay_log (api_key_id, logged_at DESC)
-        WHERE api_key_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS IX_relay_log_api_key ON relay_log (api_key_id, logged_at DESC)
+    WHERE api_key_id IS NOT NULL;

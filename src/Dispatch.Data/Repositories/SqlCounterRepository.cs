@@ -26,11 +26,8 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
 
         // Column name comes from a fixed enum mapping, never user input.
         var sql = $"""
-            MERGE relay_counters AS t
-            USING (VALUES (CAST(SYSUTCDATETIME() AS DATE), @relayId)) AS s(date, relay_id)
-                ON t.date = s.date AND t.relay_id = s.relay_id
-            WHEN MATCHED THEN UPDATE SET {column} = {column} + 1
-            WHEN NOT MATCHED THEN INSERT (date, relay_id, {column}) VALUES (s.date, s.relay_id, 1);
+            INSERT INTO relay_counters (date, relay_id, {column}) VALUES (CURRENT_DATE, @relayId, 1)
+            ON CONFLICT (date, relay_id) DO UPDATE SET {column} = relay_counters.{column} + 1;
             """;
 
         await using var cn = await factory.OpenAsync(ct);
@@ -41,13 +38,13 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
     {
         const string sql = """
             SELECT
-                ISNULL(SUM(received), 0)  AS Received,
-                ISNULL(SUM(delivered), 0) AS Delivered,
-                ISNULL(SUM(failed), 0)    AS Failed,
-                ISNULL(SUM(retried), 0)   AS Retried,
-                ISNULL(SUM(denied), 0)    AS Denied
+                COALESCE(SUM(received), 0)::bigint  AS Received,
+                COALESCE(SUM(delivered), 0)::bigint AS Delivered,
+                COALESCE(SUM(failed), 0)::bigint    AS Failed,
+                COALESCE(SUM(retried), 0)::bigint   AS Retried,
+                COALESCE(SUM(denied), 0)::bigint    AS Denied
             FROM relay_counters
-            WHERE date = CAST(SYSUTCDATETIME() AS DATE);
+            WHERE date = CURRENT_DATE;
             """;
         await using var cn = await factory.OpenAsync(ct);
         return await cn.QuerySingleAsync<CounterTotals>(new CommandDefinition(sql, cancellationToken: ct));
@@ -57,13 +54,13 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
     {
         const string sql = """
             SELECT relay_id AS RelayId,
-                   ISNULL(SUM(received), 0)  AS Received,
-                   ISNULL(SUM(delivered), 0) AS Delivered,
-                   ISNULL(SUM(failed), 0)    AS Failed,
-                   ISNULL(SUM(retried), 0)   AS Retried,
-                   ISNULL(SUM(denied), 0)    AS Denied
+                   COALESCE(SUM(received), 0)::bigint  AS Received,
+                   COALESCE(SUM(delivered), 0)::bigint AS Delivered,
+                   COALESCE(SUM(failed), 0)::bigint    AS Failed,
+                   COALESCE(SUM(retried), 0)::bigint   AS Retried,
+                   COALESCE(SUM(denied), 0)::bigint    AS Denied
             FROM relay_counters
-            WHERE date = CAST(SYSUTCDATETIME() AS DATE)
+            WHERE date = CURRENT_DATE
               AND relay_id > 0              -- exclude the relay_id 0 "no relay" bucket (denials) from per-relay views
             GROUP BY relay_id;
             """;
@@ -76,11 +73,11 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
     {
         const string sql = """
             SELECT
-                ISNULL(SUM(received), 0)  AS Received,
-                ISNULL(SUM(delivered), 0) AS Delivered,
-                ISNULL(SUM(failed), 0)    AS Failed,
-                ISNULL(SUM(retried), 0)   AS Retried,
-                ISNULL(SUM(denied), 0)    AS Denied
+                COALESCE(SUM(received), 0)::bigint  AS Received,
+                COALESCE(SUM(delivered), 0)::bigint AS Delivered,
+                COALESCE(SUM(failed), 0)::bigint    AS Failed,
+                COALESCE(SUM(retried), 0)::bigint   AS Retried,
+                COALESCE(SUM(denied), 0)::bigint    AS Denied
             FROM relay_counters
             WHERE date >= @From AND date <= @To;
             """;
@@ -91,12 +88,12 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
     public async Task<IReadOnlyList<DailyCounterTotals>> GetDailyAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
     {
         const string sql = """
-            SELECT CONVERT(char(10), date, 23) AS Date,
-                   ISNULL(SUM(received), 0)  AS Received,
-                   ISNULL(SUM(delivered), 0) AS Delivered,
-                   ISNULL(SUM(failed), 0)    AS Failed,
-                   ISNULL(SUM(retried), 0)   AS Retried,
-                   ISNULL(SUM(denied), 0)    AS Denied
+            SELECT to_char(date, 'YYYY-MM-DD') AS Date,
+                   COALESCE(SUM(received), 0)::bigint  AS Received,
+                   COALESCE(SUM(delivered), 0)::bigint AS Delivered,
+                   COALESCE(SUM(failed), 0)::bigint    AS Failed,
+                   COALESCE(SUM(retried), 0)::bigint   AS Retried,
+                   COALESCE(SUM(denied), 0)::bigint    AS Denied
             FROM relay_counters
             WHERE date >= @From AND date <= @To
             GROUP BY date
@@ -111,11 +108,11 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
     {
         const string sql = """
             SELECT c.relay_id AS RelayId, r.name AS RelayName,
-                   ISNULL(SUM(c.received), 0)  AS Received,
-                   ISNULL(SUM(c.delivered), 0) AS Delivered,
-                   ISNULL(SUM(c.failed), 0)    AS Failed,
-                   ISNULL(SUM(c.retried), 0)   AS Retried,
-                   ISNULL(SUM(c.denied), 0)    AS Denied
+                   COALESCE(SUM(c.received), 0)::bigint  AS Received,
+                   COALESCE(SUM(c.delivered), 0)::bigint AS Delivered,
+                   COALESCE(SUM(c.failed), 0)::bigint    AS Failed,
+                   COALESCE(SUM(c.retried), 0)::bigint   AS Retried,
+                   COALESCE(SUM(c.denied), 0)::bigint    AS Denied
             FROM relay_counters c
             JOIN relays r ON r.id = c.relay_id
             WHERE c.date >= @From AND c.date <= @To

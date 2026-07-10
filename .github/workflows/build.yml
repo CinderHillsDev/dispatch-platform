@@ -10,25 +10,29 @@ env:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
 
     services:
-      # SQL Server 2022 service container (GitHub-hosted runners are free for this public repo). Same wire
-      # protocol / T-SQL as the dev Azure SQL Edge container; app code is unchanged. The Data test fixture
-      # waits up to 90s for the engine to accept connections, so no container health-cmd is needed.
-      sql:
-        image: mcr.microsoft.com/mssql/server:2022-latest
+      # PostgreSQL service container. The Data test fixture waits up to 90s for the engine to accept
+      # connections; the health-cmd gates job steps until pg_isready succeeds.
+      db:
+        image: postgres:17
         env:
-          ACCEPT_EULA: "Y"
-          # Dev-only SA password. Override by setting the MSSQL_SA_PASSWORD repo/org secret; the literal is
+          # Dev-only password. Override by setting the POSTGRES_PASSWORD repo/org secret; the literal is
           # only a fallback and grants nothing beyond the ephemeral CI container.
-          MSSQL_SA_PASSWORD: ${{ secrets.MSSQL_SA_PASSWORD || 'Dispatch_Dev_Pass123' }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD || 'Dispatch_Dev_Pass123' }}
         ports:
-          - 1433:1433
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
 
     env:
-      # Drives the Dispatch.Data integration tests against the SQL service container.
-      DISPATCH_TEST_SQL: "Server=localhost,1433;User Id=sa;Password=${{ secrets.MSSQL_SA_PASSWORD || 'Dispatch_Dev_Pass123' }};TrustServerCertificate=True;Encrypt=True"
+      # Drives the Dispatch.Data integration tests against the Postgres service container. No Database= here;
+      # the fixture creates a uniquely-named database per run and drops it afterwards.
+      DISPATCH_TEST_SQL: "Host=localhost;Port=5432;Username=postgres;Password=${{ secrets.POSTGRES_PASSWORD || 'Dispatch_Dev_Pass123' }}"
       # Make the integration tests fail loudly if the connection string is ever missing, instead of skipping.
       DISPATCH_REQUIRE_SQL: "1"
       DOTNET_NOLOGO: "true"
@@ -83,7 +87,7 @@ jobs:
   # Keep em dashes out of the tree: they break Windows PowerShell parsing (a mis-decoded em-dash byte
   # becomes a smart-quote string delimiter) and the project standardizes on ASCII '-'.
   no-em-dash:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
       - name: Reject em dashes (use ASCII '-')
@@ -103,7 +107,7 @@ jobs:
   trigger-appliance:
     needs: [build-test, no-em-dash]
     if: ${{ github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'feat/relay-engine-web-providers') }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     permissions:
       actions: write
     steps:

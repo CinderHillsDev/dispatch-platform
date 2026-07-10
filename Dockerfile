@@ -3,12 +3,12 @@
 # Dispatch SMTP Relay - container image (multi-arch: linux/amd64 + linux/arm64).
 #
 # Build:  docker build -t dispatch .
-# Run:    see docker-compose.yml (brings up Dispatch + SQL together).
+# Run:    see docker-compose.yml (brings up Dispatch + PostgreSQL together).
 #
 # Config (spec §12.1): the image takes ONLY the two bootstrap settings from the environment -
-#   ConnectionStrings__DispatchLog   the SQL connection string (required)
+#   ConnectionStrings__DispatchLog   the PostgreSQL (Npgsql) connection string (required)
 #   AdminPassword                    first-run dashboard admin password seed (optional)
-# Everything else is seeded into the SQL config table on first run and managed in the dashboard.
+# Everything else is seeded into the config table on first run and managed in the dashboard.
 
 # --- Stage 1: build the React dashboard -------------------------------------------------------
 FROM node:24-alpine AS ui
@@ -46,7 +46,7 @@ RUN mkdir -p /var/log/dispatch /app/.dispatch-spool
 # if 25 is unavailable.
 EXPOSE 8420 8025 25 587
 # Report container health from the unauthenticated /health endpoint. The dashboard is HTTPS-only with a
-# self-signed cert by default, so use https + -k. start-period covers first-run schema init + SQL connect.
+# self-signed cert by default, so use https + -k. start-period covers first-run schema init + DB connect.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=4 \
     CMD curl -fsSk https://localhost:8420/health || exit 1
 # UseSystemd()/UseWindowsService() in Program.cs are no-ops here; the service runs as PID 1.

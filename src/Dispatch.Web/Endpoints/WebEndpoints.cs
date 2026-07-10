@@ -124,7 +124,7 @@ public static class WebEndpoints
             var message = suspended
                 ? "Disk space critically low - SMTP intake suspended"
                 : connected ? null
-                : "SQL Server unavailable - mail flow unaffected; UI log unavailable";
+                : "Database unavailable - mail flow unaffected; UI log unavailable";
 
             var payload = new
             {
@@ -226,7 +226,7 @@ public static class WebEndpoints
         // Storage usage broken out by retention category (spec §6.10): how much each log-event class, the
         // audit log, and each spool dir is actually consuming - so operators can see what their retention
         // windows hold. DB per-event bytes are estimated by apportioning the relay_log table size across the
-        // event row counts (exact per-event bytes aren't cheap in SQL Server); spool figures are exact.
+        // event row counts (exact per-event bytes aren't cheap in PostgreSQL); spool figures are exact.
         group.MapGet("/storage", async (IStorageReport report, SpoolDirectory spool, CancellationToken ct) =>
         {
             var db = await report.GetAsync(ct);
@@ -432,7 +432,7 @@ public static class WebEndpoints
         ProviderResponse = detail,
         Error = error,
         DurationMs = durationMs,
-        IngestSource = "Dashboard test",   // distinguishes a dashboard "Send test" from real SMTP/API traffic (NVARCHAR(16))
+        IngestSource = "Dashboard test",   // distinguishes a dashboard "Send test" from real SMTP/API traffic (varchar(16))
     };
 
     public sealed record CreateKeyRequest(string Name, int? RateLimitPerMinute);

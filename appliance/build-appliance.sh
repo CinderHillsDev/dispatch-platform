@@ -3,8 +3,8 @@
 # Dispatch SMTP Relay - Hyper-V appliance builder (Ubuntu 24.04 LTS).
 #
 # Customizes the official Ubuntu cloud image offline with libguestfs (no Hyper-V host, no nested virt) and
-# converts it to a Gen2/UEFI dynamic VHDX. SQL Server Express's binaries are baked in; each VM configures
-# SQL with a unique SA password and starts Dispatch on first boot (see appliance/firstboot.sh).
+# converts it to a Gen2/UEFI dynamic VHDX. PostgreSQL's binaries are baked in; each VM configures the
+# database with a unique password and starts Dispatch on first boot (see appliance/firstboot.sh).
 #
 # Requires (host): libguestfs-tools, qemu-utils, curl.
 # Usage:
@@ -73,7 +73,7 @@ echo "==> Detecting the guest kernel version (for Hyper-V integration tools, whi
 KVER="$(virt-ls -a "$WORK/base.img" /lib/modules 2>/dev/null | grep -E '^[0-9]' | sort -V | tail -1 || true)"
 echo "guest kernel: ${KVER:-<unknown - Hyper-V IP reporting may be skipped>}"
 
-echo "==> Pre-downloading SQL Server Express + tools (.debs) for an offline in-guest install"
+echo "==> Pre-downloading PostgreSQL (.debs) for an offline in-guest install"
 # Done on the host in a clean Ubuntu 24.04 container so the dependency closure matches the cloud image and
 # the image build itself needs no in-guest network (libguestfs passt networking is unreliable on CI).
 mkdir -p "$STAGE/debs"
@@ -81,24 +81,14 @@ docker run --rm -e KVER="$KVER" -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq curl ca-certificates >/dev/null
-  # packages-microsoft-prod.deb sets up the Microsoft "prod" repo + signing key (msodbcsql18, mssql-tools18).
-  # Pin its SHA256 (fail-closed) so a swapped bootstrap .deb cannot install a rogue repo/key. If Microsoft
-  # rotates this .deb the build will fail here - re-verify the new file and update this hash.
-  curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -o /tmp/pmc.deb
-  echo "c13f01ac7c3001b51a9281d40dde666db5e037e05512840c319832f7852bfec4  /tmp/pmc.deb" | sha256sum -c - \
-    || { echo "ERROR: packages-microsoft-prod.deb checksum mismatch - refusing to trust it"; exit 1; }
-  dpkg -i /tmp/pmc.deb >/dev/null
-  # The SQL Server engine has its own per-version feed; Ubuntu 24.04 ships SQL Server 2025 (2022 is 22.04).
-  curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/mssql-server-2025.list \
-    -o /etc/apt/sources.list.d/mssql-server.list
-  apt-get update -qq
+  # PostgreSQL 16 ships in the default Ubuntu 24.04 repos, so no extra apt source or signing key is needed.
   cd /debs
   # Full recursive runtime dependency closure of the target packages (skip virtual/undownloadable entries).
   deps=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances \
-           mssql-server mssql-tools18 unixodbc-dev | grep "^\w" | sort -u)
+           postgresql postgresql-contrib | grep "^\w" | sort -u)
   for d in $deps; do apt-get download "$d" 2>/dev/null || true; done
-  echo "downloaded $(ls -1 /debs/*.deb | wc -l) SQL packages"
-  ls /debs/mssql-server_*.deb >/dev/null   # fail the build if the core package is missing
+  echo "downloaded $(ls -1 /debs/*.deb | wc -l) PostgreSQL packages"
+  ls /debs/postgresql*_*.deb >/dev/null   # fail the build if the core package is missing
 
   # Hypervisor guest agents so each hypervisor manager can display the VM IP (installed offline in the guest;
   # NO first-boot network, so this keeps the appliance no-call-home): open-vm-tools = VMware, qemu-guest-agent
@@ -120,7 +110,7 @@ echo "==> Expanding the root partition into a ${DISK_SIZE} working image"
 qemu-img create -f qcow2 "$WORK/disk.qcow2" "$DISK_SIZE"
 virt-resize --expand /dev/sda1 "$WORK/base.img" "$WORK/disk.qcow2"
 
-echo "==> Customizing the image (SQL Server Express + Dispatch + first-boot)"
+echo "==> Customizing the image (PostgreSQL + Dispatch + first-boot)"
 # --no-network: provisioning installs pre-downloaded .debs offline, so the appliance needs no in-guest
 # network (and we avoid libguestfs's passt networking, which fails on CI runners).
 virt-customize -a "$WORK/disk.qcow2" \

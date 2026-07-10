@@ -2,13 +2,13 @@ name: Installers
 
 # Validates the installer artifacts on GitHub-hosted runners (free for this public repo). Non-destructive
 # by default: the Windows job builds the MSI + Burn bundle (proving the WiX sources + net472 launcher
-# compile) and the Linux job lints install.sh. The actual SQL-Express install + service smoke test is
-# destructive (it installs SQL Server on the runner), so it only runs when dispatched with full_install=true.
+# compile) and the Linux job lints install.sh. The actual PostgreSQL install + service smoke test is
+# destructive (it installs PostgreSQL on the runner), so it only runs when dispatched with full_install=true.
 on:
   workflow_dispatch:
     inputs:
       full_install:
-        description: "Also run the real SQL install + service smoke test (mutates the runner)"
+        description: "Also run the real PostgreSQL install + service smoke test (mutates the runner)"
         type: boolean
         default: false
   push:
@@ -24,7 +24,7 @@ env:
 
 jobs:
   windows-installer:
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, x64]
     steps:
       - uses: actions/checkout@v5
 
@@ -83,19 +83,19 @@ jobs:
         working-directory: installer/windows
         run: wix build Dispatch.wxs -arch x64 -d PublishDir=publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
 
-      - name: Build the SQL Express launcher
-        run: dotnet build installer/windows/sql-express/SqlExpressLauncher.csproj -c Release
+      - name: Build the PostgreSQL launcher
+        run: dotnet build installer/windows/postgres/PostgresLauncher.csproj -c Release
 
       - name: Build the bundle
         working-directory: installer/windows
         shell: pwsh
         run: |
           wix build bundle/Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext `
-            -bindpath "SqlLauncher=sql-express/bin/Release/net472" -bindpath "Msi=." -o DispatchSetup.exe
+            -bindpath "PgLauncher=postgres/bin/Release/net472" -bindpath "Msi=." -o DispatchSetup.exe
 
       # CI installer builds are intentionally unsigned (signing happens only on tagged releases via
       # release.yml + Azure Artifact Signing). This artifact proves the WiX sources + launcher compile.
-      # DispatchSetup.exe is the single distributable file - it embeds Dispatch.msi and chains SQL Express.
+      # DispatchSetup.exe is the single distributable file - it embeds Dispatch.msi and chains PostgreSQL.
       # (The MSI is still built above to prove the WiX sources compile and to embed in the bundle.)
       - name: Upload installer artifact
         uses: actions/upload-artifact@v6
@@ -104,7 +104,7 @@ jobs:
           path: installer/windows/DispatchSetup.exe
           if-no-files-found: error
 
-      # Real end-to-end check: run the bundle (installs SQL Express + the service) and confirm the Windows
+      # Real end-to-end check: run the bundle (installs PostgreSQL + the service) and confirm the Windows
       # service starts and serves /health. Runs on every installer-path push and on manual dispatch, so a
       # service that won't start (bad config, missing files, crash on boot) fails CI instead of the customer.
       - name: Full install + smoke
@@ -246,7 +246,7 @@ jobs:
   # the Actions run page). This needs NO tag and creates NO release - releases are only for permanent
   # public download links. Grab "dispatch-linux-tarball" from the run to test install.sh --prebuilt.
   linux-tarball:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
 
@@ -291,9 +291,12 @@ jobs:
           stage="dispatch-ci-linux-x64"
           mkdir -p "staging/${stage}/bin"
           cp -r publish/linux/. "staging/${stage}/bin/"
-          cp installer/linux/install.sh "staging/${stage}/install.sh"
-          cp installer/linux/dispatch.service "staging/${stage}/dispatch.service"
-          chmod +x "staging/${stage}/install.sh" "staging/${stage}/bin/Dispatch.Service"
+          # Ship the same files as the release tarball (install.sh installs all of these systemd units).
+          cp installer/linux/install.sh installer/linux/dispatch.service \
+             installer/linux/dispatch-updater.service installer/linux/dispatch-update.path \
+             installer/linux/dispatch-update.sh "staging/${stage}/"
+          cp src/Dispatch.Core/Updates/dispatch-update-public.pem "staging/${stage}/"
+          chmod +x "staging/${stage}/install.sh" "staging/${stage}/dispatch-update.sh" "staging/${stage}/bin/Dispatch.Service"
           tar -czf "${stage}.tar.gz" -C staging "${stage}"
           ls -lh "${stage}.tar.gz"
 
@@ -305,20 +308,20 @@ jobs:
           if-no-files-found: error
 
       # Real end-to-end check (mirrors the Windows full-install smoke): install the just-built self-contained
-      # tarball exactly as a user would - install.sh --prebuilt --install-sql, which installs SQL Server
+      # tarball exactly as a user would - install.sh --prebuilt --install-postgres, which installs PostgreSQL
       # locally and provisions the DispatchLog DB - then confirm the systemd service starts and serves
       # /health. Runs on installer-path pushes and manual dispatch so a service that won't start (or a broken
-      # SQL bootstrap) fails CI instead of the customer.
+      # PostgreSQL bootstrap) fails CI instead of the customer.
       - name: Full install + smoke
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
         env:
-          SA_PW: "Ci-Smoke-Passw0rd!"
+          DB_PW: "Ci-Smoke-Passw0rd!"
         run: |
           set -euo pipefail
           mkdir -p /tmp/extract && tar -xzf dispatch-ci-linux-x64.tar.gz -C /tmp/extract
           dir=/tmp/extract/dispatch-ci-linux-x64
-          sudo "$dir/install.sh" --prebuilt "$dir/bin" --install-sql \
-            --sa-password "$SA_PW" --admin-password "$SA_PW"
+          sudo "$dir/install.sh" --prebuilt "$dir/bin" --install-postgres \
+            --db-password "$DB_PW" --admin-password "$DB_PW"
 
           ok=0
           for _ in $(seq 1 36); do
@@ -329,7 +332,7 @@ jobs:
             echo "=== dispatch service ==="; sudo systemctl status dispatch --no-pager || true
             echo "=== journal ==="; sudo journalctl -u dispatch --no-pager -n 80 || true
             echo "=== app logs ==="; sudo tail -n 60 /var/log/dispatch/*.log 2>/dev/null || true
-            echo "=== sql server ==="; sudo systemctl status mssql-server --no-pager 2>/dev/null || true
+            echo "=== postgresql ==="; sudo systemctl status postgresql --no-pager 2>/dev/null || true
             echo "health check failed"; exit 1
           fi
           curl -fsSk https://localhost:8420/health; echo "  <- /health OK"
@@ -347,7 +350,7 @@ jobs:
           [ "$tls_ok" = 1 ] || { echo "STARTTLS negotiation failed on all SMTP ports"; exit 1; }
 
   linux-installer:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
 
@@ -361,5 +364,6 @@ jobs:
           fi
 
       # The end-to-end install + "service actually runs" smoke lives in the linux-tarball job below - it
-      # installs the real self-contained tarball (install.sh --prebuilt) against a SQL container and checks
-      # /health, mirroring the Windows full-install smoke. This job stays a fast lint of install.sh.
+      # installs the real self-contained tarball (install.sh --prebuilt) against a locally-installed
+      # PostgreSQL and checks /health, mirroring the Windows full-install smoke. This job stays a fast lint
+      # of install.sh.

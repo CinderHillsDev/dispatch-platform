@@ -1,6 +1,5 @@
-using System.Reflection;
 using Dapper;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Data;
@@ -16,28 +15,30 @@ public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<Da
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        var builder = new SqlConnectionStringBuilder(factory.ConnectionString);
-        var database = builder.InitialCatalog;
+        var builder = new NpgsqlConnectionStringBuilder(factory.ConnectionString);
+        var database = builder.Database;
         if (string.IsNullOrWhiteSpace(database))
-            throw new InvalidOperationException("Connection string must specify an Initial Catalog (Database).");
+            throw new InvalidOperationException("Connection string must specify a Database.");
 
         await EnsureDatabaseAsync(builder, database, ct);
         await EnsureSchemaVersionTableAsync(ct);
         await ApplyMigrationsAsync(database, ct);
     }
 
-    private async Task EnsureDatabaseAsync(SqlConnectionStringBuilder builder, string database, CancellationToken ct)
+    private async Task EnsureDatabaseAsync(NpgsqlConnectionStringBuilder builder, string database, CancellationToken ct)
     {
-        var masterBuilder = new SqlConnectionStringBuilder(builder.ConnectionString) { InitialCatalog = "master" };
-        await using var cn = new SqlConnection(masterBuilder.ConnectionString);
+        // Connect to the "postgres" maintenance database to check for / create the target database.
+        var maintenanceBuilder = new NpgsqlConnectionStringBuilder(builder.ConnectionString) { Database = "postgres" };
+        await using var cn = new NpgsqlConnection(maintenanceBuilder.ConnectionString);
         await OpenWithRetryAsync(cn, ct);
 
         var exists = await cn.ExecuteScalarAsync<int?>(
-            "SELECT 1 FROM sys.databases WHERE name = @database", new { database });
+            "SELECT 1 FROM pg_database WHERE datname = @database", new { database });
         if (exists is null)
         {
-            // CREATE DATABASE cannot be parameterised; database name comes from our own config, not user input.
-            await cn.ExecuteAsync($"CREATE DATABASE [{database.Replace("]", "]]")}]");
+            // CREATE DATABASE cannot be parameterised or run inside a transaction; the database name comes
+            // from our own config, not user input. Double-quote to allow mixed case / reserved words.
+            await cn.ExecuteAsync($"CREATE DATABASE \"{database.Replace("\"", "\"\"")}\"");
             log.LogInformation("Created database {Database}", database);
         }
     }
@@ -46,11 +47,10 @@ public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<Da
     {
         await using var cn = await factory.OpenAsync(ct);
         await cn.ExecuteAsync("""
-            IF OBJECT_ID('schema_version') IS NULL
-            CREATE TABLE schema_version (
-                version     INT           NOT NULL PRIMARY KEY,
-                script_name NVARCHAR(256) NOT NULL,
-                applied_at  DATETIME2     NOT NULL DEFAULT SYSUTCDATETIME()
+            CREATE TABLE IF NOT EXISTS schema_version (
+                version     int          NOT NULL PRIMARY KEY,
+                script_name varchar(256) NOT NULL,
+                applied_at  timestamptz  NOT NULL DEFAULT now()
             );
             """);
     }
@@ -83,8 +83,8 @@ public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<Da
         }
     }
 
-    /// <summary>Opens a connection, retrying for up to ~60s so a just-started SQL container (CI/docker) is tolerated.</summary>
-    private async Task OpenWithRetryAsync(SqlConnection cn, CancellationToken ct)
+    /// <summary>Opens a connection, retrying for up to ~60s so a just-started Postgres container (CI/docker) is tolerated.</summary>
+    private async Task OpenWithRetryAsync(NpgsqlConnection cn, CancellationToken ct)
     {
         const int maxAttempts = 30;
         for (var attempt = 1; ; attempt++)
@@ -94,9 +94,9 @@ public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<Da
                 await cn.OpenAsync(ct);
                 return;
             }
-            catch (SqlException) when (attempt < maxAttempts)
+            catch (NpgsqlException) when (attempt < maxAttempts)
             {
-                if (attempt == 1) log.LogInformation("Waiting for SQL Server to accept connections…");
+                if (attempt == 1) log.LogInformation("Waiting for PostgreSQL to accept connections…");
                 await Task.Delay(TimeSpan.FromSeconds(2), ct);
             }
         }

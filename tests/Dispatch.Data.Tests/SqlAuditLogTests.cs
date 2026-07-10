@@ -41,7 +41,7 @@ public class SqlAuditLogTests(SqlServerFixture sql) : IClassFixture<SqlServerFix
         // fresh one. Dapper-parameterised inserts mirroring the table shape.
         async Task Seed(string kind, string category, int daysOld) =>
             await Dapper.SqlMapper.ExecuteAsync(cn,
-                "INSERT INTO audit_log (logged_at, kind, category, event, severity) VALUES (DATEADD(DAY, -@d, SYSUTCDATETIME()), @k, @c, 'x', 'Info');",
+                "INSERT INTO audit_log (logged_at, kind, category, event, severity) VALUES (now() - @d * interval '1 day', @k, @c, 'x', 'Info');",
                 new { d = daysOld, k = kind, c = category });
 
         await Seed("audit", "SmtpAuth", 10);   // security, older than 7d → purged

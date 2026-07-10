@@ -9,8 +9,8 @@ namespace Dispatch.Core.Maintenance;
 
 /// <summary>
 /// Background retention + auto-purge (spec §6.10): deletes aged spool/failed and spool/captured files,
-/// purges old relay_log rows per event type, and runs a size-pressure purge when the database nears the
-/// SQL Server Express limit. Runs once on startup and then on a fixed interval. All work is best-effort -
+/// purges old relay_log rows per event type, and runs an optional size-pressure purge when the database
+/// exceeds a configured size cap. Runs once on startup and then on a fixed interval. All work is best-effort -
 /// a failure in one cycle is logged and never crashes the service.
 /// </summary>
 public sealed class PurgeWorker(
@@ -108,35 +108,44 @@ public sealed class PurgeWorker(
 
     private async Task<int> RunSizePressureAsync(PurgeOptions o, CancellationToken ct)
     {
-        // The 10 GB data-file cap only exists on SQL Server Express. On Standard/Enterprise/Azure or an
-        // operator's own external server there is no cap, so the size-pressure purge never runs there.
-        if (!await logs.IsSizeCappedEditionAsync(ct)) return 0;
+        // Optional physical DB-size cap. PostgreSQL has no hard size limit, so this is opt-in: a TriggerGb of
+        // 0 (the default) disables it entirely. When set, keep the database at roughly TargetGb by archiving
+        // and deleting the oldest history once pg_database_size exceeds TriggerGb.
+        if (o.SizePressure.TriggerGb <= 0) return 0;
 
-        // Key off USED space, not the allocated file size (which never shrinks on DELETE) - so the loop
-        // actually converges and frees a bounded amount.
-        var used = await logs.GetDatabaseUsedBytesAsync(ct);
+        var size = await logs.GetDatabaseSizeBytesAsync(ct);
         var trigger = (long)(o.SizePressure.TriggerGb * BytesPerGb);
-        if (used < trigger) return 0;
+        if (size < trigger) return 0;
 
         var targetGb = Math.Min(o.SizePressure.TargetGb, o.SizePressure.TriggerGb);
         var target = (long)(targetGb * BytesPerGb);
 
-        log.LogWarning("Database using {UsedGb:F1} GB (Express 10 GB cap) - archiving + purging oldest rows down to {TargetGb:F1} GB",
-            used / (double)BytesPerGb, targetGb);
+        // pg_database_size does not drop on DELETE (only on VACUUM FULL), so we cannot loop on it. Instead
+        // estimate how many oldest rows to free from the size overage and the average relay_log row size,
+        // delete that many in bounded batches, then VACUUM FULL once so the size actually shrinks.
+        var overage = size - target;
+        var (relayBytes, relayRows) = await logs.GetRelayLogStatsAsync(ct);
+        var avgRowBytes = relayRows > 0 ? Math.Max(1, relayBytes / relayRows) : 1;
+        var rowsToFree = (int)Math.Min(int.MaxValue, Math.Max(0, overage / avgRowBytes));
+        if (rowsToFree == 0) return 0;
+
+        log.LogWarning("Database at {SizeGb:F1} GB exceeds the {TriggerGb:F1} GB cap - archiving + purging ~{Rows} oldest rows down to {TargetGb:F1} GB",
+            size / (double)BytesPerGb, o.SizePressure.TriggerGb, rowsToFree, targetGb);
 
         // Archive rows to weekly JSONL before deleting them, so this emergency purge never silently loses
         // history. Message-log first (usually the bulk), then audit when relay_log is exhausted.
         var archive = new JsonlRowArchive(spool.ArchiveDir);
         int total = 0, archivedRelay = 0, archivedAudit = 0;
-        while (!ct.IsCancellationRequested && await logs.GetDatabaseUsedBytesAsync(ct) > target)
+        while (!ct.IsCancellationRequested && total < rowsToFree)
         {
-            var n = await logs.ArchiveAndDeleteOldestRelayLogAsync(500,
+            var batch = Math.Min(500, rowsToFree - total);
+            var n = await logs.ArchiveAndDeleteOldestRelayLogAsync(batch,
                 (rows, _) => { archive.Append("relay_log", rows, "logged_at"); return Task.CompletedTask; }, ct);
             if (n > 0) { archivedRelay += n; total += n; await Task.Delay(100, ct); continue; }
 
             if (audit is not null)
             {
-                n = await audit.ArchiveAndDeleteOldestAsync(500,
+                n = await audit.ArchiveAndDeleteOldestAsync(batch,
                     (rows, _) => { archive.Append("audit_log", rows, "logged_at"); return Task.CompletedTask; }, ct);
                 if (n > 0) { archivedAudit += n; total += n; await Task.Delay(100, ct); continue; }
             }
@@ -145,11 +154,15 @@ public sealed class PurgeWorker(
 
         if (total > 0)
         {
+            // Reclaim the freed space to the OS so pg_database_size drops below the trigger for next cycle.
+            try { await logs.VacuumLogTablesAsync(ct); }
+            catch (Exception ex) { log.LogWarning(ex, "VACUUM FULL after size-pressure purge failed"); }
+
             log.LogWarning("Size-pressure purge archived + deleted {Relay} message-log and {Audit} audit rows to {Dir}",
                 archivedRelay, archivedAudit, spool.ArchiveDir);
             if (audit is not null)
                 await audit.Lifecycle("Size-pressure cleanup ran",
-                    $"Database neared the 10 GB SQL Express cap; archived + deleted {archivedRelay} message-log and {archivedAudit} audit rows to {spool.ArchiveDir}.",
+                    $"Database exceeded the configured {o.SizePressure.TriggerGb:F1} GB cap; archived + deleted {archivedRelay} message-log and {archivedAudit} audit rows to {spool.ArchiveDir}.",
                     "Warning");
         }
         return total;

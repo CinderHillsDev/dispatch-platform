@@ -1,8 +1,8 @@
 [Unit]
-Description=Dispatch appliance first-boot setup (SQL Server + per-VM secrets)
+Description=Dispatch appliance first-boot setup (PostgreSQL + per-VM secrets)
 # Run once; the script writes the marker when it succeeds.
 ConditionPathExists=!/var/lib/dispatch/.appliance-firstboot-done
-# Before the relay so SQL is configured and reachable before Dispatch's first start.
+# Before the relay so PostgreSQL is configured and reachable before Dispatch's first start.
 Before=dispatch.service
 After=network.target
 

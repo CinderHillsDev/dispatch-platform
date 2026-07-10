@@ -2,25 +2,21 @@
 #
 # Dispatch appliance - in-guest provisioning, run by virt-customize during the image build (NOT at runtime).
 # virt-customize runs --run scripts with /bin/sh, so this is POSIX sh (no bashisms). Runs with NO network
-# (libguestfs's passt networking is unreliable on CI runners): the SQL Server Express + tools packages are
-# pre-downloaded on the host into /opt/stage/debs (see build-appliance.sh) and installed offline here. SQL is
-# only unpacked - it's configured per-VM on first boot (appliance/firstboot.sh).
+# (libguestfs's passt networking is unreliable on CI runners): the PostgreSQL packages are pre-downloaded on
+# the host into /opt/stage/debs (see build-appliance.sh) and installed offline here. PostgreSQL is only
+# unpacked - it's configured per-VM on first boot (appliance/firstboot.sh).
 #
 set -eu
 export DEBIAN_FRONTEND=noninteractive
 STAGE="/opt/stage"
 
-echo "==> Accept Microsoft EULAs (debconf) for SQL Server tools"
-echo "msodbcsql18 msodbcsql/ACCEPT_EULA boolean true" | debconf-set-selections
-echo "mssql-tools18 mssql-tools/accept_eula boolean true" | debconf-set-selections
-
-echo "==> Install SQL Server Express + tools (offline from pre-downloaded .debs)"
+echo "==> Install PostgreSQL (offline from pre-downloaded .debs)"
 dpkg -i "$STAGE"/debs/*.deb || true   # may report ordering warnings; configure resolves them
-# Tolerant: a guest-agent postinst can be noisy in an offline chroot (no running systemd). SQL correctness is
-# hard-verified immediately below, so a nonzero configure here must not abort the build.
+# Tolerant: a guest-agent postinst can be noisy in an offline chroot (no running systemd). PostgreSQL
+# correctness is hard-verified immediately below, so a nonzero configure here must not abort the build.
 dpkg --configure -a || true
-test -x /opt/mssql/bin/mssql-conf || { echo "ERROR: mssql-server did not install" >&2; exit 1; }
-test -x /opt/mssql-tools18/bin/sqlcmd || { echo "ERROR: mssql-tools18 did not install" >&2; exit 1; }
+ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1 || { echo "ERROR: postgresql did not install" >&2; exit 1; }
+command -v psql >/dev/null 2>&1 || { echo "ERROR: psql (postgresql client) did not install" >&2; exit 1; }
 
 echo "==> Enable hypervisor guest agents (best-effort; each idles harmlessly on a non-matching host)"
 # So Hyper-V Manager / vCenter / Proxmox can show the VM's IP. The .debs are installed above; enable only the
@@ -30,9 +26,9 @@ for unit in hv-kvp-daemon.service hv-vss-daemon.service hv-fcopy-daemon.service 
   if systemctl --root=/ enable "$unit" >/dev/null 2>&1; then echo "  enabled $unit"; else echo "  (skip $unit - not installed)"; fi
 done
 
-echo "==> Stage Dispatch (enabled, not started; SA password finalized on first boot)"
+echo "==> Stage Dispatch (enabled, not started; DB password finalized on first boot)"
 bash "$STAGE/install.sh" --prebuilt "$STAGE/bin" --no-start \
-  --sql-connection "Server=localhost;Database=DispatchLog;User Id=sa;Password=__SA_PASSWORD__;TrustServerCertificate=True;Encrypt=True"
+  --sql-connection "Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=__DB_PASSWORD__"
 
 echo "==> Install the dispatch-set-ip helper"
 install -m 755 "$STAGE/dispatch-set-ip" /usr/local/sbin/dispatch-set-ip
@@ -41,7 +37,7 @@ echo "==> First-boot unit + start ordering"
 install -m 755 -D "$STAGE/firstboot.sh" /opt/dispatch-appliance/firstboot.sh
 install -m 644 "$STAGE/dispatch-firstboot.service" /etc/systemd/system/dispatch-firstboot.service
 mkdir -p /etc/systemd/system/dispatch.service.d
-# Dispatch must start only after first-boot configures SQL.
+# Dispatch must start only after first-boot configures PostgreSQL.
 printf '[Unit]\nAfter=dispatch-firstboot.service\nRequires=dispatch-firstboot.service\n' \
   > /etc/systemd/system/dispatch.service.d/10-appliance.conf
 # Enable both units offline. `systemctl --root=/` creates the WantedBy symlinks without a running systemd

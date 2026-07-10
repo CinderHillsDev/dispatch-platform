@@ -2,14 +2,14 @@ using System;
 using System.Diagnostics;
 using System.IO;
 
-// Thin launcher (adapted from FluxDeploy): a WiX Burn ExePackage runs an EXE, not a .ps1, so this
-// wrapper invokes InstallSqlExpress.ps1 (shipped alongside it as a bundle payload). Arg 0 = DB name.
+// Thin launcher: a WiX Burn ExePackage runs an EXE, not a .ps1, so this wrapper invokes
+// InstallPostgres.ps1 (shipped alongside it as a bundle payload). Arg 0 = DB name.
 class Program
 {
     static int Main(string[] args)
     {
         var scriptDir = AppDomain.CurrentDomain.BaseDirectory;
-        var scriptPath = Path.Combine(scriptDir, "InstallSqlExpress.ps1");
+        var scriptPath = Path.Combine(scriptDir, "InstallPostgres.ps1");
         if (!File.Exists(scriptPath))
         {
             Console.Error.WriteLine($"Script not found: {scriptPath}");

@@ -2,8 +2,6 @@
 -- header) and how many attachments the message carried. Captured at ingest and stored per relay_log row.
 -- Guarded so the migration is re-runnable.
 
-IF COL_LENGTH('relay_log', 'x_mailer') IS NULL
-    ALTER TABLE relay_log ADD x_mailer NVARCHAR(256) NULL;
+ALTER TABLE relay_log ADD COLUMN IF NOT EXISTS x_mailer varchar(256) NULL;
 
-IF COL_LENGTH('relay_log', 'attachment_count') IS NULL
-    ALTER TABLE relay_log ADD attachment_count INT NOT NULL DEFAULT 0;
+ALTER TABLE relay_log ADD COLUMN IF NOT EXISTS attachment_count int NOT NULL DEFAULT 0;

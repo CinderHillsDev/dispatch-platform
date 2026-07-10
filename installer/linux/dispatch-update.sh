@@ -61,7 +61,7 @@ openssl dgst -sha256 -verify "$PUBKEY" -signature "$STAGED/manifest.json.sig" "$
   || fail "signature verification failed"
 
 # Authoritative version = the SIGNED manifest's version, and it must be a safe token (it lands in fs paths,
-# an rm -rf target, and a T-SQL backup filename). Never trust apply.request's version for this.
+# an rm -rf target, and a SQL backup filename). Never trust apply.request's version for this.
 VER="$(jget version "$STAGED/manifest.json")"
 [ -n "$VER" ] || fail "signed manifest has no version"
 case "$VER" in
@@ -89,9 +89,9 @@ fi
 status "Applying" "applying $VER"
 
 # 2) Best-effort DB backup before the restart (the new version auto-applies migrations on start). Never
-#    blocks the update: a backup failure (e.g. external SQL, no sqlcmd) is logged and skipped.
+#    blocks the update: a backup failure (e.g. external DB, no pg_dump) is logged and skipped.
 backup_db() {
-  command -v sqlcmd >/dev/null 2>&1 || { echo "update: sqlcmd not found, skipping DB backup"; return 0; }
+  command -v pg_dump >/dev/null 2>&1 || { echo "update: pg_dump not found, skipping DB backup"; return 0; }
   command -v python3 >/dev/null 2>&1 || return 0
   # Read the connection string via python ARGV (not interpolated into the program text).
   local conn; conn="$(python3 - "$DATA_DIR/appsettings.json" 2>/dev/null <<'PY'
@@ -103,17 +103,19 @@ except Exception:
 PY
 )"
   [ -n "$conn" ] || return 0
-  local srv usr pwd db;
-  srv="$(sed -n 's/.*[Ss]erver=\([^;]*\).*/\1/p' <<<"$conn")"
-  usr="$(sed -n 's/.*[Uu]ser[ ]*[Ii]d=\([^;]*\).*/\1/p' <<<"$conn")"
+  local host port usr pwd db;
+  host="$(sed -n 's/.*[Hh]ost=\([^;]*\).*/\1/p' <<<"$conn")"
+  port="$(sed -n 's/.*[Pp]ort=\([^;]*\).*/\1/p' <<<"$conn")"
+  usr="$(sed -n 's/.*[Uu]sername=\([^;]*\).*/\1/p' <<<"$conn")"
   pwd="$(sed -n 's/.*[Pp]assword=\([^;]*\).*/\1/p' <<<"$conn")"
   db="$(sed -n 's/.*[Dd]atabase=\([^;]*\).*/\1/p' <<<"$conn")"
-  [ -n "$srv" ] && [ -n "$usr" ] && [ -n "$db" ] || { echo "update: could not parse connection, skipping DB backup"; return 0; }
-  # db lands in a T-SQL identifier + a filename; require a safe token (VER was validated against the manifest).
+  [ -n "$port" ] || port="5432"
+  [ -n "$host" ] && [ -n "$usr" ] && [ -n "$db" ] || { echo "update: could not parse connection, skipping DB backup"; return 0; }
+  # db lands in a SQL identifier + a filename; require a safe token (VER was validated against the manifest).
   case "$db" in *[!A-Za-z0-9._-]*) echo "update: unsafe db name '$db', skipping DB backup"; return 0;; esac
   mkdir -p "$DATA_DIR/backups"
   local bak="$DATA_DIR/backups/${db}-pre-${VER}-$(date -u +%Y%m%dT%H%M%SZ).bak"
-  if sqlcmd -S "$srv" -U "$usr" -P "$pwd" -C -Q "BACKUP DATABASE [$db] TO DISK = N'$bak' WITH INIT, COMPRESSION;" >/dev/null 2>&1; then
+  if PGPASSWORD="$pwd" pg_dump -h "$host" -p "$port" -U "$usr" -Fc "$db" -f "$bak" >/dev/null 2>&1; then
     echo "update: DB backed up to $bak"
   else
     echo "update: DB backup failed (continuing) - rollback is binary-level; migrations are backward-compatible"

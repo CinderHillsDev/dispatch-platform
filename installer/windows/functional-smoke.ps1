@@ -383,8 +383,8 @@ $metrics = Invoke-WebRequest -SkipCertificateCheck -WebSession $sess -Uri "$Dash
 if ([int]$metrics.StatusCode -ne 200) { throw "/metrics did not return 200 (got $($metrics.StatusCode))" }
 Write-Host "OK: stats / system / spool / health / metrics all answer"
 
-# === 16. Size-pressure ARCHIVES then deletes (Express only) - DESTRUCTIVE, runs last ============
-# Force size-pressure by dropping the trigger below current usage, then confirm the oldest rows are
+# === 16. Size-pressure ARCHIVES then deletes (opt-in DB-size cap) - DESTRUCTIVE, runs last ========
+# Force size-pressure by setting the (normally-off) trigger below current usage, then confirm the oldest rows are
 # exported to weekly JSONL *before* being deleted (the emergency purge never silently loses history).
 # This wipes the message-log/audit on the CI box, so it is intentionally the final step.
 if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
@@ -398,7 +398,7 @@ if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
     if ((Get-Content -LiteralPath $archives[0].FullName -TotalCount 1) -notmatch '"event"') { throw "archived JSONL row should carry the row fields" }
     $rowsAfter = [int](DGet '/api/messages?event=Delivered&pageSize=1').total
     if ($rowsAfter -ge $rowsBefore) { throw "size-pressure should have deleted message-log rows ($rowsBefore -> $rowsAfter)" }
-    DPut '/api/settings' '{"retention":{"sizeTriggerGb":9.5,"sizeTargetGb":9.0}}' | Out-Null   # restore
+    DPut '/api/settings' '{"retention":{"sizeTriggerGb":0,"sizeTargetGb":0}}' | Out-Null   # restore (0 = disabled, the default)
     Write-Host "OK: size-pressure archived $($archives.Count) JSONL file(s) then deleted rows ($rowsBefore -> $rowsAfter)"
 }
 else { Write-Host "SKIP: spool dir not locally accessible - size-pressure archive test not exercised" }

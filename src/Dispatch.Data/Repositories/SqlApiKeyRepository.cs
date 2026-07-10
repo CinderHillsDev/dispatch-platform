@@ -31,11 +31,11 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
 
         const string insert = """
             INSERT INTO api_keys (key_id, key_hash, name, rate_limit_per_minute)
-            OUTPUT INSERTED.id, INSERTED.key_id AS KeyId, INSERTED.key_hash AS KeyHash, INSERTED.name,
-                   INSERTED.created_at AS CreatedAt, INSERTED.last_used_at AS LastUsedAt,
-                   INSERTED.message_count AS MessageCount, INSERTED.revoked, INSERTED.revoked_at AS RevokedAt,
-                   INSERTED.rate_limit_per_minute AS RateLimitPerMinute
-            VALUES (@keyId, @hash, @name, @rateLimitPerMinute);
+            VALUES (@keyId, @hash, @name, @rateLimitPerMinute)
+            RETURNING id, key_id AS "KeyId", key_hash AS "KeyHash", name,
+                   created_at AS "CreatedAt", last_used_at AS "LastUsedAt",
+                   message_count AS "MessageCount", revoked, revoked_at AS "RevokedAt",
+                   rate_limit_per_minute AS "RateLimitPerMinute";
             """;
 
         await using var cn = await factory.OpenAsync(ct);
@@ -47,7 +47,7 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
 
     public async Task<IReadOnlyList<ApiKey>> ListAsync(bool includeRevoked = false, CancellationToken ct = default)
     {
-        var where = includeRevoked ? "" : "WHERE revoked = 0";
+        var where = includeRevoked ? "" : "WHERE NOT revoked";
         await using var cn = await factory.OpenAsync(ct);
         var rows = await cn.QueryAsync<Row>(new CommandDefinition(
             $"SELECT {SelectColumns} FROM api_keys {where} ORDER BY created_at DESC", cancellationToken: ct));
@@ -58,7 +58,7 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
     {
         await using var cn = await factory.OpenAsync(ct);
         var affected = await cn.ExecuteAsync(new CommandDefinition(
-            "UPDATE api_keys SET revoked = 1, revoked_at = SYSUTCDATETIME() WHERE id = @id AND revoked = 0",
+            "UPDATE api_keys SET revoked = true, revoked_at = now() WHERE id = @id AND NOT revoked",
             new { id }, cancellationToken: ct));
         return affected > 0;
     }
@@ -74,7 +74,7 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
         var keyId = rawKey[..KeyIdLength];
         await using var cn = await factory.OpenAsync(ct);
         var row = await cn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(
-            $"SELECT {SelectColumns} FROM api_keys WHERE key_id = @keyId AND revoked = 0",
+            $"SELECT {SelectColumns} FROM api_keys WHERE key_id = @keyId AND NOT revoked",
             new { keyId }, cancellationToken: ct));
 
         if (row is null)
@@ -90,7 +90,7 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
     {
         await using var cn = await factory.OpenAsync(ct);
         await cn.ExecuteAsync(new CommandDefinition(
-            "UPDATE api_keys SET last_used_at = SYSUTCDATETIME(), message_count = message_count + 1 WHERE id = @id",
+            "UPDATE api_keys SET last_used_at = now(), message_count = message_count + 1 WHERE id = @id",
             new { id }, cancellationToken: ct));
     }
 

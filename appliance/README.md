@@ -1,6 +1,6 @@
 # Dispatch SMTP Relay - virtual appliance
 
-A ready-to-run **Ubuntu 24.04 LTS** virtual machine with Dispatch and SQL Server Express pre-installed. Import it, power it on, and the dashboard comes up - no .NET, SQL, or command line needed.
+A ready-to-run **Ubuntu 24.04 LTS** virtual machine with Dispatch and PostgreSQL pre-installed. Import it, power it on, and the dashboard comes up - no .NET, database, or command line needed.
 
 There's a **separate download per hypervisor** - each is a single zip (unzip once) with that format's image, its README, and the import helper:
 
@@ -10,7 +10,7 @@ There's a **separate download per hypervisor** - each is a single zip (unzip onc
 | **VMware** (vSphere/ESXi/Workstation/Fusion) | `dispatch-appliance-vmware` | `dispatch-appliance.ova` + README |
 | **KVM/libvirt & Proxmox** | `dispatch-appliance-kvm` | `dispatch-appliance.qcow2` + `import-libvirt.sh` / `import-proxmox.sh` + README |
 
-All are **Gen2/UEFI**, ~4 GB RAM recommended (SQL Server needs ~2 GB). They boot on DHCP, but a relay your apps point at should have a **static IP** - set one after first boot (see [Static IP](#static-ip)).
+All are **Gen2/UEFI**, ~4 GB RAM recommended (PostgreSQL needs ~2 GB). They boot on DHCP, but a relay your apps point at should have a **static IP** - set one after first boot (see [Static IP](#static-ip)).
 
 ## Hyper-V
 
@@ -49,7 +49,7 @@ Creates a q35/OVMF VM, imports the disk as `scsi0`, and sets it to boot.
 
 ## First boot
 
-On first start the appliance gives itself a **unique** SQL SA password, configures and starts SQL Server Express, and starts Dispatch (the database and schema are created automatically). This takes a couple of minutes the first time.
+On first start the appliance gives itself a **unique** database password, creates the `dispatch` role and `DispatchLog` database, starts PostgreSQL, and starts Dispatch (the schema is created automatically). This takes a couple of minutes the first time.
 
 Then browse to the dashboard:
 
@@ -90,15 +90,15 @@ Pass `-i <nic>` to target a specific interface (see `ip a`); run `dispatch-set-i
 ## Maintenance (console)
 
 - Service: `systemctl status dispatch` · logs: `journalctl -u dispatch -f` and `/var/log/dispatch/`.
-- SQL: `systemctl status mssql-server`.
+- PostgreSQL: `systemctl status postgresql`.
 - Config (connection string only): `/var/lib/dispatch/appsettings.json` - everything else is in the dashboard.
 
 ## Security notes
 
-- Every appliance generates its **own** SQL SA password, at-rest encryption key (`.dispatch-key`), dashboard TLS cert, SSH host keys, and machine-id on first boot - nothing secret is shared across downloads.
+- Every appliance generates its **own** database password, at-rest encryption key (`.dispatch-key`), dashboard TLS cert, SSH host keys, and machine-id on first boot - nothing secret is shared across downloads.
 - The **OS login** (`ubuntu`/`dispatch`) is a known default but **must be changed on first login** - do so immediately, especially before exposing the VM beyond a trusted LAN.
 - The dashboard admin password is set by **you** on first login and is stored only as a bcrypt hash in the database.
-- The appliance bundles **SQL Server Express**, which is free; its use is governed by Microsoft's SQL Server Express license terms.
+- The appliance bundles **PostgreSQL**, which is free and open source.
 
 ## Building it yourself
 

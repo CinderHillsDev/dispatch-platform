@@ -8,8 +8,8 @@
 -- degrades cleanly with no default: mail permanently fails with a clear "no provider configured" result
 -- until the wizard/first relay is added.
 DELETE FROM relays
-WHERE provider = 'Unconfigured' AND is_default = 1
+WHERE provider = 'Unconfigured' AND is_default
   AND NOT EXISTS (
     SELECT 1 FROM config c
-    WHERE c.[key] = N'relay:' + CAST(relays.id AS NVARCHAR(10)) + N':provider'
+    WHERE c."key" = 'relay:' || relays.id::text || ':provider'
   );

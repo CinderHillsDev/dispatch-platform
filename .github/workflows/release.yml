@@ -5,7 +5,7 @@ name: Release
 #
 # This builds the distributable artifacts, stamps them with the tag version, optionally Authenticode-signs
 # the Windows installer via Azure Artifact Signing, and publishes a GitHub Release with:
-#   - DispatchSetup.exe          the single-file Windows installer (embeds the signed MSI + chains SQL Express)
+#   - DispatchSetup.exe          the single-file Windows installer (embeds the signed MSI + chains PostgreSQL)
 #   - dispatch-<ver>-linux.tar.gz       universal Linux bundle (x64 + arm64, self-contained)
 #   - SHA256SUMS                 checksums for all of the above
 #
@@ -40,7 +40,7 @@ env:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, x64]
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
@@ -116,8 +116,8 @@ jobs:
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           timestamp-digest: SHA256
 
-      - name: Build the SQL Express launcher
-        run: dotnet build installer/windows/sql-express/SqlExpressLauncher.csproj -c Release
+      - name: Build the PostgreSQL launcher
+        run: dotnet build installer/windows/postgres/PostgresLauncher.csproj -c Release
 
       - name: Build the bundle
         working-directory: installer/windows
@@ -125,12 +125,12 @@ jobs:
         run: |
           wix build bundle/Bundle.wxs -d Version=${{ steps.ver.outputs.version }} `
             -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext `
-            -bindpath "SqlLauncher=sql-express/bin/Release/net472" -bindpath "Msi=." -o DispatchSetup.exe
+            -bindpath "PgLauncher=postgres/bin/Release/net472" -bindpath "Msi=." -o DispatchSetup.exe
 
       # --- Sign the Burn bundle (opt-in) --------------------------------------------------------
       # A Burn bundle has an attached engine; the engine must be signed too, so detach it, sign it,
       # reattach, then sign the final bundle (WiX-recommended; otherwise UAC flags the inner engine).
-      # installer/windows holds other .exe files (publish/, sql-express/), so each Azure sign step
+      # installer/windows holds other .exe files (publish/, postgres/), so each Azure sign step
       # targets a folder containing ONLY the one file to sign, and we copy the result back in place.
       - name: Detach the bundle engine
         if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
@@ -185,12 +185,12 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: windows
-          # DispatchSetup.exe is the single distributable - it embeds the (signed) MSI and chains SQL Express.
+          # DispatchSetup.exe is the single distributable - it embeds the (signed) MSI and chains PostgreSQL.
           path: installer/windows/DispatchSetup.exe
           if-no-files-found: error
 
   linux:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
 
@@ -247,11 +247,10 @@ jobs:
           Dispatch SMTP Relay ${ver} - Linux (universal: x64 + arm64, self-contained; no .NET SDK required).
 
           install.sh auto-detects your CPU arch (uses bin-x64 or bin-arm64) - no flags needed:
-            sudo ./install.sh --install-sql --sa-password '<StrongSaPassw0rd!>' --admin-password '<DashboardPassword!>'
+            sudo ./install.sh --install-postgres --db-password '<StrongDbPassw0rd!>' --admin-password '<DashboardPassword!>'
 
-          On arm64, --install-sql runs Azure SQL Edge in a container (SQL Server is amd64-only).
-          Or use an existing SQL Server / Azure SQL:
-            sudo ./install.sh --sql-connection 'Server=...;Database=DispatchLog;User Id=...;Password=...;TrustServerCertificate=True;Encrypt=True' --admin-password '<DashboardPassword!>'
+          Or use an existing PostgreSQL server:
+            sudo ./install.sh --sql-connection 'Host=...;Port=5432;Database=DispatchLog;Username=...;Password=...' --admin-password '<DashboardPassword!>'
 
           Then open https://localhost:8420 (self-signed cert) and log in with the admin password you set.
           EOF
@@ -311,7 +310,7 @@ jobs:
   # Only runs for real tag releases (a dry-run workflow_dispatch skips the push).
   docker:
     if: ${{ github.ref_type == 'tag' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v5
 
@@ -352,7 +351,7 @@ jobs:
 
   publish:
     needs: [windows, linux]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8

@@ -9,13 +9,13 @@ public sealed class SqlRoutingRuleRepository(SqlConnectionFactory factory) : IRo
     private const string SelectColumns =
         "id, priority, name, recipient_pattern AS RecipientPattern, sender_pattern AS SenderPattern, relay_id AS RelayId, enabled";
     private const string InsertedColumns =
-        "INSERTED.id, INSERTED.priority, INSERTED.name, INSERTED.recipient_pattern AS RecipientPattern, INSERTED.sender_pattern AS SenderPattern, INSERTED.relay_id AS RelayId, INSERTED.enabled";
+        "id, priority, name, recipient_pattern AS \"RecipientPattern\", sender_pattern AS \"SenderPattern\", relay_id AS \"RelayId\", enabled";
 
     public async Task<IReadOnlyList<RoutingRule>> GetEnabledOrderedAsync(CancellationToken ct = default)
     {
         await using var cn = await factory.OpenAsync(ct);
         var rows = await cn.QueryAsync<Row>(new CommandDefinition(
-            $"SELECT {SelectColumns} FROM routing_rules WHERE enabled = 1", cancellationToken: ct));
+            $"SELECT {SelectColumns} FROM routing_rules WHERE enabled", cancellationToken: ct));
         // Specificity is computed in code (spec §10.5: priority ASC, then specificity DESC).
         return rows.Select(r => r.ToRule())
             .OrderBy(r => r.Priority)
@@ -41,8 +41,8 @@ public sealed class SqlRoutingRuleRepository(SqlConnectionFactory factory) : IRo
 
         const string sql = $"""
             INSERT INTO routing_rules (priority, name, recipient_pattern, sender_pattern, relay_id, enabled)
-            OUTPUT {InsertedColumns}
-            VALUES (@priority, @Name, @RecipientPattern, @SenderPattern, @RelayId, @Enabled);
+            VALUES (@priority, @Name, @RecipientPattern, @SenderPattern, @RelayId, @Enabled)
+            RETURNING {InsertedColumns};
             """;
         var row = await cn.QuerySingleAsync<Row>(new CommandDefinition(sql, new
         {
