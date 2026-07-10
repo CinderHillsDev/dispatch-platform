@@ -243,15 +243,32 @@ mkdir -p "$CONFIG_DIR" "$DATA_DIR/.dispatch-spool" "$LOG_DIR"
 echo "==> Writing $CONFIG_DIR/appsettings.json"
 # Spec §12.1: appsettings holds ONLY the connection string, the admin-password seed, and the Web UI TLS
 # cert. Ports/spool/retry/etc. are seeded into the config table on first run and managed in the dashboard.
+# Every value below is JSON-escaped via json_escape: the admin password (and, in theory, the connection
+# string) is user-supplied, and a backslash, double quote or control character would otherwise produce
+# invalid JSON - which makes the service throw on startup and never come up. Escape order matters:
+# backslash first (so we don't double-escape the escapes we add), then quote, then the control chars.
+json_escape() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  printf '%s' "$s"
+}
+SQL_CONNECTION_J="$(json_escape "$SQL_CONNECTION")"
+ADMIN_PASSWORD_J="$(json_escape "$ADMIN_PASSWORD")"
 WEBUI_TLS=""
 if [[ -n "$TLS_CERT_PATH" ]]; then
+  TLS_CERT_PATH_J="$(json_escape "$TLS_CERT_PATH")"
+  TLS_CERT_PASSWORD_J="$(json_escape "$TLS_CERT_PASSWORD")"
   WEBUI_TLS=",
-  \"WebUi\": { \"TlsCertPath\": \"${TLS_CERT_PATH//\"/\\\"}\", \"TlsCertPassword\": \"${TLS_CERT_PASSWORD//\"/\\\"}\" }"
+  \"WebUi\": { \"TlsCertPath\": \"${TLS_CERT_PATH_J}\", \"TlsCertPassword\": \"${TLS_CERT_PASSWORD_J}\" }"
 fi
 cat > "$CONFIG_DIR/appsettings.json" <<JSON
 {
-  "ConnectionStrings": { "DispatchLog": "${SQL_CONNECTION//\"/\\\"}" },
-  "AdminPassword": "${ADMIN_PASSWORD//\"/\\\"}",
+  "ConnectionStrings": { "DispatchLog": "${SQL_CONNECTION_J}" },
+  "AdminPassword": "${ADMIN_PASSWORD_J}",
   "Logging": { "LogLevel": { "Default": "Information", "Microsoft.AspNetCore": "Warning" } }${WEBUI_TLS}
 }
 JSON
