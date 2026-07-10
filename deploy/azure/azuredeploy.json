@@ -52,13 +52,13 @@
     },
     "vnetName": {
       "type": "string",
-      "defaultValue": "[concat(parameters('vmName'), '-vnet')]",
+      "defaultValue": "dispatch-vnet",
       "metadata": { "description": "VNet name. For vnetNewOrExisting='new' the VNet is created with this name; for 'existing' it must match the name of your existing VNet." }
     },
     "vnetResourceGroup": {
       "type": "string",
-      "defaultValue": "[resourceGroup().name]",
-      "metadata": { "description": "Resource group of an existing VNet (only used when vnetNewOrExisting='existing'). Defaults to this deployment's resource group." }
+      "defaultValue": "",
+      "metadata": { "description": "Resource group of an existing VNet (only used when vnetNewOrExisting='existing'). Leave blank to use this deployment's resource group." }
     },
     "vnetAddressPrefix": {
       "type": "string",
@@ -77,21 +77,24 @@
     },
     "dnsLabelPrefix": {
       "type": "string",
-      "defaultValue": "[toLower(concat(parameters('vmName'), '-', uniqueString(resourceGroup().id)))]",
-      "metadata": { "description": "Globally-unique DNS label for the public IP (becomes <label>.<region>.cloudapp.azure.com)." }
+      "defaultValue": "",
+      "metadata": { "description": "Globally-unique DNS label for the public IP (becomes <label>.<region>.cloudapp.azure.com). Leave blank to auto-generate one from the VM name." }
     },
     "location": {
       "type": "string",
-      "defaultValue": "[resourceGroup().location]",
-      "metadata": { "description": "Azure region for all resources." }
+      "defaultValue": "",
+      "metadata": { "description": "Azure region for all resources. Leave blank to use the resource group's region." }
     }
   },
   "variables": {
     "nsgName": "[concat(parameters('vmName'), '-nsg')]",
     "pipName": "[concat(parameters('vmName'), '-pip')]",
     "nicName": "[concat(parameters('vmName'), '-nic')]",
+    "loc": "[if(empty(parameters('location')), resourceGroup().location, parameters('location'))]",
+    "dnsLabel": "[if(empty(parameters('dnsLabelPrefix')), toLower(concat(parameters('vmName'), '-', uniqueString(resourceGroup().id))), parameters('dnsLabelPrefix'))]",
     "createVnet": "[equals(parameters('vnetNewOrExisting'), 'new')]",
-    "subnetRef": "[resourceId(parameters('vnetResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnetName'))]",
+    "vnetRg": "[if(empty(parameters('vnetResourceGroup')), resourceGroup().name, parameters('vnetResourceGroup'))]",
+    "subnetRef": "[resourceId(variables('vnetRg'), 'Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnetName'))]",
     "linuxConfiguration": {
       "disablePasswordAuthentication": true,
       "ssh": {
@@ -110,7 +113,7 @@
       "type": "Microsoft.Network/networkSecurityGroups",
       "apiVersion": "2023-09-01",
       "name": "[variables('nsgName')]",
-      "location": "[parameters('location')]",
+      "location": "[variables('loc')]",
       "properties": {
         "securityRules": [
           {
@@ -137,7 +140,7 @@
       "type": "Microsoft.Network/virtualNetworks",
       "apiVersion": "2023-09-01",
       "name": "[parameters('vnetName')]",
-      "location": "[parameters('location')]",
+      "location": "[variables('loc')]",
       "properties": {
         "addressSpace": { "addressPrefixes": [ "[parameters('vnetAddressPrefix')]" ] },
         "subnets": [
@@ -154,18 +157,18 @@
       "type": "Microsoft.Network/publicIPAddresses",
       "apiVersion": "2023-09-01",
       "name": "[variables('pipName')]",
-      "location": "[parameters('location')]",
+      "location": "[variables('loc')]",
       "sku": { "name": "Standard" },
       "properties": {
         "publicIPAllocationMethod": "Static",
-        "dnsSettings": { "domainNameLabel": "[parameters('dnsLabelPrefix')]" }
+        "dnsSettings": { "domainNameLabel": "[variables('dnsLabel')]" }
       }
     },
     {
       "type": "Microsoft.Network/networkInterfaces",
       "apiVersion": "2023-09-01",
       "name": "[variables('nicName')]",
-      "location": "[parameters('location')]",
+      "location": "[variables('loc')]",
       "dependsOn": "[if(variables('createVnet'), createArray(resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName')), resourceId('Microsoft.Network/publicIPAddresses', variables('pipName')), resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))), createArray(resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName')), resourceId('Microsoft.Network/publicIPAddresses', variables('pipName'))))]",
       "properties": {
         "networkSecurityGroup": { "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]" },
@@ -185,7 +188,7 @@
       "type": "Microsoft.Compute/virtualMachines",
       "apiVersion": "2023-09-01",
       "name": "[parameters('vmName')]",
-      "location": "[parameters('location')]",
+      "location": "[variables('loc')]",
       "dependsOn": [ "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]" ],
       "properties": {
         "hardwareProfile": { "vmSize": "[parameters('vmSize')]" },
