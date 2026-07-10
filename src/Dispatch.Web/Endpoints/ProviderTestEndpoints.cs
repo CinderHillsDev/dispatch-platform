@@ -14,12 +14,18 @@ public static class ProviderTestEndpoints
 {
     public static void MapProviderTest(this RouteGroupBuilder group)
     {
-        group.MapPost("/config/test-provider", (TestProviderRequest req, ProviderTestService service) =>
+        group.MapPost("/config/test-provider", async (TestProviderRequest req, ProviderTestService service, Dispatch.Core.Platform.ICloudEnvironment cloud) =>
         {
             if (string.IsNullOrWhiteSpace(req.Provider))
                 return Results.BadRequest(new { error = "'provider' is required." });
             if (string.IsNullOrWhiteSpace(req.TestRecipient))
                 return Results.BadRequest(new { error = "'testRecipient' is required." });
+
+            // Azure blocks outbound port 25 - fail fast with a clear reason instead of a connection timeout.
+            if (Enum.TryParse<Dispatch.Core.Providers.RelayProviderType>(req.Provider, ignoreCase: true, out var pt)
+                && Dispatch.Core.Relays.SmtpPortGuard.UsesOutboundPort25(pt, req.Settings ?? new Dictionary<string, string?>())
+                && await cloud.IsAzureAsync())
+                return Results.BadRequest(new { error = Dispatch.Core.Relays.SmtpPortGuard.AzureBlockedMessage });
 
             try
             {

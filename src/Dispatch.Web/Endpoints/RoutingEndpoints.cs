@@ -51,7 +51,7 @@ public static class RoutingEndpoints
             return Results.Ok(new { record.Id, record.Name, provider = provider.ToString() });
         });
 
-        group.MapPut("/relays/{id:int}", async (int id, UpdateRelayRequest req, IRelayRepository relays, IRelaySettingsStore store, CancellationToken ct) =>
+        group.MapPut("/relays/{id:int}", async (int id, UpdateRelayRequest req, IRelayRepository relays, IRelaySettingsStore store, Dispatch.Core.Platform.ICloudEnvironment cloud, CancellationToken ct) =>
         {
             var record = await relays.GetByIdAsync(id, ct);
             if (record is null) return Results.NotFound();
@@ -70,6 +70,10 @@ public static class RoutingEndpoints
             foreach (var f in RelayProviderSchema.For(provider).Where(f => f.Required))
                 if (string.IsNullOrWhiteSpace(settings.GetValueOrDefault(f.Name)))
                     return Results.BadRequest(new { error = $"{f.Name} is required for {provider}." });
+
+            // Azure blocks outbound port 25, so an SMTP relay delivering on 25 would fail silently there.
+            if (SmtpPortGuard.UsesOutboundPort25(provider, settings) && await cloud.IsAzureAsync(ct))
+                return Results.BadRequest(new { error = SmtpPortGuard.AzureBlockedMessage });
 
             await relays.UpdateAsync(id, req.Name ?? record.Name, provider, req.Enabled ?? record.Enabled,
                 req.MaxConcurrency ?? record.MaxConcurrency, record.MaxMessageBytes, ct);
