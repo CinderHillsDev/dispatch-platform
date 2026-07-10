@@ -43,7 +43,7 @@ and publishes a **draft** release you can inspect and delete - nothing goes publ
 | Windows  | `Dispatch-<ver>-x64.msi` | Advanced: install against an existing PostgreSQL (`msiexec /i Dispatch-<ver>-x64.msi SQLCONN="Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=..."`). |
 | Linux    | `dispatch-<ver>-linux.tar.gz` | Universal (x64 + arm64). Extract, then `sudo ./install.sh --install-postgres ...` (auto-detects arch). |
 | Upgrade  | `dispatch-upgrade-<ver>.tar.gz` | One cross-platform package for the **dashboard self-update** (Updates page). Upload it on any appliance/Linux/Windows install. |
-| Any      | `ghcr.io/chrismuench/dispatch-smtp-relay:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |
+| Any      | `ghcr.io/cinderhillsdev/dispatch-platform:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |
 | All      | `SHA256SUMS` | Verify downloads: `sha256sum -c SHA256SUMS`. |
 
 ## First release - one-time setup
@@ -56,7 +56,7 @@ The first tag push creates the GHCR package, but **GHCR packages are private by 
    (and, optionally, **Connect repository** so the package shows on the repo page).
 3. Verify anonymous pull works on a clean machine:
    ```bash
-   docker pull ghcr.io/chrismuench/dispatch-smtp-relay:1.0.0
+   docker pull ghcr.io/cinderhillsdev/dispatch-platform:1.0.0
    ```
 
 Subsequent releases reuse the same (now public) package - this step is only needed once.
