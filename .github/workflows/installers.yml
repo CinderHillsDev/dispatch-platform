@@ -291,9 +291,12 @@ jobs:
           stage="dispatch-ci-linux-x64"
           mkdir -p "staging/${stage}/bin"
           cp -r publish/linux/. "staging/${stage}/bin/"
-          cp installer/linux/install.sh "staging/${stage}/install.sh"
-          cp installer/linux/dispatch.service "staging/${stage}/dispatch.service"
-          chmod +x "staging/${stage}/install.sh" "staging/${stage}/bin/Dispatch.Service"
+          # Ship the same files as the release tarball (install.sh installs all of these systemd units).
+          cp installer/linux/install.sh installer/linux/dispatch.service \
+             installer/linux/dispatch-updater.service installer/linux/dispatch-update.path \
+             installer/linux/dispatch-update.sh "staging/${stage}/"
+          cp src/Dispatch.Core/Updates/dispatch-update-public.pem "staging/${stage}/"
+          chmod +x "staging/${stage}/install.sh" "staging/${stage}/dispatch-update.sh" "staging/${stage}/bin/Dispatch.Service"
           tar -czf "${stage}.tar.gz" -C staging "${stage}"
           ls -lh "${stage}.tar.gz"
 
