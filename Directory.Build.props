@@ -1,12 +1,12 @@
 <Project>
   <!--
     Single source of truth for the product version across every project in the solution.
-    Pre-1.0: we are at 0.2.x. This sets AssemblyVersion / FileVersion / InformationalVersion, so
-    UpdateService.CurrentVersion (which reads Assembly.GetName().Version) reports 0.2.0 instead of
+    Pre-1.0: we are at 0.5.x. This sets AssemblyVersion / FileVersion / InformationalVersion, so
+    UpdateService.CurrentVersion (which reads Assembly.GetName().Version) reports 0.5.0 instead of
     the .NET default 1.0.0.0. A tagged release overrides this on the command line
-    (dotnet publish -p:Version=0.2.1), so the released binaries carry the tag's version.
+    (dotnet publish -p:Version=0.5.1), so the released binaries carry the tag's version.
   -->
   <PropertyGroup>
-    <Version>0.2.0</Version>
+    <Version>0.5.0</Version>
   </PropertyGroup>
 </Project>
