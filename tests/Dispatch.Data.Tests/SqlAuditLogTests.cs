@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Dispatch.Data.Tests;
 
 /// <summary>Integration tests for the audit log (System Logs). Auto-skip when DISPATCH_TEST_SQL is unset.</summary>
-public class SqlAuditLogTests(SqlServerFixture sql) : IClassFixture<SqlServerFixture>
+public class SqlAuditLogTests(PostgresFixture sql) : IClassFixture<PostgresFixture>
 {
     private SqlAuditLog NewLog() => new(sql.Factory, NullLogger<SqlAuditLog>.Instance);
 

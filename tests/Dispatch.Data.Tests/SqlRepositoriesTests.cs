@@ -9,7 +9,7 @@ namespace Dispatch.Data.Tests;
 /// Integration tests against a real PostgreSQL server. Auto-skip when DISPATCH_TEST_SQL is unset.
 /// Run with: DISPATCH_TEST_SQL="Host=localhost;Port=5432;Username=postgres;Password=..." dotnet test
 /// </summary>
-public class SqlRepositoriesTests(SqlServerFixture sql) : IClassFixture<SqlServerFixture>
+public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresFixture>
 {
     // No relay is seeded any more (migration 0003 removed the placeholder), and relay_log/relay_counters
     // FK to relays(id), so tests that attribute rows to a relay create one first and use its id.

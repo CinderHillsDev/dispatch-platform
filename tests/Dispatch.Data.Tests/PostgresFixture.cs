@@ -14,7 +14,7 @@ namespace Dispatch.Data.Tests;
 /// Before applying migrations it waits for the server to accept connections (a fresh container can take
 /// tens of seconds to become ready in CI), so a slow-starting container surfaces as a wait, not a flaky failure.
 /// </summary>
-public sealed class SqlServerFixture : IAsyncLifetime
+public sealed class PostgresFixture : IAsyncLifetime
 {
     public string? ConnectionString { get; private set; }
     public bool Available => ConnectionString is not null;
