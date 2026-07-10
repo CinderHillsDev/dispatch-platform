@@ -7,7 +7,7 @@ very welcome.
 
 **Please report privately - do not open a public issue for a vulnerability.**
 
-Use **[GitHub Security Advisories](https://github.com/chrismuench/Dispatch-SMTP-Relay/security/advisories/new)**
+Use **[GitHub Security Advisories](https://github.com/CinderHillsDev/dispatch-platform/security/advisories/new)**
 (Security → Report a vulnerability). That keeps the report private until a fix is available and lets us
 collaborate on it directly.
 

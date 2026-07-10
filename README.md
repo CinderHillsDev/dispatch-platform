@@ -113,6 +113,10 @@ ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service
 
 Implement `IRelayProvider` in `Dispatch.Providers` (see `SendGridProvider.cs`), wire it into `RelayProviderFactory`, then add the UI fields and tests.
 
+## Contributing
+
+Contributions are welcome - bug reports, features, providers, docs, and tests. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the dev setup, how to run the tests, and the PR flow. Please report security issues privately per **[SECURITY.md](SECURITY.md)**.
+
 ## Licence
 
 Dispatch is free and open source software, released under the **[Apache License 2.0](LICENSE)**. © 2026 CinderHills. You are free to use, modify, and redistribute it, including commercially; no license key is required to run it.
