@@ -39,6 +39,11 @@
       "defaultValue": "0.5.0",
       "metadata": { "description": "Dispatch release version to install (matches a GitHub release tag without the leading 'v')." }
     },
+    "submissionSource": {
+      "type": "string",
+      "defaultValue": "VirtualNetwork",
+      "metadata": { "description": "Who may reach the mail-submission ports (SMTP 25/587 and the HTTP API 8025). Defaults to 'VirtualNetwork' - only resources in this VM's VNet, so it is NOT exposed to the internet. Set to a specific CIDR (e.g. 203.0.113.0/24) if apps send from elsewhere; use 'Internet' only if you fully understand the risk (an internet-exposed mail port is a prime abuse target)." }
+    },
     "dnsLabelPrefix": {
       "type": "string",
       "defaultValue": "[toLower(concat(parameters('vmName'), '-', uniqueString(resourceGroup().id)))]",
@@ -88,11 +93,11 @@
           },
           {
             "name": "SMTP-Submission",
-            "properties": { "priority": 1020, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "*", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRanges": [ "25", "587" ] }
+            "properties": { "priority": 1020, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "[parameters('submissionSource')]", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRanges": [ "25", "587" ] }
           },
           {
             "name": "Ingestion-API",
-            "properties": { "priority": 1030, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "*", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "8025" }
+            "properties": { "priority": 1030, "direction": "Inbound", "access": "Allow", "protocol": "Tcp", "sourceAddressPrefix": "[parameters('submissionSource')]", "sourcePortRange": "*", "destinationAddressPrefix": "*", "destinationPortRange": "8025" }
           }
         ]
       }
