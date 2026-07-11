@@ -1,0 +1,39 @@
+# Deletes CI artifacts older than 3 days. The upload-artifact steps already set retention-days: 3;
+# this is the backstop for anything that slips through (artifacts from third-party actions, or
+# uploads added later without a retention override). Release assets are untouched - they live on
+# the release, not in Actions storage.
+name: Cleanup old artifacts
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete artifacts older than 3 days
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const cutoff = Date.now() - 3 * 24 * 60 * 60 * 1000;
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const stale = artifacts.filter(a => !a.expired && new Date(a.created_at).getTime() < cutoff);
+            let bytes = 0;
+            for (const a of stale) {
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: a.id,
+              });
+              bytes += a.size_in_bytes;
+            }
+            core.info(`Deleted ${stale.length} artifacts (${(bytes / 1e9).toFixed(2)} GB); ${artifacts.length - stale.length} kept.`);

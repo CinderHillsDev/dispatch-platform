@@ -103,6 +103,7 @@ jobs:
           name: dispatch-windows-installer
           path: installer/windows/DispatchSetup.exe
           if-no-files-found: error
+          retention-days: 3
 
       # Real end-to-end check: run the bundle (installs PostgreSQL + the service) and confirm the Windows
       # service starts and serves /health. Runs on every installer-path push and on manual dispatch, so a
@@ -306,6 +307,7 @@ jobs:
           name: dispatch-linux-tarball
           path: dispatch-ci-linux-x64.tar.gz
           if-no-files-found: error
+          retention-days: 3
 
       # Real end-to-end check (mirrors the Windows full-install smoke): install the just-built self-contained
       # tarball exactly as a user would - install.sh --prebuilt --install-postgres, which installs PostgreSQL

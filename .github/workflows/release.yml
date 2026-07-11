@@ -188,6 +188,7 @@ jobs:
           # DispatchSetup.exe is the single distributable - it embeds the (signed) MSI and chains PostgreSQL.
           path: installer/windows/DispatchSetup.exe
           if-no-files-found: error
+          retention-days: 3
 
   linux:
     runs-on: ubuntu-latest
@@ -263,6 +264,7 @@ jobs:
           name: linux
           path: dispatch-*-linux.tar.gz
           if-no-files-found: error
+          retention-days: 3
 
       # ONE cross-platform upgrade package for web-UI self-update: every platform's self-contained payload
       # (linux-x64, linux-arm64, win-x64) plus a single signed manifest, in one .tar.gz. A host uploads
@@ -304,6 +306,7 @@ jobs:
           name: upgrade-package
           path: dispatch-upgrade-*.tar.gz
           if-no-files-found: error
+          retention-days: 3
 
   # Build + push the multi-arch container image (linux/amd64 + linux/arm64) to GHCR. One image tag
   # serves both architectures; `docker pull ghcr.io/<owner>/dispatch-smtp-relay:<ver>` works on any host.

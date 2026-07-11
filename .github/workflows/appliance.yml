@@ -110,15 +110,17 @@ jobs:
           ( cd out/kvm && sha256sum dispatch-appliance.qcow2 > dispatch-appliance.qcow2.sha256 )
 
       # Upload before the boot smoke so the artifacts are available even if the smoke fails.
+      # Short retention: release builds attach the images to the release itself; the CI artifacts
+      # (~4 GB each) are only for ad-hoc download and would otherwise eat the storage quota.
       - name: Upload Hyper-V appliance
         uses: actions/upload-artifact@v6
-        with: { name: dispatch-appliance-hyperv, path: out/hyperv/*, if-no-files-found: error }
+        with: { name: dispatch-appliance-hyperv, path: out/hyperv/*, if-no-files-found: error, retention-days: 3 }
       - name: Upload VMware appliance
         uses: actions/upload-artifact@v6
-        with: { name: dispatch-appliance-vmware, path: out/vmware/*, if-no-files-found: error }
+        with: { name: dispatch-appliance-vmware, path: out/vmware/*, if-no-files-found: error, retention-days: 3 }
       - name: Upload KVM/Proxmox appliance
         uses: actions/upload-artifact@v6
-        with: { name: dispatch-appliance-kvm, path: out/kvm/*, if-no-files-found: error }
+        with: { name: dispatch-appliance-kvm, path: out/kvm/*, if-no-files-found: error, retention-days: 3 }
 
       # When linked to a release (release: published, or a manual release_tag), attach the images to it.
       # Uploaded before the boot smoke so a smoke failure doesn't withhold the artifacts.
@@ -213,3 +215,4 @@ jobs:
             console.log
             qemu.err
           if-no-files-found: warn
+          retention-days: 3
