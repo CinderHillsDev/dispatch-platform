@@ -14,9 +14,14 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Attach the built appliances to this release tag (e.g. v0.5.0). Blank = CI artifacts only."
+        description: "Attach the built appliances to this release tag (e.g. v0.5.0). Blank = build + boot-smoke only."
         required: false
         default: ""
+      upload_artifacts:
+        description: "Also upload the images as workflow artifacts (1-day retention; ~12 GB against the storage quota)"
+        type: boolean
+        required: false
+        default: false
 
 env:
   DOTNET_NOLOGO: "true"
@@ -109,18 +114,23 @@ jobs:
           cp appliance/kvm-README.txt out/kvm/README.txt
           ( cd out/kvm && sha256sum dispatch-appliance.qcow2 > dispatch-appliance.qcow2.sha256 )
 
-      # Upload before the boot smoke so the artifacts are available even if the smoke fails.
-      # Short retention: release builds attach the images to the release itself; the CI artifacts
-      # (~4 GB each) are only for ad-hoc download and would otherwise eat the storage quota.
+      # The images (~4 GB each, built on every push to main via trigger-appliance) are NOT uploaded
+      # as workflow artifacts by default: the plan includes only 2 GB-months of Actions storage, so
+      # even a day of retained images blows the quota. Release runs attach them to the release below
+      # (free, permanent); CI runs exist for the boot smoke, which uses the local files. To download
+      # images from a non-release build, dispatch this workflow with upload_artifacts: true.
       - name: Upload Hyper-V appliance
+        if: ${{ inputs.upload_artifacts }}
         uses: actions/upload-artifact@v6
-        with: { name: dispatch-appliance-hyperv, path: out/hyperv/*, if-no-files-found: error, retention-days: 3 }
+        with: { name: dispatch-appliance-hyperv, path: out/hyperv/*, if-no-files-found: error, retention-days: 1 }
       - name: Upload VMware appliance
+        if: ${{ inputs.upload_artifacts }}
         uses: actions/upload-artifact@v6
-        with: { name: dispatch-appliance-vmware, path: out/vmware/*, if-no-files-found: error, retention-days: 3 }
+        with: { name: dispatch-appliance-vmware, path: out/vmware/*, if-no-files-found: error, retention-days: 1 }
       - name: Upload KVM/Proxmox appliance
+        if: ${{ inputs.upload_artifacts }}
         uses: actions/upload-artifact@v6
-        with: { name: dispatch-appliance-kvm, path: out/kvm/*, if-no-files-found: error, retention-days: 3 }
+        with: { name: dispatch-appliance-kvm, path: out/kvm/*, if-no-files-found: error, retention-days: 1 }
 
       # When linked to a release (release: published, or a manual release_tag), attach the images to it.
       # Uploaded before the boot smoke so a smoke failure doesn't withhold the artifacts.
