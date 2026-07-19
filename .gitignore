@@ -37,3 +37,6 @@ Thumbs.db
 # At-rest encryption key (never commit)
 .dispatch-key
 **/.dispatch-key
+
+# EF design-time scratch database (created by `dotnet ef` when scaffolding against the Sqlite project)
+design-time.db

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Migrations assembly for the MySql backend. EF Core generates provider-specific DDL, so each engine
+    needs its own migrations built from the shared model in Dispatch.Data (DispatchDbContext).
+    This project holds nothing but migrations; see docs/database.md for the add-a-migration workflow.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Required by the EF Core tools to scaffold migrations against this project. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.18">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dispatch.Data\Dispatch.Data.csproj" />
+  </ItemGroup>
+
+</Project>
