@@ -7,9 +7,9 @@
     wix build Dispatch.wxs -d PublishDir=publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
 
   Connection string: the MSI writes %ProgramData%\Dispatch\appsettings.json (spec §12.1 - connection
-  string + Web UI TLS cert only) via the WriteAppSettings custom action. SQLCONN defaults to the bundled
-  SQLite database under %ProgramData%\Dispatch, so a default install needs no database server, no service
-  account and no stored credentials. The dashboard admin password is set on first run via the web UI, so
+  string + Web UI TLS cert only) via the WriteAppSettings custom action. With SQLCONN unset the custom action defaults it to the
+  bundled SQLite database under %ProgramData%\Dispatch, so a default install needs no database server, no
+  service account and no stored credentials. The dashboard admin password is set on first run via the web UI, so
   it is not collected here.
 
   To use a database server the site already runs:
@@ -35,14 +35,15 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of Dispatch is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- Connection string written to appsettings.json. Defaults to the bundled SQLite database, which the
-         service creates on first start under %ProgramData%\Dispatch. Override via msiexec to point at a
-         database server the site already runs. -->
-    <Property Id="SQLCONN" Secure="yes"
-              Value="Data Source=[CommonAppDataFolder]Dispatch\dispatch.db" />
+    <!-- Connection string written to appsettings.json. Left UNSET on purpose: when it is empty,
+         WriteAppSettings defaults it to the bundled SQLite database inside the data directory it is already
+         given. A Property/@Value cannot reference another property ([CommonAppDataFolder] would be written
+         out literally, WIX1077), and the data directory is only resolved at execute time - so the default
+         has to live where that path is known, not here. -->
+    <Property Id="SQLCONN" Secure="yes" />
 
     <!-- Optional. Only needed when SQLCONN could target more than one engine (SQL Server vs MySQL). -->
-    <Property Id="DBPROVIDER" Secure="yes" Value="" />
+    <Property Id="DBPROVIDER" Secure="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Dispatch" />

@@ -13,6 +13,11 @@ if (parts.length >= 2) {
     var dbProvider = parts.length >= 3 ? parts[2].replace(/^\s+|\s+$/g, "") : "";
 
     var fso = new ActiveXObject("Scripting.FileSystemObject");
+
+    // No SQLCONN given: use the bundled SQLite database inside the data directory. Computed here rather
+    // than as the property's default value because an MSI Property cannot reference another property
+    // (WIX1077), and dataDir is only resolved at execute time.
+    if (sqlConn.length === 0) { sqlConn = "Data Source=" + fso.BuildPath(dataDir, "dispatch.db"); }
     if (!fso.FolderExists(dataDir)) { fso.CreateFolder(dataDir); }
 
     // Mark this install self-managed so the dashboard exposes the "upload upgrade package" flow.
