@@ -76,12 +76,27 @@ jobs:
       - name: Test
         run: dotnet test Dispatch.slnx --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
 
+      # The job-level DISPATCH_TEST_SQL above pins every run to Postgres, so without this step the SQLite
+      # backend would never be exercised in CI. Clearing both variables sends DatabaseFixture down its
+      # SQLite path (temp file per run); DISPATCH_REQUIRE_SQL must be cleared too or the fixture throws by
+      # design rather than falling back.
+      #
+      # This is what covers ConcurrentWriteTests on SQLite — the test that asserts concurrent writers
+      # serialise on the write lock instead of failing with SQLITE_BUSY. That property depends on WAL and
+      # busy_timeout being set correctly, so it needs to be verified on every change, not assumed.
+      - name: Test (SQLite backend)
+        env:
+          DISPATCH_TEST_SQL: ""
+          DISPATCH_REQUIRE_SQL: ""
+        run: dotnet test tests/Dispatch.Data.Tests --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results-sqlite.trx" --results-directory TestResults
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: test-results
           path: TestResults/**/*.trx
+          retention-days: 3
           if-no-files-found: ignore
           retention-days: 3
 
