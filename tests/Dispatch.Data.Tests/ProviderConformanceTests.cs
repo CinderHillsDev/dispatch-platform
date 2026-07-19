@@ -6,7 +6,7 @@ namespace Dispatch.Data.Tests;
 
 /// <summary>
 /// The contract every registered database provider must satisfy. These need no database and run everywhere,
-/// so a contributor adding an engine finds out immediately whether their provider is wired correctly —
+/// so a contributor adding an engine finds out immediately whether their provider is wired correctly -
 /// rather than from a confusing failure inside an integration test that needs a server they may not have.
 ///
 /// The point of the capability flags is that behaviour which varies between engines is DECLARED. These

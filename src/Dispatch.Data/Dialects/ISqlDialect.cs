@@ -7,17 +7,17 @@ namespace Dispatch.Data.Dialects;
 /// for the multi-engine framework. This interface survives only because the Dapper repositories have not
 /// been ported to EF yet and still reach for it; it covers PostgreSQL and SQLite alone, which is why those
 /// are the only engines the repositories currently work on. Porting the repositories deletes this file.
-/// Do not add members here — add them to IDatabaseProvider, or better, avoid needing them.
+/// Do not add members here - add them to IDatabaseProvider, or better, avoid needing them.
 ///
 /// The database-engine-specific surface. Everything Dispatch does in SQL is deliberately written in the
 /// portable subset both engines share (<c>CAST(x AS bigint)</c>, <c>CURRENT_TIMESTAMP</c>, <c>CURRENT_DATE</c>,
-/// <c>ON CONFLICT ... DO UPDATE</c>, <c>RETURNING</c>, window functions, partial indexes, <c>IN @list</c>) —
+/// <c>ON CONFLICT ... DO UPDATE</c>, <c>RETURNING</c>, window functions, partial indexes, <c>IN @list</c>) -
 /// so this interface stays small on purpose. It covers only the four things that genuinely have no common
 /// form: interval arithmetic, date formatting, on-disk size introspection, and space reclamation, plus
 /// connection/bootstrap concerns.
 ///
 /// If you find yourself wanting to add a member here, first check whether the portable subset can express
-/// it — every member added is a query that has to be verified twice.
+/// it - every member added is a query that has to be verified twice.
 /// </summary>
 public interface ISqlDialect
 {
@@ -36,7 +36,7 @@ public interface ISqlDialect
     /// <summary>
     /// Converts a calendar date into the parameter value the engine compares correctly against a date column.
     /// Postgres binds a real <c>date</c>; SQLite stores dates as ISO TEXT, where binding a DateTime would
-    /// serialise as "yyyy-MM-dd 00:00:00" and sort AFTER the bare "yyyy-MM-dd" rows — silently excluding the
+    /// serialise as "yyyy-MM-dd 00:00:00" and sort AFTER the bare "yyyy-MM-dd" rows - silently excluding the
     /// boundary day from range queries. Always route date parameters through this.
     /// </summary>
     object DateParam(DateTime date);

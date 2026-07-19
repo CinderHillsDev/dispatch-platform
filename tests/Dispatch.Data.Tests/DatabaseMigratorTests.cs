@@ -11,8 +11,8 @@ namespace Dispatch.Data.Tests;
 /// The 0.7 migration: moving the existing PostgreSQL install onto the bundled SQLite backend.
 ///
 /// This runs against a real PostgreSQL server (skipped without one), populates it through the actual
-/// repositories rather than hand-written INSERTs — so the data has the shape the application really
-/// produces — migrates it, and then checks the things that would quietly ruin the customer's install if
+/// repositories rather than hand-written INSERTs - so the data has the shape the application really
+/// produces - migrates it, and then checks the things that would quietly ruin the customer's install if
 /// they were wrong.
 /// </summary>
 public class DatabaseMigratorTests(DatabaseFixture sql) : IClassFixture<DatabaseFixture>
@@ -69,7 +69,7 @@ public class DatabaseMigratorTests(DatabaseFixture sql) : IClassFixture<Database
         var sqliteCs = new SqliteConnectionStringBuilder { DataSource = sqlitePath }.ConnectionString;
         try
         {
-            // The target must be schema-current and empty — exactly what a fresh 0.7 install looks like.
+            // The target must be schema-current and empty - exactly what a fresh 0.7 install looks like.
             await new DatabaseInitializer(
                     DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, sqliteCs),
                     new DatabaseBootstrap(DatabaseProvider.Sqlite, sqliteCs, NullLogger<DatabaseBootstrap>.Instance),

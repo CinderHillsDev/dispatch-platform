@@ -9,18 +9,18 @@ namespace Dispatch.Data.Providers;
 ///
 /// ADDING AN ENGINE: implement this interface, add a migrations assembly named in
 /// <see cref="MigrationsAssembly"/>, and register the provider in <see cref="DatabaseProviders"/>. The
-/// shared test suite then runs against it unchanged — that is the acceptance criterion, not a separate
+/// shared test suite then runs against it unchanged - that is the acceptance criterion, not a separate
 /// checklist. See docs/database.md.
 ///
 /// The interface is deliberately small. Everything Dispatch does in SQL is written in the portable subset
 /// the engines share, and EF Core generates the rest; what remains here is only what genuinely has no
 /// common form. If you find yourself wanting to add a member, first check whether the portable subset or a
-/// LINQ query can express it — every member added is behaviour that has to be implemented and verified
+/// LINQ query can express it - every member added is behaviour that has to be implemented and verified
 /// once per engine, forever.
 ///
 /// The engines split into two deployment shapes:
-///   * bundled — SQLite. A file beside the service, no server to install. The default.
-///   * BYO     — PostgreSQL, MariaDB/MySQL, SQL Server that the operator already runs.
+///   * bundled - SQLite. A file beside the service, no server to install. The default.
+///   * BYO     - PostgreSQL, MariaDB/MySQL, SQL Server that the operator already runs.
 /// </summary>
 public interface IDatabaseProvider
 {
@@ -36,13 +36,13 @@ public interface IDatabaseProvider
     /// </summary>
     string MigrationsAssembly { get; }
 
-    /// <summary>What this engine can and cannot do — see <see cref="ProviderCapabilities"/>.</summary>
+    /// <summary>What this engine can and cannot do - see <see cref="ProviderCapabilities"/>.</summary>
     ProviderCapabilities Capabilities { get; }
 
     // ---- Identification -------------------------------------------------------------------------
 
     /// <summary>
-    /// Connection-string keywords that identify this engine unambiguously — keywords no other supported
+    /// Connection-string keywords that identify this engine unambiguously - keywords no other supported
     /// engine accepts. Shared keywords like "Server" or "Database" must NOT appear here: they are what make
     /// SQL Server and MySQL indistinguishable, and a wrong guess there fails much later as an opaque syntax
     /// error. <see cref="DatabaseProviders.Resolve"/> refuses ambiguity rather than picking.
@@ -72,7 +72,7 @@ public interface IDatabaseProvider
 
     /// <summary>
     /// A filtered-index predicate, in this engine's syntax, or null when the engine has no filtered
-    /// indexes. Callers must handle null by creating an unfiltered index or omitting it — see the call
+    /// indexes. Callers must handle null by creating an unfiltered index or omitting it - see the call
     /// sites in DispatchDbContext, which document which choice applies where.
     /// </summary>
     string? IndexFilter(IndexPredicate predicate);
@@ -113,7 +113,7 @@ public interface IDatabaseProvider
 
     /// <summary>
     /// On-disk bytes for one table including its indexes, or 0 when the engine cannot attribute size per
-    /// table. Return 0 rather than estimating — a fabricated number that looks authoritative is worse than
+    /// table. Return 0 rather than estimating - a fabricated number that looks authoritative is worse than
     /// an absent one.
     /// </summary>
     Task<long> GetTableSizeBytesAsync(DbContext db, string table, CancellationToken ct = default);
@@ -129,11 +129,11 @@ public interface IDatabaseProvider
 /// <summary>The filtered indexes the schema wants; each engine spells the predicate its own way.</summary>
 public enum IndexPredicate
 {
-    /// <summary>Rows where relays.is_default is true — enforces at most one default relay.</summary>
+    /// <summary>Rows where relays.is_default is true - enforces at most one default relay.</summary>
     DefaultRelay,
-    /// <summary>Rows where api_keys.revoked is false — the authentication lookup path.</summary>
+    /// <summary>Rows where api_keys.revoked is false - the authentication lookup path.</summary>
     LiveApiKey,
-    /// <summary>Rows where relay_log.api_key_id is not null — the per-API-key message list.</summary>
+    /// <summary>Rows where relay_log.api_key_id is not null - the per-API-key message list.</summary>
     ApiKeyAttributedLog,
 }
 
@@ -155,14 +155,14 @@ public sealed record ProviderCapabilities
 
     /// <summary>
     /// Whether LIKE is case-sensitive once Dispatch has configured the engine. Every engine is normalised
-    /// to case-SENSITIVE — matching the original PostgreSQL behaviour — because search semantics changing
+    /// to case-SENSITIVE - matching the original PostgreSQL behaviour - because search semantics changing
     /// with the operator's choice of database would be a surprising way to lose results.
     /// </summary>
     public required bool CaseSensitiveLike { get; init; }
 
     /// <summary>
     /// Whether explicit primary-key values can be inserted without extra ceremony. False for SQL Server,
-    /// which needs SET IDENTITY_INSERT — the reason DatabaseMigrator refuses it as a target.
+    /// which needs SET IDENTITY_INSERT - the reason DatabaseMigrator refuses it as a target.
     /// </summary>
     public required bool PlainIdentityInsert { get; init; }
 

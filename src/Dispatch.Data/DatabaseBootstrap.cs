@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace Dispatch.Data;
 
 /// <summary>
-/// Creates the database if it does not exist and waits for a server that is still starting — the work that
+/// Creates the database if it does not exist and waits for a server that is still starting - the work that
 /// has to happen before EF can connect. Delegates to the engine's provider; see
 /// <see cref="IDatabaseProvider.EnsureDatabaseAsync"/>.
 /// </summary>

@@ -5,7 +5,7 @@ using Npgsql;
 
 namespace Dispatch.Data.Dialects;
 
-/// <summary>PostgreSQL dialect — the original backend, unchanged in behaviour (spec §6.10, §12).</summary>
+/// <summary>PostgreSQL dialect - the original backend, unchanged in behaviour (spec §6.10, §12).</summary>
 public sealed class PostgresDialect(ILogger? log = null) : ISqlDialect
 {
     public string Name => "Postgres";

@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace Dispatch.Data;
 
 /// <summary>
-/// Copies a complete Dispatch database from one engine to another — the 0.7 path for moving an existing
+/// Copies a complete Dispatch database from one engine to another - the 0.7 path for moving an existing
 /// PostgreSQL install onto the bundled SQLite backend.
 ///
 /// This is a data migration, not a schema one. Both ends share <see cref="DispatchDbContext"/>, so the
@@ -17,7 +17,7 @@ namespace Dispatch.Data;
 /// silently break routing-rule and API-key attribution on historical mail.
 ///
 /// Encrypted config values are copied verbatim, ciphertext and flag together, and never decrypted in
-/// transit. See <see cref="SecureConfig"/> — the key is host-portable, so re-encrypting would be pointless
+/// transit. See <see cref="SecureConfig"/> - the key is host-portable, so re-encrypting would be pointless
 /// risk for no gain.
 /// </summary>
 public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
@@ -32,7 +32,7 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
     }
 
     /// <summary>
-    /// Copies every table from source to target. The target must already be migrated and must be empty —
+    /// Copies every table from source to target. The target must already be migrated and must be empty -
     /// this refuses to merge into a database that holds data, because there is no sane conflict resolution
     /// for two rows that claim the same relay_log.id.
     /// </summary>
@@ -53,7 +53,7 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
         var target = KeyPreservingContextFactory(targetProvider, targetConnection);
 
         // Check the source is actually a Dispatch database before touching the target. Without this, a
-        // wrong connection string surfaces as a raw "relation config does not exist" partway through —
+        // wrong connection string surfaces as a raw "relation config does not exist" partway through -
         // which is a confusing thing to read while migrating a production install.
         await using (var check = await source.CreateDbContextAsync(ct))
         {
@@ -72,7 +72,7 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
 
             if (await check.RelayLog.AnyAsync(ct) || await check.Relays.AnyAsync(ct) || await check.Config.AnyAsync(ct))
                 throw new InvalidOperationException(
-                    "The target database already contains data. Migrate into an empty database — merging " +
+                    "The target database already contains data. Migrate into an empty database - merging " +
                     "two histories would collide on primary keys that are still referenced.");
         }
 
@@ -158,7 +158,7 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
 
     /// <summary>
     /// After inserting explicit key values, the engine's key generator has to be told where the data now
-    /// ends — otherwise the next insert reuses an id that is already taken.
+    /// ends - otherwise the next insert reuses an id that is already taken.
     ///
     /// SQLite (AUTOINCREMENT) and MySQL (AUTO_INCREMENT) advance their counters as a side effect of an
     /// explicit insert. PostgreSQL identity sequences do not, so they are advanced here.
@@ -179,7 +179,7 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
 
     /// <summary>
     /// Re-counts both sides. The copy is not a transaction spanning two engines, so this is what turns
-    /// "it appeared to work" into evidence — a short read that would catch a batch silently dropped.
+    /// "it appeared to work" into evidence - a short read that would catch a batch silently dropped.
     /// </summary>
     private static async Task VerifyAsync(
         IDbContextFactory<DispatchDbContext> source, IDbContextFactory<DispatchDbContext> target,
@@ -226,7 +226,7 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
 
 /// <summary>
 /// The model, with key generation switched off so explicit primary keys survive the copy. A distinct
-/// context type rather than a flag, because EF caches one compiled model per context type — a runtime flag
+/// context type rather than a flag, because EF caches one compiled model per context type - a runtime flag
 /// on <see cref="DispatchDbContext"/> would leak into whichever configuration happened to be built first.
 /// </summary>
 internal sealed class KeyPreservingDbContext(DbContextOptions<KeyPreservingDbContext> options)

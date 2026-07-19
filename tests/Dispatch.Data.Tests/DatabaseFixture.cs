@@ -22,7 +22,7 @@ namespace Dispatch.Data.Tests;
 ///                           A uniquely-named database is created per run and dropped on dispose.
 ///
 /// For backwards compatibility, setting <c>DISPATCH_TEST_SQL</c> without <c>DISPATCH_TEST_ENGINE</c> means
-/// PostgreSQL — that is what the variable meant before other engines existed, and CI still sets it that way.
+/// PostgreSQL - that is what the variable meant before other engines existed, and CI still sets it that way.
 ///
 /// <c>DISPATCH_REQUIRE_SQL</c> keeps its meaning: it asserts a server engine is genuinely configured, so a
 /// misconfigured pipeline fails loudly instead of quietly falling back to SQLite and reporting green.

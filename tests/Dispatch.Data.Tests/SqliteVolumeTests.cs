@@ -14,14 +14,14 @@ namespace Dispatch.Data.Tests;
 /// The concurrency question is answered elsewhere (ConcurrentWriteTests: do parallel writers serialise
 /// gracefully). This asks the different question that only shows up at size: once relay_log holds millions
 /// of rows, does the Message Log still answer quickly, does ingest still keep up, and does purging still
-/// complete — or does the default backend quietly fall over at the volume a busy relay reaches in a month?
+/// complete - or does the default backend quietly fall over at the volume a busy relay reaches in a month?
 ///
 /// Opt-in via DISPATCH_VOLUME_TEST, because it writes hundreds of thousands of rows and takes minutes.
 /// Set DISPATCH_VOLUME_ROWS to change the target row count (default 250,000).
 ///
 /// This is a characterisation test, not a pass/fail gate: the assertions are deliberately loose (orders of
 /// magnitude, not milliseconds) so it fails on a collapse rather than on a slow CI agent. The numbers it
-/// prints are the point — they are what tells you which volume the default stops being appropriate at.
+/// prints are the point - they are what tells you which volume the default stops being appropriate at.
 /// </summary>
 public class SqliteVolumeTests
 {

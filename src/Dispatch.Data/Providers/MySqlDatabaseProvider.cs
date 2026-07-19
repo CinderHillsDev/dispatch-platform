@@ -6,7 +6,7 @@ using MySqlConnector;
 namespace Dispatch.Data.Providers;
 
 /// <summary>
-/// MariaDB and MySQL — a bring-your-own-server backend, via Pomelo.
+/// MariaDB and MySQL - a bring-your-own-server backend, via Pomelo.
 ///
 /// Pomelo rather than Oracle's MySql.EntityFrameworkCore for two independent reasons: Oracle's connector has
 /// dropped MariaDB compatibility (the auth plugins diverged from MariaDB 10.4), and it ships under GPL-2.0
@@ -14,7 +14,7 @@ namespace Dispatch.Data.Providers;
 /// redistribution. Pomelo is MIT and supports both servers, detecting which at connect time.
 ///
 /// This is the one supported engine with NO filtered indexes, so the "at most one default relay" invariant
-/// cannot be a partial unique index here and is upheld by SqlRelayRepository instead — see
+/// cannot be a partial unique index here and is upheld by SqlRelayRepository instead - see
 /// <see cref="ProviderCapabilities.FilteredIndexes"/>.
 /// </summary>
 public sealed class MySqlDatabaseProvider : IDatabaseProvider
@@ -58,7 +58,7 @@ public sealed class MySqlDatabaseProvider : IDatabaseProvider
     /// is read from the server banner when possible.
     ///
     /// AutoDetect does that by OPENING A CONNECTION, which means configuring this provider would otherwise
-    /// require a reachable server — breaking design-time scaffolding, offline tooling, and any startup that
+    /// require a reachable server - breaking design-time scaffolding, offline tooling, and any startup that
     /// happens before the database is up. So a failure to detect falls back to a version rather than
     /// throwing. This is safe because it only affects query translation: migrations are generated at design
     /// time, where DesignTimeFactory pins the version explicitly.
@@ -108,7 +108,7 @@ public sealed class MySqlDatabaseProvider : IDatabaseProvider
         await using var cn = new MySqlConnection(maintenance);
         await ProviderBootstrap.OpenWithRetryAsync(cn, log, ct);
 
-        // utf8mb4 so the full Unicode range survives — subjects and addresses carry emoji and non-BMP
+        // utf8mb4 so the full Unicode range survives - subjects and addresses carry emoji and non-BMP
         // characters, and MySQL's legacy "utf8" is 3-byte and would truncate them.
         //
         // utf8mb4_bin is case-SENSITIVE. Both servers default to a case-insensitive collation, which would

@@ -7,7 +7,7 @@ namespace Dispatch.Data;
 /// <summary>
 /// The single schema definition for every supported backend. EF Core generates provider-specific DDL from
 /// this model into the four migrations assemblies (Dispatch.Data.{Postgres,Sqlite,SqlServer,MySql}), so the
-/// schema cannot drift between engines — there is one model and four renderings of it.
+/// schema cannot drift between engines - there is one model and four renderings of it.
 ///
 /// Table and column names are pinned explicitly to the snake_case names the hand-written migrations already
 /// created. That is not cosmetic: existing PostgreSQL deployments hold live data under these names, so the
@@ -15,8 +15,8 @@ namespace Dispatch.Data;
 /// would produce.
 ///
 /// Dispatch supports two deployment shapes:
-///   * bundled  — SQLite, a file next to the service. The default; no database server to install.
-///   * BYO      — PostgreSQL, MariaDB/MySQL, or SQL Server that the operator already runs.
+///   * bundled  - SQLite, a file next to the service. The default; no database server to install.
+///   * BYO      - PostgreSQL, MariaDB/MySQL, or SQL Server that the operator already runs.
 /// The engine is selected from the connection string; see <see cref="SqlConnectionFactory"/>.
 ///
 /// Timestamps are UTC everywhere. Each provider stores them natively (timestamptz / datetime2 /
@@ -61,7 +61,7 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
             e.HasIndex(x => x.Name).IsUnique();
 
             // At most one default relay, enforced by a unique index over only the rows where is_default is
-            // true. The filter is raw SQL and every engine spells it differently — and MySQL/MariaDB has no
+            // true. The filter is raw SQL and every engine spells it differently - and MySQL/MariaDB has no
             // filtered indexes at all, so there the index is omitted and the invariant is upheld by
             // SqlRelayRepository (which already clears the previous default inside a transaction).
             var defaultFilter = DefaultRelayIndexFilter();
@@ -102,12 +102,12 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
             e.Property(x => x.Scope).HasColumnName("scope").HasMaxLength(64).HasDefaultValue("send");
             // TWO indexes on key_id, and they must stay two. The named HasIndex overload is what keeps them
             // distinct: EF identifies an index by its property set, so two unnamed HasIndex calls on the
-            // same property MERGE into one — which silently produced a single *filtered unique* index and
+            // same property MERGE into one - which silently produced a single *filtered unique* index and
             // would have let a revoked key's id be reissued.
             //
-            //   UQ — unique across ALL keys, revoked or not. A revoked key's id must never come back.
+            //   UQ - unique across ALL keys, revoked or not. A revoked key's id must never come back.
             e.HasIndex(x => x.KeyId, "UQ_api_keys_key_id").IsUnique();
-            //   IX — non-unique lookup path for authenticating a presented key. Partial where supported, so
+            //   IX - non-unique lookup path for authenticating a presented key. Partial where supported, so
             //        revoked keys (which accumulate and are never authenticated) stay out of it entirely.
             var liveKeyFilter = LiveApiKeyIndexFilter();
             if (liveKeyFilter is not null)
@@ -123,7 +123,7 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
             e.Property(x => x.Date).HasColumnName("date").HasColumnType("date");
             // Deliberately NOT a foreign key: relay_id 0 is the "no specific relay" bucket for
             // connection-level events (denials counted before routing). Migration 0007 dropped the FK for
-            // exactly this reason — reinstating it here would silently drop denials from /stats again.
+            // exactly this reason - reinstating it here would silently drop denials from /stats again.
             e.Property(x => x.RelayId).HasColumnName("relay_id");
             e.Property(x => x.Received).HasColumnName("received").HasDefaultValue(0L);
             e.Property(x => x.Delivered).HasColumnName("delivered").HasDefaultValue(0L);
@@ -176,7 +176,7 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
             e.HasOne<RoutingRuleEntity>().WithMany().HasForeignKey(x => x.RoutingRuleId);
             e.HasOne<ApiKeyEntity>().WithMany().HasForeignKey(x => x.ApiKeyId);
 
-            // Access paths, carried over from migrations 0001/0002/0005 — each was added because the query
+            // Access paths, carried over from migrations 0001/0002/0005 - each was added because the query
             // it serves was scanning the table. The Postgres originals attach INCLUDE(...) payloads to make
             // some of these covering; EF has no cross-provider way to express that, so the covering payloads
             // are reapplied per-provider in the Postgres and SqlServer migrations.
@@ -242,7 +242,7 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
 
     /// <summary>
     /// The engine backing this context. EF only exposes its own provider name, so it is mapped back to the
-    /// registry here — the one place in the model that needs to know the correspondence.
+    /// registry here - the one place in the model that needs to know the correspondence.
     /// </summary>
     private IDatabaseProvider Engine => Database.ProviderName switch
     {
@@ -279,7 +279,7 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
 
     // ---- Provider-conditional index filters -------------------------------------------------------
     //
-    // Filtered ("partial") indexes are raw SQL and each engine spells the predicate differently — Postgres
+    // Filtered ("partial") indexes are raw SQL and each engine spells the predicate differently - Postgres
     // and SQLite take a bare boolean column, SQL Server requires an explicit comparison and bracket-quotes
     // identifiers. MySQL and MariaDB have no filtered indexes at all, so these return null there and the
     // index is either created unfiltered or omitted, as noted at each call site.

@@ -4,8 +4,8 @@ namespace Dispatch.Data.Providers;
 /// The registry of supported engines, and the rules for choosing one.
 ///
 /// ADDING AN ENGINE: implement <see cref="IDatabaseProvider"/>, create a matching migrations assembly, and
-/// add one line to <see cref="All"/>. Nothing else in the codebase enumerates engines — the DbContext, the
-/// initializer, the migrator and the test matrix all read this list — so that one line is what makes the
+/// add one line to <see cref="All"/>. Nothing else in the codebase enumerates engines - the DbContext, the
+/// initializer, the migrator and the test matrix all read this list - so that one line is what makes the
 /// shared test suite start running against it.
 /// </summary>
 public static class DatabaseProviders
@@ -29,7 +29,7 @@ public static class DatabaseProviders
     ///
     /// Sniffing is a convenience for the unambiguous cases and is deliberately not trusted beyond them:
     /// "Server=host;Database=db;User Id=sa" is valid for BOTH SQL Server and MySQL, and guessing wrong
-    /// would not fail cleanly — it would fail later at some query with a confusing syntax error. So an
+    /// would not fail cleanly - it would fail later at some query with a confusing syntax error. So an
     /// ambiguous string throws and asks for the setting rather than picking.
     /// </summary>
     public static IDatabaseProvider Resolve(string connectionString, string? explicitProvider = null)
@@ -62,7 +62,7 @@ public static class DatabaseProviders
 
         if (hasServerish || hasFileSource)
             throw new InvalidOperationException(
-                "The database engine cannot be determined from this connection string — the keywords it " +
+                "The database engine cannot be determined from this connection string - the keywords it " +
                 "uses are shared by more than one engine (SQL Server and MySQL/MariaDB both accept " +
                 "Server/Database/User Id). Set Database:Provider to one of: " +
                 string.Join(", ", All.Select(p => p.Id)) + ".");

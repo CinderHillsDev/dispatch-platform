@@ -12,7 +12,7 @@ namespace Dispatch.Data.Tests;
 ///
 /// This is the test that matters for the SQLite backend. SQLite permits exactly one writer at a time
 /// database-wide, so the question is not whether writes serialise (they do) but whether they serialise
-/// *gracefully* — waiting on the write lock — or fail with SQLITE_BUSY / "database is locked". That is a
+/// *gracefully* - waiting on the write lock - or fail with SQLITE_BUSY / "database is locked". That is a
 /// configuration property, not an inherent limit: it depends on WAL plus busy_timeout, both set in
 /// SqliteDialect. Without them this test fails; that is precisely why it exists.
 ///

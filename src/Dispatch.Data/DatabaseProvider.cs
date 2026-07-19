@@ -5,7 +5,7 @@ namespace Dispatch.Data;
 /// <summary>The database engines Dispatch supports. See <see cref="DatabaseProviders"/> for the registry.</summary>
 public enum DatabaseProvider
 {
-    /// <summary>Bundled and embedded — a file beside the service, no server to install. The default.</summary>
+    /// <summary>Bundled and embedded - a file beside the service, no server to install. The default.</summary>
     Sqlite,
     Postgres,
     SqlServer,

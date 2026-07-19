@@ -8,7 +8,7 @@ namespace Dispatch.Data;
 /// database and an already-current one alike.
 ///
 /// There is deliberately no handling for databases created before EF migrations existed. Every install is
-/// a new install, so that path was dead code guarding against a situation that cannot arise — and dead
+/// a new install, so that path was dead code guarding against a situation that cannot arise - and dead
 /// recovery code is worse than none, because it looks like a safety net nobody has tested.
 /// </summary>
 public sealed class DatabaseInitializer(
@@ -19,7 +19,7 @@ public sealed class DatabaseInitializer(
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         // Create the database/file and wait for the server to accept connections. EF's MigrateAsync can
-        // create a database, but it will not wait for one that is still starting — which is exactly what a
+        // create a database, but it will not wait for one that is still starting - which is exactly what a
         // compose stack or a freshly-provisioned VM does on first boot.
         await bootstrap.EnsureDatabaseAsync(ct);
 

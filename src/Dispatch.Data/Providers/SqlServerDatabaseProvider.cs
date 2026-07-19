@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Dispatch.Data.Providers;
 
 /// <summary>
-/// Microsoft SQL Server — a bring-your-own-server backend for sites that already run and staff one.
+/// Microsoft SQL Server - a bring-your-own-server backend for sites that already run and staff one.
 ///
 /// Dispatch does not install SQL Server and does not target SQL Express: Express's 10 GB database cap is
 /// what drove the original size-pressure purge subsystem, and re-adopting that constraint for a bundled
@@ -49,7 +49,7 @@ public sealed class SqlServerDatabaseProvider : IDatabaseProvider
 
     public string? IndexFilter(IndexPredicate predicate) => predicate switch
     {
-        // SQL Server filtered indexes require an explicit comparison — a bare bit column is not a predicate.
+        // SQL Server filtered indexes require an explicit comparison - a bare bit column is not a predicate.
         IndexPredicate.DefaultRelay => "[is_default] = 1",
         IndexPredicate.LiveApiKey => "[revoked] = 0",
         IndexPredicate.ApiKeyAttributedLog => "[api_key_id] IS NOT NULL",
@@ -63,7 +63,7 @@ public sealed class SqlServerDatabaseProvider : IDatabaseProvider
 
     /// <summary>
     /// SQL Server has no ON CONFLICT. MERGE is the documented upsert, and HOLDLOCK on the target is what
-    /// makes it atomic against a concurrent MERGE for the same key — without it two workers can both miss
+    /// makes it atomic against a concurrent MERGE for the same key - without it two workers can both miss
     /// the row and both insert, violating the unique constraint. This is the contended hot path, so that
     /// hint is load-bearing rather than defensive.
     /// </summary>

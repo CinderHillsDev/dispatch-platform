@@ -11,14 +11,14 @@ namespace Dispatch.Data.Dialects;
 ///
 /// Both problems come from the same root: SQLite has no static column typing, so
 /// <c>DbDataReader.GetFieldType</c> reports the storage class of the *currently loaded row*. Dapper builds
-/// its materializer from the reader schema immediately after ExecuteReader — before any row is read — so
+/// its materializer from the reader schema immediately after ExecuteReader - before any row is read - so
 /// for a record type it matches a constructor against types that may be wrong or unknowable:
 ///
 ///   1. Timestamps are stored as ISO-8601 TEXT, so a DateTime constructor parameter is matched against
 ///      System.String and no constructor matches.
 ///   2. On an EMPTY result set, expression columns (aggregates, CASTs) have no storage class at all and are
 ///      reported as System.Byte[]. Plain table columns keep their declared type, so this only bites queries
-///      that select computed values and can legitimately return no rows — the per-relay counter reports.
+///      that select computed values and can legitimately return no rows - the per-relay counter reports.
 ///
 /// Neither is a Dispatch bug and neither shows up on Postgres, where the reader schema is static and
 /// correct. They are the price of the engine being dynamically typed, and they surface as an exception at
@@ -49,7 +49,7 @@ internal static class SqliteTypeHandlers
     ///   * every integer is reported as Int64, so an `int` parameter (SmtpCredential.Id,
     ///     MessageLogAttempt.RetryAttempt) never matches;
     ///   * on an empty result set, computed columns are reported as Byte[] (see the class comment).
-    /// Both are schema-level problems, so no type handler can reach them — but neither is a real ambiguity:
+    /// Both are schema-level problems, so no type handler can reach them - but neither is a real ambiguity:
     /// these records have exactly one constructor, so there is nothing to choose between. Naming it directly
     /// is what Dapper's [ExplicitConstructor] attribute does; doing it here keeps the Dapper dependency out
     /// of Dispatch.Core. Per-value conversion (Int64 to Int32, TEXT to DateTime) still happens at read time,
@@ -93,7 +93,7 @@ internal static class SqliteTypeHandlers
     /// <summary>
     /// The formats SQLite timestamps can arrive in: what Microsoft.Data.Sqlite writes for a DateTime
     /// parameter (7 fractional digits), and what CURRENT_TIMESTAMP / datetime() emit (whole seconds).
-    /// Parsed as UTC to match how they are written — everything Dispatch stores is UTC.
+    /// Parsed as UTC to match how they are written - everything Dispatch stores is UTC.
     /// </summary>
     internal static DateTime Parse(object value) => value switch
     {

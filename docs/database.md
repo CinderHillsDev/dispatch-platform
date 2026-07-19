@@ -4,7 +4,7 @@ Dispatch runs on four database engines, in two deployment shapes:
 
 | Shape | Engine | When |
 | --- | --- | --- |
-| **Bundled** | SQLite | The default. A file beside the service — no database server to install, back up, patch, or explain. |
+| **Bundled** | SQLite | The default. A file beside the service - no database server to install, back up, patch, or explain. |
 | **Bring your own** | PostgreSQL, MariaDB / MySQL, Microsoft SQL Server | The site already runs one and wants Dispatch's data in it. |
 
 Dispatch does **not** install a database server for you. If you want a server backend, point Dispatch at
@@ -15,7 +15,7 @@ one you already run.
 The engine is chosen by the connection string:
 
 ```jsonc
-// appsettings.json — bundled SQLite (the default)
+// appsettings.json - bundled SQLite (the default)
 "ConnectionStrings": { "DispatchLog": "Data Source=/var/lib/dispatch/dispatch.db" }
 
 // PostgreSQL
@@ -35,7 +35,7 @@ The environment-variable form is `Database__Provider`.
 
 ## Moving between engines
 
-`migrate-database` copies a complete database from one engine to another — this is how a PostgreSQL
+`migrate-database` copies a complete database from one engine to another - this is how a PostgreSQL
 install moves onto bundled SQLite:
 
 ```bash
@@ -45,7 +45,7 @@ systemctl stop dispatch
 Dispatch.Service migrate-database --to "Data Source=/var/lib/dispatch/dispatch.db"
 ```
 
-It reads the source and never writes to it, so a failed or wrong run costs nothing but time — point the
+It reads the source and never writes to it, so a failed or wrong run costs nothing but time - point the
 connection string back and retry. Primary keys are preserved, because `relay_log.id` is half the Message
 Log's pagination cursor and the target of every foreign key. Row counts are verified against the source
 before it reports success.
@@ -53,7 +53,7 @@ before it reports success.
 When it finishes, update `ConnectionStrings:DispatchLog` to the new target and start the service.
 
 > **The encryption key is not in the database.** Encrypted settings are copied as ciphertext. The key lives
-> in `DISPATCH_KEY_DIR`, so migrating onto a *different host* means carrying that directory across too —
+> in `DISPATCH_KEY_DIR`, so migrating onto a *different host* means carrying that directory across too -
 > otherwise every encrypted setting becomes unreadable.
 
 SQL Server is not supported as a migration *target* (inserting explicit identity values needs
@@ -90,13 +90,13 @@ table above changes a correctness guarantee.
 
 ## Adding an engine
 
-1. **Implement `IDatabaseProvider`** in `src/Dispatch.Data/Providers/`. The interface is small on purpose —
+1. **Implement `IDatabaseProvider`** in `src/Dispatch.Data/Providers/`. The interface is small on purpose -
    it covers only what genuinely has no portable form. Before adding a member to it, check whether the
    portable SQL subset or a LINQ query can express what you need; every member is behaviour that must be
    implemented and verified once per engine, forever.
 
 2. **Add a migrations assembly**, `src/Dispatch.Data.<Engine>/`, matching `MigrationsAssembly`. Copy an
-   existing one — it is a `.csproj`, a `DesignTimeFactory`, and generated migrations. Reference it from
+   existing one - it is a `.csproj`, a `DesignTimeFactory`, and generated migrations. Reference it from
    `Dispatch.Service` and `Dispatch.Data.Tests`, or it will not be present at runtime.
 
 3. **Register it** in `DatabaseProviders.All`. That is the only list; the DbContext, initializer, migrator
@@ -109,7 +109,7 @@ table above changes a correctness guarantee.
      --context DispatchDbContext -o Migrations
    ```
 
-5. **Run the tests.** `ProviderConformanceTests` needs no database and checks the wiring — including that
+5. **Run the tests.** `ProviderConformanceTests` needs no database and checks the wiring - including that
    your declared capabilities match your actual behaviour. Then run the full suite against a real server:
    ```bash
    dotnet test tests/Dispatch.Data.Tests                       # SQLite (default)
@@ -123,7 +123,7 @@ The same suite passing against your engine is the acceptance criterion. There is
 Worth reading before you assume your engine is boring:
 
 - **`CURRENT_TIMESTAMP` is not UTC everywhere.** It is local server time on SQL Server and MySQL/MariaDB.
-  Dispatch stores UTC throughout, so using it would write plausible-looking, skewed timestamps — wrong
+  Dispatch stores UTC throughout, so using it would write plausible-looking, skewed timestamps - wrong
   ordering, wrong retention, nothing raised. Use your engine's UTC-specific function in `UtcNowSql`.
 - **The counter upsert must be one statement.** It is the contended hot path: every worker thread targets
   the same `(date, relay_id)` row. A read-then-write loses increments under load. `MERGE` needs `HOLDLOCK`

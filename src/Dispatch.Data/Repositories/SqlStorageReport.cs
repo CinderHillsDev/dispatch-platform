@@ -5,7 +5,7 @@ namespace Dispatch.Data.Repositories;
 
 /// <summary>
 /// Computes database-side storage usage (spec §6.10): per-event relay_log row counts, the relay_log and
-/// audit_log table sizes, and the audit row counts. Sizes come from the dialect — <c>pg_total_relation_size</c>
+/// audit_log table sizes, and the audit row counts. Sizes come from the dialect - <c>pg_total_relation_size</c>
 /// on Postgres, the dbstat module on SQLite (0 when that module isn't compiled in). Best-effort: if the
 /// database is unreachable, returns a not-connected snapshot rather than throwing, so the dashboard storage
 /// view degrades gracefully.

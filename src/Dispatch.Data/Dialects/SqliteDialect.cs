@@ -6,19 +6,19 @@ using Microsoft.Extensions.Logging;
 namespace Dispatch.Data.Dialects;
 
 /// <summary>
-/// SQLite dialect — the embedded backend for single-node deployments (the OVF appliance, the Windows
+/// SQLite dialect - the embedded backend for single-node deployments (the OVF appliance, the Windows
 /// installer, and single-VM cloud deploys), where running a separate PostgreSQL server is pure install
 /// and ops burden.
 ///
 /// This is safe here because Dispatch never uses the database as a coordination substrate: the work queue
 /// is the filesystem spool (SpoolWorkerPool claims .eml files via FileSystemWatcher + per-relay
 /// SemaphoreSlim), and SQL is only touched after a provider responds. Every writer is therefore a thread
-/// inside one process, which is exactly the shape SQLite's single-writer model handles well — WAL lets
+/// inside one process, which is exactly the shape SQLite's single-writer model handles well - WAL lets
 /// readers run uncontended while the one writer commits.
 ///
 /// Timestamps are stored as ISO-8601 TEXT. Microsoft.Data.Sqlite writes DateTime as
 /// "yyyy-MM-dd HH:mm:ss.FFFFFFF" and SQLite's own CURRENT_TIMESTAMP / datetime() emit
-/// "yyyy-MM-dd HH:mm:ss" — a shared prefix, so lexicographic ordering matches chronological ordering and
+/// "yyyy-MM-dd HH:mm:ss" - a shared prefix, so lexicographic ordering matches chronological ordering and
 /// the keyset cursor (logged_at, id) stays correct. Both are UTC. Do not introduce a third format.
 /// </summary>
 public sealed class SqliteDialect : ISqlDialect
@@ -38,17 +38,17 @@ public sealed class SqliteDialect : ISqlDialect
     public async Task OnConnectionOpenedAsync(DbConnection cn, CancellationToken ct = default)
     {
         // None of these persist in the file, so all must be set on every connection.
-        //   busy_timeout       — makes a concurrent writer wait for the write lock instead of failing
+        //   busy_timeout       - makes a concurrent writer wait for the write lock instead of failing
         //                        instantly with SQLITE_BUSY. Without it, ingest under load surfaces
         //                        "database is locked".
-        //   foreign_keys       — SQLite disables FK enforcement by default; the schema declares FKs and the
+        //   foreign_keys       - SQLite disables FK enforcement by default; the schema declares FKs and the
         //                        repositories rely on them, so enforcement must be turned on explicitly.
-        //   case_sensitive_like — SQLite's LIKE is ASCII-case-insensitive by default; Postgres's is not.
+        //   case_sensitive_like - SQLite's LIKE is ASCII-case-insensitive by default; Postgres's is not.
         //                        Every LIKE in the codebase (Message Log subject, tag matching against a
         //                        JSON array, audit search, config key prefixes) was written against
         //                        case-sensitive semantics, so without this a backend swap would silently
         //                        widen user-facing search results. Changing search behaviour may well be
-        //                        worth doing — but as a deliberate product change, not a side effect.
+        //                        worth doing - but as a deliberate product change, not a side effect.
         await cn.ExecuteAsync(new CommandDefinition(
             "PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON; PRAGMA case_sensitive_like = ON;",
             cancellationToken: ct));
@@ -114,7 +114,7 @@ public sealed class SqliteDialect : ISqlDialect
     /// <summary>
     /// SQLite's VACUUM is whole-database and cannot target one table, so the table list is ignored and a
     /// single VACUUM runs. It rewrites the entire file, needs roughly the database's size again in free
-    /// disk, and takes an exclusive lock for the duration — callers must treat it as a maintenance action,
+    /// disk, and takes an exclusive lock for the duration - callers must treat it as a maintenance action,
     /// not something to run on the hot path.
     /// </summary>
     public async Task ReclaimSpaceAsync(DbConnection cn, IReadOnlyList<string> tables, CancellationToken ct = default)
@@ -125,7 +125,7 @@ public sealed class SqliteDialect : ISqlDialect
     }
 
     /// <summary>
-    /// There is no server to create a database on — the file is created on first open. All this does is
+    /// There is no server to create a database on - the file is created on first open. All this does is
     /// ensure the containing directory exists and enable WAL, which unlike the per-connection pragmas is
     /// persisted in the file header and so only needs setting once.
     /// </summary>
@@ -150,7 +150,7 @@ public sealed class SqliteDialect : ISqlDialect
         await OnConnectionOpenedAsync(cn, ct);
 
         // WAL is what makes the single-writer model workable: readers never block the writer and the writer
-        // never blocks readers. synchronous=NORMAL is the standard WAL pairing — it drops the per-commit
+        // never blocks readers. synchronous=NORMAL is the standard WAL pairing - it drops the per-commit
         // fsync (the main throughput limit) while still being crash-safe; the residual risk is losing the
         // last few commits on host power loss, not corruption. Both persist in the file.
         await cn.ExecuteAsync(new CommandDefinition("PRAGMA journal_mode = WAL;", cancellationToken: ct));

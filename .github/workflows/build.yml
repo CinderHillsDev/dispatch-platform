@@ -81,7 +81,7 @@ jobs:
       # SQLite path (temp file per run); DISPATCH_REQUIRE_SQL must be cleared too or the fixture throws by
       # design rather than falling back.
       #
-      # This is what covers ConcurrentWriteTests on SQLite — the test that asserts concurrent writers
+      # This is what covers ConcurrentWriteTests on SQLite - the test that asserts concurrent writers
       # serialise on the write lock instead of failing with SQLITE_BUSY. That property depends on WAL and
       # busy_timeout being set correctly, so it needs to be verified on every change, not assumed.
       - name: Test (SQLite backend)
@@ -90,13 +90,18 @@ jobs:
           DISPATCH_REQUIRE_SQL: ""
         run: dotnet test tests/Dispatch.Data.Tests --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results-sqlite.trx" --results-directory TestResults
 
+      # The 0.7 upgrade path, end to end against the real service: run on PostgreSQL, put mail through it,
+      # migrate to bundled SQLite, restart, and confirm history, encrypted config and new delivery all
+      # survive. The unit-level migrator tests cover the copy; this covers what an operator actually does.
+      - name: Smoke test - PostgreSQL to SQLite upgrade
+        run: tests/smoke/upgrade-postgres-to-sqlite.sh
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: test-results
           path: TestResults/**/*.trx
-          retention-days: 3
           if-no-files-found: ignore
           retention-days: 3
 

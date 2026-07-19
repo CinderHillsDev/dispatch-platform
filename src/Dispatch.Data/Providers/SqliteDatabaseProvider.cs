@@ -6,18 +6,18 @@ using Microsoft.Extensions.Logging;
 namespace Dispatch.Data.Providers;
 
 /// <summary>
-/// SQLite — the bundled backend and the default deployment. A file beside the service, no database server
+/// SQLite - the bundled backend and the default deployment. A file beside the service, no database server
 /// to install, which removes the largest single piece of install and ops burden from the appliance and the
 /// Windows installer.
 ///
 /// This is safe because Dispatch never uses the database as a coordination substrate: the work queue is the
 /// filesystem spool (SpoolWorkerPool claims .eml files via FileSystemWatcher and a per-relay SemaphoreSlim),
 /// and SQL is only touched after a provider responds. Every writer is therefore a thread inside one process,
-/// which is what SQLite's single-writer model handles well — WAL lets readers run uncontended while the one
+/// which is what SQLite's single-writer model handles well - WAL lets readers run uncontended while the one
 /// writer commits.
 ///
 /// Timestamps are ISO-8601 TEXT. Microsoft.Data.Sqlite writes DateTime as "yyyy-MM-dd HH:mm:ss.FFFFFFF" and
-/// SQLite's own CURRENT_TIMESTAMP emits "yyyy-MM-dd HH:mm:ss" — a shared prefix, so lexicographic ordering
+/// SQLite's own CURRENT_TIMESTAMP emits "yyyy-MM-dd HH:mm:ss" - a shared prefix, so lexicographic ordering
 /// matches chronological ordering and the Message Log's keyset cursor stays correct. Both UTC. Do not
 /// introduce a third format.
 /// </summary>
@@ -62,12 +62,12 @@ public sealed class SqliteDatabaseProvider : IDatabaseProvider
     public async Task OnConnectionOpenedAsync(DbConnection connection, CancellationToken ct = default)
     {
         // None of these persist in the file, so all must be set on every connection.
-        //   busy_timeout        — makes a concurrent writer wait for the write lock instead of failing
+        //   busy_timeout        - makes a concurrent writer wait for the write lock instead of failing
         //                         instantly with SQLITE_BUSY. Without it, ingest under load surfaces
         //                         "database is locked".
-        //   foreign_keys        — SQLite disables FK enforcement by default; the schema declares FKs and
+        //   foreign_keys        - SQLite disables FK enforcement by default; the schema declares FKs and
         //                         the repositories rely on them.
-        //   case_sensitive_like — SQLite's LIKE is ASCII-case-insensitive by default and PostgreSQL's is
+        //   case_sensitive_like - SQLite's LIKE is ASCII-case-insensitive by default and PostgreSQL's is
         //                         not. Every LIKE in the codebase (Message Log subject, tag matching
         //                         against a JSON array, audit search) was written against case-sensitive
         //                         semantics, so without this the choice of backend would silently widen
@@ -85,7 +85,7 @@ public sealed class SqliteDatabaseProvider : IDatabaseProvider
         """;
 
     /// <summary>
-    /// There is no server and no database to create — the file appears on first connect. This ensures the
+    /// There is no server and no database to create - the file appears on first connect. This ensures the
     /// containing directory exists and sets the two pragmas that DO persist in the file header.
     /// </summary>
     public async Task EnsureDatabaseAsync(string connectionString, ILogger? log, CancellationToken ct = default)
@@ -109,7 +109,7 @@ public sealed class SqliteDatabaseProvider : IDatabaseProvider
         await OnConnectionOpenedAsync(cn, ct);
 
         // WAL is what makes the single-writer model workable: readers never block the writer and the writer
-        // never blocks readers. synchronous=NORMAL is the standard WAL pairing — it drops the per-commit
+        // never blocks readers. synchronous=NORMAL is the standard WAL pairing - it drops the per-commit
         // fsync, which is the main throughput limit, while staying crash-safe; the residual risk is losing
         // the last few commits on host power loss, not corruption.
         await using var pragma = cn.CreateCommand();

@@ -3,8 +3,8 @@ namespace Dispatch.Data;
 /// <summary>
 /// Persistence entities. These are storage shapes, deliberately separate from the domain records in
 /// Dispatch.Core (RelayLogEntry, AuditEntry, CounterTotals, ...) that the repository interfaces expose.
-/// Keeping them apart is what lets the schema carry columns the domain does not model — and lets the
-/// domain evolve without a migration — at the cost of an explicit mapping in each repository.
+/// Keeping them apart is what lets the schema carry columns the domain does not model - and lets the
+/// domain evolve without a migration - at the cost of an explicit mapping in each repository.
 ///
 /// All timestamps are UTC. Nullability mirrors the schema exactly.
 /// </summary>
@@ -120,7 +120,7 @@ public sealed class AuditLogEntity
 {
     public long Id { get; set; }
     public DateTime LoggedAt { get; set; }
-    /// <summary>audit | error — the coarse filter the System Logs page exposes.</summary>
+    /// <summary>audit | error - the coarse filter the System Logs page exposes.</summary>
     public string Kind { get; set; } = "";
     /// <summary>Auth | ApiKey | Config | Error.</summary>
     public string Category { get; set; } = "";

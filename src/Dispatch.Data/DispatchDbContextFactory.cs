@@ -20,7 +20,7 @@ public static class DispatchDbContextFactory
     }
 
     /// <summary>
-    /// A standalone factory for use outside dependency injection — tests, the migrator, and tooling.
+    /// A standalone factory for use outside dependency injection - tests, the migrator, and tooling.
     /// Application code takes its factory from DI (AddDispatchData), which shares one configured instance.
     /// </summary>
     public static IDbContextFactory<DispatchDbContext> Create(DatabaseProvider provider, string connectionString)

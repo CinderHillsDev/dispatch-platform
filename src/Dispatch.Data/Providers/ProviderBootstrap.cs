@@ -51,7 +51,7 @@ internal static class ProviderBootstrap
     }
 
     /// <summary>
-    /// Guards an identifier that is being interpolated into DDL rather than bound as a parameter — table
+    /// Guards an identifier that is being interpolated into DDL rather than bound as a parameter - table
     /// names cannot be parameters in VACUUM or a size function. Every call site passes a literal from our
     /// own code, so this is a backstop against a future caller passing something else, not a sanitiser.
     /// </summary>
