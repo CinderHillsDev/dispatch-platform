@@ -17,6 +17,7 @@ namespace Dispatch.Data.MySql.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
+                .UseCollation("utf8mb4_bin")
                 .HasAnnotation("ProductVersion", "9.0.18")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 

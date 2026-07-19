@@ -10,7 +10,6 @@
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
-    <PackageReference Include="Dapper" Version="2.1.79" />
     <!--
       EF Core 9, not 10: Pomelo is the only provider with real MariaDB support (Oracle's connector has
       dropped MariaDB compatibility) and has no EF Core 10 release. EF 9 runs fine on net10.0, and all

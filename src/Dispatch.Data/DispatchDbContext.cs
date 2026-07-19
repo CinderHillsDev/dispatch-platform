@@ -35,6 +35,11 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        // Set before any entity, so every table and column EF creates inherits it. Without this, LIKE is
+        // case-insensitive on MySQL/MariaDB and on most SQL Server instances, and Message Log search would
+        // quietly return different results depending on which backend the operator runs.
+        if (Engine.DefaultCollation is { } collation) b.UseCollation(collation);
+
         b.Entity<ConfigEntity>(e =>
         {
             e.ToTable("config");

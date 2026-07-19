@@ -1,5 +1,6 @@
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
+using Dispatch.Data.Providers;
 using Dispatch.Data.Repositories;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -23,22 +24,22 @@ public class DatabaseMigratorTests(DatabaseFixture sql) : IClassFixture<Database
         if (!sql.Available || sql.Provider != DatabaseProvider.Postgres) return;
 
         // ---- Populate the source the way the application would ------------------------------------
-        var relays = new SqlRelayRepository(sql.Factory);
+        var relays = new SqlRelayRepository(sql.Contexts);
         var relay = await relays.CreateAsync("prod-relay", Dispatch.Core.Providers.RelayProviderType.Local, 8, 0);
 
-        var config = new SqlConfigRepository(sql.Factory);
+        var config = new SqlConfigRepository(sql.Contexts);
         await config.SetAsync("smtp:banner", "dispatch.example.com");
         // An encrypted value: the migration must carry ciphertext and flag across untouched.
         await config.SetAsync("relay:1:apiKey", "super-secret-token", encrypted: true);
 
-        var keys = new SqlApiKeyRepository(sql.Factory);
+        var keys = new SqlApiKeyRepository(sql.Contexts);
         var created = await keys.CreateAsync("integration-key", rateLimitPerMinute: 250);
 
-        var creds = new SqlSmtpCredentialRepository(sql.Factory);
+        var creds = new SqlSmtpCredentialRepository(sql.Contexts);
         await creds.AddAsync("relay-user", "relay-password");
 
-        var log = new SqlLogRepository(sql.Factory);
-        var counters = new SqlCounterRepository(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var counters = new SqlCounterRepository(sql.Contexts, sql.DbProvider);
         var spoolIds = new List<string>();
         for (var i = 0; i < 250; i++)
         {
@@ -96,7 +97,7 @@ public class DatabaseMigratorTests(DatabaseFixture sql) : IClassFixture<Database
             // ---- Encrypted config survives as ciphertext, and still decrypts ------------------------
             var secret = await db.Config.SingleAsync(c => c.Key == "relay:1:apiKey");
             Assert.True(secret.Encrypted);
-            var migratedConfig = new SqlConfigRepository(new SqlConnectionFactory(sqliteCs));
+            var migratedConfig = new SqlConfigRepository(DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, sqliteCs));
             Assert.Equal("super-secret-token", await migratedConfig.GetAsync("relay:1:apiKey"));
 
             // ---- Recipient JSON survives the timestamp/text round trip -----------------------------
@@ -110,7 +111,7 @@ public class DatabaseMigratorTests(DatabaseFixture sql) : IClassFixture<Database
                 (DateTime.UtcNow - t).TotalHours < 24, $"timestamp {t:O} is not a recent UTC instant"));
 
             // ---- The migrated database is usable, and new inserts do not collide with copied keys ---
-            var migratedLog = new SqlLogRepository(new SqlConnectionFactory(sqliteCs));
+            var migratedLog = new SqlLogRepository(DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, sqliteCs));
             await migratedLog.InsertAsync(new RelayLogEntry
             {
                 Event = "Delivered", Status = "OK", SpoolId = "post-migration",
@@ -119,12 +120,12 @@ public class DatabaseMigratorTests(DatabaseFixture sql) : IClassFixture<Database
                 RelayId = relay.Id, RelayName = relay.Name,
             });
 
-            var query = new SqlMessageLogQuery(new SqlConnectionFactory(sqliteCs));
+            var query = new SqlMessageLogQuery(DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, sqliteCs));
             var page = await query.QueryAsync(new MessageLogFilter { Limit = 50 });
             Assert.Contains(page.Rows, r => r.SpoolId == "post-migration");
 
             // Counters came across and still accumulate rather than restarting.
-            var totals = await new SqlCounterRepository(new SqlConnectionFactory(sqliteCs)).GetTodayAsync();
+            var totals = await new SqlCounterRepository(DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, sqliteCs), DatabaseProviders.Get(DatabaseProvider.Sqlite)).GetTodayAsync();
             Assert.True(totals.Delivered >= 250, $"expected the 250 migrated deliveries, saw {totals.Delivered}");
         }
         finally
@@ -140,7 +141,7 @@ public class DatabaseMigratorTests(DatabaseFixture sql) : IClassFixture<Database
     {
         if (!sql.Available || sql.Provider != DatabaseProvider.Postgres) return;
 
-        await new SqlConfigRepository(sql.Factory).SetAsync("guard:probe", "x");
+        await new SqlConfigRepository(sql.Contexts).SetAsync("guard:probe", "x");
 
         var sqlitePath = Path.Combine(Path.GetTempPath(), $"dispatchmig_{Guid.NewGuid():N}.db");
         var sqliteCs = new SqliteConnectionStringBuilder { DataSource = sqlitePath }.ConnectionString;
@@ -153,7 +154,7 @@ public class DatabaseMigratorTests(DatabaseFixture sql) : IClassFixture<Database
                 .InitializeAsync();
 
             // Put something in the target, so it is no longer a fresh install.
-            await new SqlConfigRepository(new SqlConnectionFactory(sqliteCs)).SetAsync("existing", "data");
+            await new SqlConfigRepository(DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, sqliteCs)).SetAsync("existing", "data");
 
             var migrator = new DatabaseMigrator(NullLogger<DatabaseMigrator>.Instance);
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => migrator.CopyAsync(

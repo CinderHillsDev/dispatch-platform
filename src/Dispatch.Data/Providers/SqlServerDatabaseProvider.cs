@@ -47,6 +47,8 @@ public sealed class SqlServerDatabaseProvider : IDatabaseProvider
     /// <summary>CURRENT_TIMESTAMP is LOCAL server time here; Dispatch stores UTC.</summary>
     public string UtcNowSql => "SYSUTCDATETIME()";
 
+    public string? DefaultCollation => "Latin1_General_BIN2";
+
     public string? IndexFilter(IndexPredicate predicate) => predicate switch
     {
         // SQL Server filtered indexes require an explicit comparison - a bare bit column is not a predicate.

@@ -72,12 +72,18 @@ differences that remain are declared in each provider's `ProviderCapabilities` a
 | Per-table size reporting | ❌¹ | ✅ | ✅ | ✅ |
 | Explicit identity insert | ✅ | ✅ | ❌² | ✅ |
 | Case-sensitive `LIKE` | ✅³ | ✅ | ✅⁴ | ✅⁴ |
+| Sub-second timestamp precision | ❌⁵ | ✅ | ✅ | ✅ |
 
 1. Needs the `dbstat` module, absent from most SQLite builds. The storage view falls back to
    whole-database size plus exact row counts rather than showing an invented number.
 2. Needs `SET IDENTITY_INSERT`; only affects `migrate-database` as a target.
 3. Via `PRAGMA case_sensitive_like`, set on every connection.
-4. Via the collation chosen at database creation (`Latin1_General_BIN2`, `utf8mb4_bin`).
+4. Via the collation, declared on the MODEL (`IDatabaseProvider.DefaultCollation`) so EF applies it to
+   every table. Setting it only on the database is not enough - a table created with an explicit character
+   set does not inherit it.
+5. SQLite's `CURRENT_TIMESTAMP` has whole-second precision. Because timestamps are text, `'…:16'` sorts
+   BEFORE `'…:16.847'` within the same second, so a database-stamped row can look older than one written
+   moments earlier. Dispatch therefore stamps `logged_at` in code, never from the column default.
 
 **Case sensitivity is deliberately normalised.** SQLite's `LIKE`, SQL Server's default collation, and
 MySQL's default collation are all case-**in**sensitive; PostgreSQL's is not. Left alone, Message Log

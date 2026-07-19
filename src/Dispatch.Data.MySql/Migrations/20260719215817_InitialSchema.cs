@@ -12,35 +12,28 @@ namespace Dispatch.Data.MySql.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterDatabase()
-                .Annotation("MySql:CharSet", "utf8mb4");
-
             migrationBuilder.CreateTable(
                 name: "api_keys",
                 columns: table => new
                 {
                     id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    key_id = table.Column<string>(type: "varchar(32)", maxLength: 32, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    key_hash = table.Column<string>(type: "varchar(512)", maxLength: 512, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    name = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    key_id = table.Column<string>(type: "varchar(32)", maxLength: 32, nullable: false, collation: "utf8mb4_bin"),
+                    key_hash = table.Column<string>(type: "varchar(512)", maxLength: 512, nullable: false, collation: "utf8mb4_bin"),
+                    name = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: false, collation: "utf8mb4_bin"),
                     created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()"),
                     last_used_at = table.Column<DateTime>(type: "datetime(6)", nullable: true),
                     message_count = table.Column<long>(type: "bigint", nullable: false, defaultValue: 0L),
                     revoked = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: false),
                     revoked_at = table.Column<DateTime>(type: "datetime(6)", nullable: true),
                     rate_limit_per_minute = table.Column<int>(type: "int", nullable: false, defaultValue: 100),
-                    scope = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: false, defaultValue: "send")
-                        .Annotation("MySql:CharSet", "utf8mb4")
+                    scope = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: false, defaultValue: "send", collation: "utf8mb4_bin")
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_api_keys", x => x.id);
                 })
-                .Annotation("MySql:CharSet", "utf8mb4");
+                .Annotation("Relational:Collation", "utf8mb4_bin");
 
             migrationBuilder.CreateTable(
                 name: "audit_log",
@@ -49,35 +42,26 @@ namespace Dispatch.Data.MySql.Migrations
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
                     logged_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()"),
-                    kind = table.Column<string>(type: "varchar(16)", maxLength: 16, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    category = table.Column<string>(type: "varchar(32)", maxLength: 32, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    @event = table.Column<string>(name: "event", type: "varchar(128)", maxLength: 128, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    severity = table.Column<string>(type: "varchar(16)", maxLength: 16, nullable: false, defaultValue: "Info")
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    actor = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    source_ip = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    detail = table.Column<string>(type: "longtext", nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4")
+                    kind = table.Column<string>(type: "varchar(16)", maxLength: 16, nullable: false, collation: "utf8mb4_bin"),
+                    category = table.Column<string>(type: "varchar(32)", maxLength: 32, nullable: false, collation: "utf8mb4_bin"),
+                    @event = table.Column<string>(name: "event", type: "varchar(128)", maxLength: 128, nullable: false, collation: "utf8mb4_bin"),
+                    severity = table.Column<string>(type: "varchar(16)", maxLength: 16, nullable: false, defaultValue: "Info", collation: "utf8mb4_bin"),
+                    actor = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: true, collation: "utf8mb4_bin"),
+                    source_ip = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: true, collation: "utf8mb4_bin"),
+                    detail = table.Column<string>(type: "longtext", nullable: true, collation: "utf8mb4_bin")
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_audit_log", x => x.id);
                 })
-                .Annotation("MySql:CharSet", "utf8mb4");
+                .Annotation("Relational:Collation", "utf8mb4_bin");
 
             migrationBuilder.CreateTable(
                 name: "config",
                 columns: table => new
                 {
-                    key = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    value = table.Column<string>(type: "longtext", nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    key = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: false, collation: "utf8mb4_bin"),
+                    value = table.Column<string>(type: "longtext", nullable: false, collation: "utf8mb4_bin"),
                     encrypted = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: false),
                     updated_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()")
                 },
@@ -85,7 +69,7 @@ namespace Dispatch.Data.MySql.Migrations
                 {
                     table.PrimaryKey("PK_config", x => x.key);
                 })
-                .Annotation("MySql:CharSet", "utf8mb4");
+                .Annotation("Relational:Collation", "utf8mb4_bin");
 
             migrationBuilder.CreateTable(
                 name: "config_smtp_credentials",
@@ -93,10 +77,8 @@ namespace Dispatch.Data.MySql.Migrations
                 {
                     id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    username = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    password_hash = table.Column<string>(type: "varchar(512)", maxLength: 512, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    username = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: false, collation: "utf8mb4_bin"),
+                    password_hash = table.Column<string>(type: "varchar(512)", maxLength: 512, nullable: false, collation: "utf8mb4_bin"),
                     created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()"),
                     last_used_at = table.Column<DateTime>(type: "datetime(6)", nullable: true)
                 },
@@ -104,7 +86,7 @@ namespace Dispatch.Data.MySql.Migrations
                 {
                     table.PrimaryKey("PK_config_smtp_credentials", x => x.id);
                 })
-                .Annotation("MySql:CharSet", "utf8mb4");
+                .Annotation("Relational:Collation", "utf8mb4_bin");
 
             migrationBuilder.CreateTable(
                 name: "relay_counters",
@@ -124,7 +106,7 @@ namespace Dispatch.Data.MySql.Migrations
                 {
                     table.PrimaryKey("PK_relay_counters", x => x.id);
                 })
-                .Annotation("MySql:CharSet", "utf8mb4");
+                .Annotation("Relational:Collation", "utf8mb4_bin");
 
             migrationBuilder.CreateTable(
                 name: "relays",
@@ -132,10 +114,8 @@ namespace Dispatch.Data.MySql.Migrations
                 {
                     id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    name = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    provider = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    name = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: false, collation: "utf8mb4_bin"),
+                    provider = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: false, collation: "utf8mb4_bin"),
                     is_default = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: false),
                     enabled = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: true),
                     max_concurrency = table.Column<int>(type: "int", nullable: false, defaultValue: 4),
@@ -147,7 +127,7 @@ namespace Dispatch.Data.MySql.Migrations
                 {
                     table.PrimaryKey("PK_relays", x => x.id);
                 })
-                .Annotation("MySql:CharSet", "utf8mb4");
+                .Annotation("Relational:Collation", "utf8mb4_bin");
 
             migrationBuilder.CreateTable(
                 name: "routing_rules",
@@ -156,12 +136,9 @@ namespace Dispatch.Data.MySql.Migrations
                     id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
                     priority = table.Column<int>(type: "int", nullable: false),
-                    name = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    recipient_pattern = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    sender_pattern = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    name = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: false, collation: "utf8mb4_bin"),
+                    recipient_pattern = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true, collation: "utf8mb4_bin"),
+                    sender_pattern = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true, collation: "utf8mb4_bin"),
                     relay_id = table.Column<int>(type: "int", nullable: false),
                     enabled = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: true),
                     created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()")
@@ -176,7 +153,7 @@ namespace Dispatch.Data.MySql.Migrations
                         principalColumn: "id",
                         onDelete: ReferentialAction.Cascade);
                 })
-                .Annotation("MySql:CharSet", "utf8mb4");
+                .Annotation("Relational:Collation", "utf8mb4_bin");
 
             migrationBuilder.CreateTable(
                 name: "relay_log",
@@ -185,51 +162,32 @@ namespace Dispatch.Data.MySql.Migrations
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
                     logged_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()"),
-                    spool_id = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    @event = table.Column<string>(name: "event", type: "varchar(32)", maxLength: 32, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    status = table.Column<string>(type: "varchar(16)", maxLength: 16, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    spool_id = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: false, collation: "utf8mb4_bin"),
+                    @event = table.Column<string>(name: "event", type: "varchar(32)", maxLength: 32, nullable: false, collation: "utf8mb4_bin"),
+                    status = table.Column<string>(type: "varchar(16)", maxLength: 16, nullable: false, collation: "utf8mb4_bin"),
                     retry_attempt = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
-                    from_address = table.Column<string>(type: "varchar(512)", maxLength: 512, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    from_domain = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    to_addresses = table.Column<string>(type: "longtext", nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    to_domain = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    subject = table.Column<string>(type: "varchar(998)", maxLength: 998, nullable: false)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    from_address = table.Column<string>(type: "varchar(512)", maxLength: 512, nullable: false, collation: "utf8mb4_bin"),
+                    from_domain = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false, collation: "utf8mb4_bin"),
+                    to_addresses = table.Column<string>(type: "longtext", nullable: false, collation: "utf8mb4_bin"),
+                    to_domain = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false, collation: "utf8mb4_bin"),
+                    subject = table.Column<string>(type: "varchar(998)", maxLength: 998, nullable: false, collation: "utf8mb4_bin"),
                     size_bytes = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
                     relay_id = table.Column<int>(type: "int", nullable: true),
-                    relay_name = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    relay_name = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: true, collation: "utf8mb4_bin"),
                     routing_rule_id = table.Column<int>(type: "int", nullable: true),
-                    routing_rule_name = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    routing_rule_name = table.Column<string>(type: "varchar(128)", maxLength: 128, nullable: true, collation: "utf8mb4_bin"),
                     routing_matched = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: false),
-                    provider = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    provider_message_id = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    provider_response = table.Column<string>(type: "longtext", nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    provider = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: true, collation: "utf8mb4_bin"),
+                    provider_message_id = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true, collation: "utf8mb4_bin"),
+                    provider_response = table.Column<string>(type: "longtext", nullable: true, collation: "utf8mb4_bin"),
                     duration_ms = table.Column<int>(type: "int", nullable: true),
-                    error = table.Column<string>(type: "longtext", nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    ingest_source = table.Column<string>(type: "varchar(16)", maxLength: 16, nullable: false, defaultValue: "SMTP")
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    source_ip = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    error = table.Column<string>(type: "longtext", nullable: true, collation: "utf8mb4_bin"),
+                    ingest_source = table.Column<string>(type: "varchar(16)", maxLength: 16, nullable: false, defaultValue: "SMTP", collation: "utf8mb4_bin"),
+                    source_ip = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: true, collation: "utf8mb4_bin"),
                     api_key_id = table.Column<int>(type: "int", nullable: true),
-                    api_key_name = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    tags = table.Column<string>(type: "longtext", nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
-                    x_mailer = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true)
-                        .Annotation("MySql:CharSet", "utf8mb4"),
+                    api_key_name = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true, collation: "utf8mb4_bin"),
+                    tags = table.Column<string>(type: "longtext", nullable: true, collation: "utf8mb4_bin"),
+                    x_mailer = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: true, collation: "utf8mb4_bin"),
                     attachment_count = table.Column<int>(type: "int", nullable: false, defaultValue: 0)
                 },
                 constraints: table =>
@@ -251,7 +209,7 @@ namespace Dispatch.Data.MySql.Migrations
                         principalTable: "routing_rules",
                         principalColumn: "id");
                 })
-                .Annotation("MySql:CharSet", "utf8mb4");
+                .Annotation("Relational:Collation", "utf8mb4_bin");
 
             migrationBuilder.CreateIndex(
                 name: "UQ_api_keys_key_id",

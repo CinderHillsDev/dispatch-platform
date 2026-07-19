@@ -1,6 +1,5 @@
-using Dapper;
 using Dispatch.Data;
-using Dispatch.Data.Dialects;
+using Dispatch.Data.Providers;
 using Microsoft.Data.SqlClient;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -34,10 +33,12 @@ public sealed class DatabaseFixture : IAsyncLifetime
     public DatabaseProvider Provider { get; private set; } = DatabaseProvider.Sqlite;
     public string Engine => Provider.ToString();
 
-    public SqlConnectionFactory Factory => new(ConnectionString!);
 
     public IDbContextFactory<DispatchDbContext> Contexts =>
         DispatchDbContextFactory.Create(Provider, ConnectionString!);
+
+    /// <summary>The provider implementation, for repositories that need engine-specific SQL.</summary>
+    public IDatabaseProvider DbProvider => DatabaseProviders.Get(Provider);
 
     private string? _baseConnection;
     private string? _dbName;
@@ -88,6 +89,15 @@ public sealed class DatabaseFixture : IAsyncLifetime
         _ => throw new InvalidOperationException($"{Provider} has no server-side database to name."),
     };
 
+    /// <summary>Runs an administrative statement. Plain ADO: these are DDL on a maintenance connection,
+    /// outside the model, and the test project does not otherwise need a micro-ORM.</summary>
+    private static async Task ExecuteAsync(System.Data.Common.DbConnection cn, string sql)
+    {
+        await using var cmd = cn.CreateCommand();
+        cmd.CommandText = sql;
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     private static bool IsTruthy(string? v) =>
         !string.IsNullOrEmpty(v) && !string.Equals(v, "0", StringComparison.Ordinal)
         && !string.Equals(v, "false", StringComparison.OrdinalIgnoreCase);
@@ -113,7 +123,7 @@ public sealed class DatabaseFixture : IAsyncLifetime
                 await using var cn = new NpgsqlConnection(maintenance);
                 await cn.OpenAsync();
                 // FORCE (PG 13+) terminates lingering backends so the drop cannot hang on a stray connection.
-                await cn.ExecuteAsync($"DROP DATABASE IF EXISTS \"{_dbName}\" WITH (FORCE);");
+                await ExecuteAsync(cn, $"DROP DATABASE IF EXISTS \"{_dbName}\" WITH (FORCE);");
                 break;
             }
             case DatabaseProvider.SqlServer:
@@ -123,7 +133,7 @@ public sealed class DatabaseFixture : IAsyncLifetime
                 await using var cn = new SqlConnection(maintenance);
                 await cn.OpenAsync();
                 // SINGLE_USER WITH ROLLBACK IMMEDIATE is SQL Server's equivalent of FORCE.
-                await cn.ExecuteAsync(
+                await ExecuteAsync(cn,
                     $"IF DB_ID('{_dbName}') IS NOT NULL BEGIN " +
                     $"ALTER DATABASE [{_dbName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; " +
                     $"DROP DATABASE [{_dbName}]; END");
@@ -134,7 +144,7 @@ public sealed class DatabaseFixture : IAsyncLifetime
                 var maintenance = new MySqlConnectionStringBuilder(_baseConnection) { Database = "" }.ConnectionString;
                 await using var cn = new MySqlConnection(maintenance);
                 await cn.OpenAsync();
-                await cn.ExecuteAsync($"DROP DATABASE IF EXISTS `{_dbName}`;");
+                await ExecuteAsync(cn, $"DROP DATABASE IF EXISTS `{_dbName}`;");
                 break;
             }
         }

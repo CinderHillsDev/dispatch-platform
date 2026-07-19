@@ -1,6 +1,6 @@
 using System.Diagnostics;
-using Dapper;
 using Dispatch.Core.Logging;
+using Dispatch.Data.Providers;
 using Dispatch.Data.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,9 +42,9 @@ public class SqliteVolumeTests
         var cs = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = path }.ConnectionString;
         try
         {
-            var factory = new SqlConnectionFactory(cs);
+            var contexts = DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, cs);
             await new DatabaseInitializer(
-                    DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, cs),
+                    contexts,
                     new DatabaseBootstrap(DatabaseProvider.Sqlite, cs, NullLogger<DatabaseBootstrap>.Instance),
                     NullLogger<DatabaseInitializer>.Instance)
                 .InitializeAsync();
@@ -57,7 +57,7 @@ public class SqliteVolumeTests
             // anything about SQLite's capacity, and the real ingest path commits per message anyway --
             // that rate is what ConcurrentWriteTests measures.
             var sw = Stopwatch.StartNew();
-            await BulkLoadAsync(factory, rows);
+            await BulkLoadAsync(contexts, rows);
             sw.Stop();
             var loadRate = rows * 1000.0 / sw.ElapsedMilliseconds;
             Console.WriteLine($"VOLUME load    {rows:N0} rows in {sw.ElapsedMilliseconds:N0}ms ({loadRate:N0} rows/sec)");
@@ -65,7 +65,7 @@ public class SqliteVolumeTests
             var fileBytes = new FileInfo(path).Length;
             Console.WriteLine($"VOLUME size    {fileBytes / 1024.0 / 1024.0:N1} MiB total, {(double)fileBytes / rows:N0} bytes/row");
 
-            var query = new SqlMessageLogQuery(factory);
+            var query = new SqlMessageLogQuery(contexts);
 
             // ---- First page: the dashboard's default view, newest-first, no filter ------------------
             sw.Restart();
@@ -104,13 +104,13 @@ public class SqliteVolumeTests
 
             // ---- Aggregates behind the dashboard counters ------------------------------------------
             sw.Restart();
-            await using (var cn = await factory.OpenAsync())
-                await cn.ExecuteScalarAsync<long>("SELECT count(*) FROM relay_log;");
+            await using (var probe = await contexts.CreateDbContextAsync())
+                await probe.RelayLog.LongCountAsync();
             sw.Stop();
             Console.WriteLine($"VOLUME count   full count(*) in {sw.ElapsedMilliseconds}ms");
 
             // ---- Purge, the operation that has to survive a backlog ---------------------------------
-            var maintenance = new SqlLogMaintenance(factory);
+            var maintenance = new SqlLogMaintenance(contexts, DatabaseProviders.Get(DatabaseProvider.Sqlite));
             sw.Restart();
             var purged = await maintenance.PurgeByRetentionAsync("Delivered", retentionDays: 30);
             sw.Stop();
@@ -132,30 +132,22 @@ public class SqliteVolumeTests
     /// Loads <paramref name="rows"/> relay_log rows spread over 90 days, so retention purges and date
     /// filters have a realistic distribution to work against rather than every row sharing one timestamp.
     /// </summary>
-    private static async Task BulkLoadAsync(SqlConnectionFactory factory, int rows)
+    private static async Task BulkLoadAsync(IDbContextFactory<DispatchDbContext> contexts, int rows)
     {
         const int batch = 5_000;
-        const string sql = """
-            INSERT INTO relay_log
-                (logged_at, spool_id, event, status, from_address, from_domain, to_addresses, to_domain,
-                 subject, size_bytes, relay_name, ingest_source, retry_attempt, routing_matched, attachment_count)
-            VALUES
-                (@LoggedAt, @SpoolId, @Event, @Status, @FromAddress, @FromDomain, '[]', @ToDomain,
-                 @Subject, @SizeBytes, 'bulk', 'SMTP', 0, 0, 0);
-            """;
 
         var start = DateTime.UtcNow.AddDays(-90);
         var span = TimeSpan.FromDays(90).TotalMilliseconds;
 
-        await using var cn = await factory.OpenAsync();
         for (var offset = 0; offset < rows; offset += batch)
         {
             var count = Math.Min(batch, rows - offset);
-            var items = new List<object>(count);
+            await using var db = await contexts.CreateDbContextAsync();
+
             for (var i = 0; i < count; i++)
             {
                 var n = offset + i;
-                items.Add(new
+                db.RelayLog.Add(new RelayLogEntity
                 {
                     LoggedAt = start.AddMilliseconds(span * n / rows),
                     SpoolId = $"vol{n:D9}",
@@ -163,16 +155,19 @@ public class SqliteVolumeTests
                     Status = n % 20 == 0 ? "Error" : "OK",
                     FromAddress = $"sender{n % 1000}@example.com",
                     FromDomain = "example.com",
+                    ToAddresses = "[]",
                     ToDomain = $"bulk-{n % 50}.example.net",
                     // One row in 10,000 carries the needle the unindexed LIKE probe looks for.
                     Subject = n % 10_000 == 42 ? $"needle-42 message {n}" : $"Bulk message {n}",
                     SizeBytes = 1024 + n % 8192,
+                    RelayName = "bulk",
+                    IngestSource = "SMTP",
                 });
             }
 
-            await using var tx = await cn.BeginTransactionAsync();
-            await cn.ExecuteAsync(sql, items, tx);
-            await tx.CommitAsync();
+            // One SaveChanges per batch, so the whole batch commits as a single transaction. Per-row commits
+            // would measure fsync latency rather than anything about the engine's capacity.
+            await db.SaveChangesAsync();
         }
     }
 }

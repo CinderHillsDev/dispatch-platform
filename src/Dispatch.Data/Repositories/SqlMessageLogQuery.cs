@@ -1,49 +1,40 @@
-using System.Data;
-using System.Text;
 using System.Text.Json;
-using Dapper;
 using Dispatch.Core.Logging;
+using Microsoft.EntityFrameworkCore;
 
 namespace Dispatch.Data.Repositories;
 
 /// <summary>
-/// Keyset-paginated reads of <c>relay_log</c> for the Message Log (spec §9.2, §19). No <c>COUNT(*)</c>,
-/// no <c>OFFSET</c>. The WHERE clause is built by appending fixed fragments; every value is a Dapper
-/// parameter, never interpolated - verified against SQL-injection payloads in the tests (§17).
+/// Keyset-paginated reads of <c>relay_log</c> for the Message Log (spec §9.2, §19). No <c>COUNT(*)</c> and
+/// no <c>OFFSET</c> on the primary list path.
+///
+/// Filters are composed as LINQ predicates, so every user value is a parameter by construction rather than
+/// by discipline - there is no string of SQL for an injection payload to reach. The SQL-injection tests in
+/// the suite (§17) exercise that.
 /// </summary>
-public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageLogQuery
+public sealed class SqlMessageLogQuery(IDbContextFactory<DispatchDbContext> contexts) : IMessageLogQuery
 {
     public async Task<MessageLogPage> QueryAsync(MessageLogFilter filter, CancellationToken ct = default)
     {
         var limit = Math.Clamp(filter.Limit, 1, 200);
-        var where = new StringBuilder("WHERE 1 = 1");
-        var p = new DynamicParameters();
-        p.Add("Limit", limit);
-        AppendFilters(where, p, filter);
 
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var query = ApplyFilters(db.RelayLog.AsNoTracking(), filter);
+
+        // Keyset pagination: seek past the last row seen instead of counting rows to skip, so page N costs
+        // the same as page 1 regardless of how much history exists. The id tie-break makes the ordering
+        // total when two rows share a timestamp.
         if (filter.Cursor is { } cursor)
-        {
-            where.Append(" AND (logged_at < @CursorLoggedAt OR (logged_at = @CursorLoggedAt AND id < @CursorId))");
-            p.Add("CursorLoggedAt", cursor.LoggedAt, DbType.DateTime);
-            p.Add("CursorId", cursor.Id);
-        }
+            query = query.Where(r => r.LoggedAt < cursor.LoggedAt
+                                  || (r.LoggedAt == cursor.LoggedAt && r.Id < cursor.Id));
 
-        var sql = $"""
-            SELECT
-                {RowColumns}
-            FROM relay_log
-            {where}
-            ORDER BY logged_at DESC, id DESC
-            LIMIT @Limit;
-            """;
+        var rows = await query
+            .OrderByDescending(r => r.LoggedAt).ThenByDescending(r => r.Id)
+            .Take(limit)
+            .Select(RowProjection)
+            .ToListAsync(ct);
 
-        await using var cn = await factory.OpenAsync(ct);
-        var rows = (await cn.QueryAsync<MessageLogRow>(new CommandDefinition(sql, p, cancellationToken: ct))).ToList();
-
-        MessageLogCursor? next = rows.Count == limit
-            ? new MessageLogCursor(rows[^1].LoggedAt, rows[^1].Id)
-            : null;
-
+        var next = rows.Count == limit ? new MessageLogCursor(rows[^1].LoggedAt, rows[^1].Id) : null;
         return new MessageLogPage(rows, next);
     }
 
@@ -51,228 +42,162 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
     {
         var limit = Math.Clamp(filter.Limit, 1, 200);
         offset = Math.Max(0, offset);
-        var where = new StringBuilder("WHERE 1 = 1");
-        var p = new DynamicParameters();
-        AppendFilters(where, p, filter);
-        p.Add("Offset", offset);
-        p.Add("Limit", limit);
 
-        // The list shows ONE row per message. relay_log holds a row per lifecycle event (a Retrying row per
-        // failed attempt, then a terminal Delivered/Failed), so collapse by spool_id and keep only the latest
-        // event as the message's current state. Connection-level rows (denials, pre-DATA failures) have no
-        // spool_id - each stays its own row (grouped by id). The full per-attempt history is in the detail view.
-        var sql = $"""
-            SELECT COUNT(*) FROM (SELECT DISTINCT {GroupKey} AS grp FROM relay_log {where}) g;
-            SELECT {RowColumns}
-            FROM (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY {GroupKey} ORDER BY logged_at DESC, id DESC) AS rn
-                FROM relay_log
-                {where}
-            ) t
-            WHERE rn = 1
-            ORDER BY logged_at DESC, id DESC
-            LIMIT @Limit OFFSET @Offset;
-            """;
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var filtered = ApplyFilters(db.RelayLog.AsNoTracking(), filter);
+        var latestIds = LatestPerMessage(filtered);
 
-        await using var cn = await factory.OpenAsync(ct);
-        await using var multi = await cn.QueryMultipleAsync(new CommandDefinition(sql, p, cancellationToken: ct));
-        var total = await multi.ReadSingleAsync<int>();
-        var rows = (await multi.ReadAsync<MessageLogRow>()).ToList();
+        var total = await latestIds.CountAsync(ct);
+
+        var rows = await filtered
+            .Where(r => latestIds.Contains(r.Id))
+            .OrderByDescending(r => r.LoggedAt).ThenByDescending(r => r.Id)
+            .Skip(offset).Take(limit)
+            .Select(RowProjection)
+            .ToListAsync(ct);
+
         return new MessageLogPaged(rows, total);
-    }
-
-    private const string RowColumns = """
-        id AS Id, logged_at AS LoggedAt, event AS Event, status AS Status, spool_id AS SpoolId,
-        from_address AS FromAddress, to_domain AS ToDomain, to_addresses AS ToAddressesJson,
-        subject AS Subject, relay_name AS RelayName,
-        provider AS Provider, duration_ms AS DurationMs, size_bytes AS SizeBytes,
-        ingest_source AS IngestSource, retry_attempt AS RetryAttempt, error AS Error
-        """;
-
-    // Collapse a message's lifecycle rows (Retrying×N → terminal Delivered/Failed) into one group keyed by
-    // spool_id. Connection-level rows with no spool_id (denials, pre-DATA failures) each get their own group.
-    private const string GroupKey = "CASE WHEN spool_id IS NULL OR spool_id = '' THEN CONCAT('id:', id) ELSE spool_id END";
-
-    /// <summary>
-    /// Appends "col IN (@name0, @name1, ...)" with one scalar parameter per value.
-    ///
-    /// Expanded by hand rather than relying on Dapper's "IN @list" support, which only fires for anonymous
-    /// parameter objects and not for DynamicParameters - the array would be bound as a single parameter,
-    /// which Postgres rejects outright and SQLite has no array type for. Postgres could use = ANY(@list),
-    /// but that has no SQLite equivalent; one scalar per value is valid on both. The lists here are short
-    /// closed sets (status and event values), so the expansion stays small and the plan cache stays sane.
-    /// </summary>
-    private static void AppendInList(StringBuilder where, DynamicParameters p, string column, string prefix, string[] values)
-    {
-        var names = new string[values.Length];
-        for (var i = 0; i < values.Length; i++)
-        {
-            names[i] = $"@{prefix}{i}";
-            p.Add($"{prefix}{i}", values[i]);
-        }
-        where.Append($" AND {column} IN ({string.Join(", ", names)})");
-    }
-
-    // Shared filter clauses (no cursor/paging). Every user value is a parameter - never interpolated.
-    private static void AppendFilters(StringBuilder where, DynamicParameters p, MessageLogFilter filter)
-    {
-        // Bind dates as timestamp to match the timestamptz column type.
-        if (filter.FromUtc is { } from) { where.Append(" AND logged_at >= @FromUtc"); p.Add("FromUtc", from, DbType.DateTime); }
-        if (filter.ToUtc is { } to) { where.Append(" AND logged_at < @ToUtc"); p.Add("ToUtc", to, DbType.DateTime); }
-        if (filter.Statuses is { Length: > 0 } s) AppendInList(where, p, "status", "Status", s);
-        if (filter.Events is { Length: > 0 } ev) AppendInList(where, p, "event", "Event", ev);
-        if (!string.IsNullOrWhiteSpace(filter.IngestSource)) { where.Append(" AND ingest_source = @IngestSource"); p.Add("IngestSource", filter.IngestSource); }
-        if (!string.IsNullOrWhiteSpace(filter.FromDomain)) { where.Append(" AND from_domain = @FromDomain"); p.Add("FromDomain", filter.FromDomain); }
-        if (!string.IsNullOrWhiteSpace(filter.ToDomain)) { where.Append(" AND to_domain = @ToDomain"); p.Add("ToDomain", filter.ToDomain); }
-        if (!string.IsNullOrWhiteSpace(filter.RelayName)) { where.Append(" AND relay_name = @RelayName"); p.Add("RelayName", filter.RelayName); }
-        if (!string.IsNullOrWhiteSpace(filter.RoutingRuleName)) { where.Append(" AND routing_rule_name = @RoutingRuleName"); p.Add("RoutingRuleName", filter.RoutingRuleName); }
-        // Subject substring match. Escape LIKE wildcards in the user value so they're treated literally.
-        if (!string.IsNullOrWhiteSpace(filter.Subject))
-        {
-            where.Append(" AND subject LIKE @SubjectPattern ESCAPE '\\'");
-            p.Add("SubjectPattern", "%" + EscapeLike(filter.Subject) + "%");
-        }
-        if (filter.ApiKeyId is { } apiKeyId) { where.Append(" AND api_key_id = @ApiKeyId"); p.Add("ApiKeyId", apiKeyId); }
-        // Tag: tags is a JSON array string; match %"tag"% with the value as a parameter. Escape LIKE wildcards
-        // so a tag containing % or _ matches literally (parameterised, so never an injection risk regardless).
-        if (!string.IsNullOrWhiteSpace(filter.Tag))
-        {
-            where.Append(" AND tags LIKE @TagPattern ESCAPE '\\'");
-            p.Add("TagPattern", "%\"" + EscapeLike(filter.Tag) + "\"%");
-        }
-    }
-
-    // Escapes the SQL LIKE metacharacters (\, %, _) so a user value is matched literally (used with ESCAPE '\').
-    private static string EscapeLike(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
-
-    public async Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, int? apiKeyId, CancellationToken ct = default)
-    {
-        const string sql = """
-            SELECT
-                id AS Id, logged_at AS LoggedAt, event AS Event, status AS Status, spool_id AS SpoolId,
-                from_address AS FromAddress, to_domain AS ToDomain, subject AS Subject, relay_name AS RelayName,
-                provider AS Provider, duration_ms AS DurationMs, size_bytes AS SizeBytes,
-                ingest_source AS IngestSource, retry_attempt AS RetryAttempt, error AS Error
-            FROM relay_log
-            WHERE spool_id = @spoolId AND (@apiKeyId IS NULL OR api_key_id = @apiKeyId)
-            ORDER BY logged_at DESC, id DESC
-            LIMIT 1;
-            """;
-        await using var cn = await factory.OpenAsync(ct);
-        return await cn.QuerySingleOrDefaultAsync<MessageLogRow>(
-            new CommandDefinition(sql, new { spoolId, apiKeyId }, cancellationToken: ct));
     }
 
     public async Task<IReadOnlyList<MessageLogRow>> RecentByApiKeyAsync(
         int apiKeyId, int limit, string[]? statuses, CancellationToken ct = default)
     {
         limit = Math.Clamp(limit, 1, 200);
-        var where = new StringBuilder("WHERE api_key_id = @ApiKeyId");
-        var p = new DynamicParameters();
-        p.Add("ApiKeyId", apiKeyId);
-        p.Add("Limit", limit);
-        if (statuses is { Length: > 0 }) AppendInList(where, p, "status", "Status", statuses);
 
-        // One row per message (latest event), matching the dashboard list - see GroupKey.
-        var sql = $"""
-            SELECT {RowColumns}
-            FROM (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY {GroupKey} ORDER BY logged_at DESC, id DESC) AS rn
-                FROM relay_log
-                {where}
-            ) t
-            WHERE rn = 1
-            ORDER BY logged_at DESC, id DESC
-            LIMIT @Limit;
-            """;
-        await using var cn = await factory.OpenAsync(ct);
-        return (await cn.QueryAsync<MessageLogRow>(new CommandDefinition(sql, p, cancellationToken: ct))).ToList();
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var filtered = db.RelayLog.AsNoTracking().Where(r => r.ApiKeyId == apiKeyId);
+        if (statuses is { Length: > 0 }) filtered = filtered.Where(r => statuses.Contains(r.Status));
+
+        var latestIds = LatestPerMessage(filtered);
+
+        return await filtered
+            .Where(r => latestIds.Contains(r.Id))
+            .OrderByDescending(r => r.LoggedAt).ThenByDescending(r => r.Id)
+            .Take(limit)
+            .Select(RowProjection)
+            .ToListAsync(ct);
+    }
+
+    public async Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, int? apiKeyId, CancellationToken ct = default)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var query = db.RelayLog.AsNoTracking().Where(r => r.SpoolId == spoolId);
+        if (apiKeyId is { } key) query = query.Where(r => r.ApiKeyId == key);
+
+        return await query
+            .OrderByDescending(r => r.LoggedAt).ThenByDescending(r => r.Id)
+            .Select(RowProjection)
+            .FirstOrDefaultAsync(ct);
     }
 
     public async Task<MessageLogDetail?> GetByIdAsync(long id, CancellationToken ct = default)
     {
-        const string sql = """
-            SELECT
-                id AS Id, logged_at AS LoggedAt, event AS Event, status AS Status, spool_id AS SpoolId,
-                retry_attempt AS RetryAttempt, from_address AS FromAddress, from_domain AS FromDomain,
-                to_addresses AS ToAddressesJson, to_domain AS ToDomain, subject AS Subject, size_bytes AS SizeBytes,
-                relay_name AS RelayName, routing_rule_name AS RoutingRuleName, routing_matched AS RoutingMatched,
-                provider AS Provider, provider_message_id AS ProviderMessageId, provider_response AS ProviderResponse,
-                duration_ms AS DurationMs, error AS Error, ingest_source AS IngestSource, source_ip AS SourceIp,
-                api_key_name AS ApiKeyName, tags AS TagsJson, x_mailer AS XMailer, attachment_count AS AttachmentCount
-            FROM relay_log
-            WHERE id = @id
-            LIMIT 1;
-            """;
-        await using var cn = await factory.OpenAsync(ct);
-        var raw = await cn.QuerySingleOrDefaultAsync<DetailRow>(
-            new CommandDefinition(sql, new { id }, cancellationToken: ct));
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var raw = await db.RelayLog.AsNoTracking().SingleOrDefaultAsync(r => r.Id == id, ct);
         if (raw is null) return null;
 
-        // Retry/attempt timeline (spec §9.2): all relay_log rows sharing this spool id, oldest first.
-        // Denied/pre-DATA rows have an empty spool id, so fall back to this single row as the history.
-        IReadOnlyList<MessageLogAttempt> history;
-        if (string.IsNullOrEmpty(raw.SpoolId))
-        {
-            history = [new MessageLogAttempt(raw.LoggedAt, raw.Event, raw.Status, raw.RetryAttempt, raw.Provider, raw.DurationMs, raw.Error)];
-        }
-        else
-        {
-            const string historySql = """
-                SELECT logged_at AS LoggedAt, event AS Event, status AS Status, retry_attempt AS RetryAttempt,
-                       provider AS Provider, duration_ms AS DurationMs, error AS Error
-                FROM relay_log
-                WHERE spool_id = @spoolId
-                ORDER BY logged_at ASC, id ASC;
-                """;
-            history = (await cn.QueryAsync<MessageLogAttempt>(
-                new CommandDefinition(historySql, new { spoolId = raw.SpoolId }, cancellationToken: ct))).ToList();
-        }
-        return raw.ToDetail(history);
+        // Retry/attempt timeline (spec §9.2): every relay_log row sharing this spool id, oldest first.
+        // Denied and pre-DATA rows have an empty spool id, so that single row IS its own history - querying
+        // by "" would otherwise collect every unrelated connection-level row ever recorded.
+        IReadOnlyList<MessageLogAttempt> history = string.IsNullOrEmpty(raw.SpoolId)
+            ? [new MessageLogAttempt(raw.LoggedAt, raw.Event, raw.Status, raw.RetryAttempt, raw.Provider, raw.DurationMs, raw.Error)]
+            : await db.RelayLog.AsNoTracking()
+                .Where(r => r.SpoolId == raw.SpoolId)
+                .OrderBy(r => r.LoggedAt).ThenBy(r => r.Id)
+                .Select(r => new MessageLogAttempt(r.LoggedAt, r.Event, r.Status, r.RetryAttempt, r.Provider, r.DurationMs, r.Error))
+                .ToListAsync(ct);
+
+        return ToDetail(raw, history);
     }
 
-    /// <summary>Flat projection - the JSON array columns are deserialised into string[] by <see cref="ToDetail"/>.</summary>
-    private sealed class DetailRow
+    /// <summary>
+    /// The id of the newest row for each message.
+    ///
+    /// The list shows ONE row per message, but relay_log holds a row per lifecycle event: a Retrying row
+    /// per failed attempt, then a terminal Delivered/Failed. Connection-level rows (denials, pre-DATA
+    /// failures) have no spool id and must each stay their own entry, hence the composite grouping key -
+    /// (spool_id, 0) collapses a message's events together, while ("", id) keeps every anonymous row apart.
+    ///
+    /// This replaces a ROW_NUMBER() OVER (PARTITION BY ... ORDER BY logged_at DESC, id DESC) window query.
+    /// MAX(id) selects the same row: ids are monotonically increasing, so within one spool id the highest
+    /// id is always the most recent event. It also translates cleanly on all four engines, where LINQ's
+    /// group-then-take-first does not.
+    /// </summary>
+    private static IQueryable<long> LatestPerMessage(IQueryable<RelayLogEntity> filtered) =>
+        filtered
+            .GroupBy(r => new { r.SpoolId, Anonymous = r.SpoolId == "" ? r.Id : 0L })
+            .Select(g => g.Max(r => r.Id));
+
+    /// <summary>
+    /// Shared filter clauses. Composed rather than concatenated, so values cannot be interpolated even by
+    /// accident.
+    /// </summary>
+    private static IQueryable<RelayLogEntity> ApplyFilters(IQueryable<RelayLogEntity> query, MessageLogFilter filter)
     {
-        public long Id { get; init; }
-        public DateTime LoggedAt { get; init; }
-        public string Event { get; init; } = "";
-        public string Status { get; init; } = "";
-        public string SpoolId { get; init; } = "";
-        public int RetryAttempt { get; init; }
-        public string FromAddress { get; init; } = "";
-        public string FromDomain { get; init; } = "";
-        public string? ToAddressesJson { get; init; }
-        public string ToDomain { get; init; } = "";
-        public string? Subject { get; init; }
-        public int SizeBytes { get; init; }
-        public string? RelayName { get; init; }
-        public string? RoutingRuleName { get; init; }
-        public bool RoutingMatched { get; init; }
-        public string? Provider { get; init; }
-        public string? ProviderMessageId { get; init; }
-        public string? ProviderResponse { get; init; }
-        public int? DurationMs { get; init; }
-        public string? Error { get; init; }
-        public string IngestSource { get; init; } = "";
-        public string? SourceIp { get; init; }
-        public string? ApiKeyName { get; init; }
-        public string? TagsJson { get; init; }
-        public string? XMailer { get; init; }
-        public int AttachmentCount { get; init; }
+        if (filter.FromUtc is { } from) query = query.Where(r => r.LoggedAt >= from);
+        if (filter.ToUtc is { } to) query = query.Where(r => r.LoggedAt < to);
+        if (filter.Statuses is { Length: > 0 } statuses) query = query.Where(r => statuses.Contains(r.Status));
+        if (filter.Events is { Length: > 0 } events) query = query.Where(r => events.Contains(r.Event));
+        if (!string.IsNullOrWhiteSpace(filter.IngestSource)) query = query.Where(r => r.IngestSource == filter.IngestSource);
+        if (!string.IsNullOrWhiteSpace(filter.FromDomain)) query = query.Where(r => r.FromDomain == filter.FromDomain);
+        if (!string.IsNullOrWhiteSpace(filter.ToDomain)) query = query.Where(r => r.ToDomain == filter.ToDomain);
+        if (!string.IsNullOrWhiteSpace(filter.RelayName)) query = query.Where(r => r.RelayName == filter.RelayName);
+        if (!string.IsNullOrWhiteSpace(filter.RoutingRuleName)) query = query.Where(r => r.RoutingRuleName == filter.RoutingRuleName);
+        if (filter.ApiKeyId is { } apiKeyId) query = query.Where(r => r.ApiKeyId == apiKeyId);
 
-        public MessageLogDetail ToDetail(IReadOnlyList<MessageLogAttempt> history) => new()
+        // Contains rather than a hand-built LIKE: EF escapes the user's % and _ per provider, so searching
+        // for "50%" stays a literal search instead of silently becoming a wildcard. Case sensitivity is
+        // normalised across engines (see docs/database.md), so this matches the same rows everywhere.
+        if (!string.IsNullOrWhiteSpace(filter.Subject))
         {
-            Id = Id, LoggedAt = LoggedAt, Event = Event, Status = Status, SpoolId = SpoolId,
-            RetryAttempt = RetryAttempt, FromAddress = FromAddress, FromDomain = FromDomain,
-            ToAddresses = ParseJsonArray(ToAddressesJson), ToDomain = ToDomain, Subject = Subject,
-            SizeBytes = SizeBytes, RelayName = RelayName, RoutingRuleName = RoutingRuleName,
-            RoutingMatched = RoutingMatched, Provider = Provider, ProviderMessageId = ProviderMessageId,
-            ProviderResponse = ProviderResponse, DurationMs = DurationMs, Error = Error,
-            IngestSource = IngestSource, SourceIp = SourceIp, ApiKeyName = ApiKeyName,
-            Tags = ParseJsonArray(TagsJson), XMailer = XMailer, AttachmentCount = AttachmentCount, History = history,
-        };
+            var subject = filter.Subject;
+            query = query.Where(r => r.Subject.Contains(subject));
+        }
+
+        // tags is a JSON array string; matching on the quoted value keeps "prod" from matching "production".
+        if (!string.IsNullOrWhiteSpace(filter.Tag))
+        {
+            var tag = "\"" + filter.Tag + "\"";
+            query = query.Where(r => r.Tags != null && r.Tags.Contains(tag));
+        }
+
+        return query;
     }
+
+    /// <summary>The list projection. Kept as one expression so every read path returns the same shape.</summary>
+    private static readonly System.Linq.Expressions.Expression<Func<RelayLogEntity, MessageLogRow>> RowProjection =
+        r => new MessageLogRow
+        {
+            Id = r.Id,
+            LoggedAt = r.LoggedAt,
+            Event = r.Event,
+            Status = r.Status,
+            SpoolId = r.SpoolId,
+            FromAddress = r.FromAddress,
+            ToDomain = r.ToDomain,
+            ToAddressesJson = r.ToAddresses,
+            Subject = r.Subject,
+            RelayName = r.RelayName,
+            Provider = r.Provider,
+            DurationMs = r.DurationMs,
+            SizeBytes = r.SizeBytes,
+            IngestSource = r.IngestSource,
+            RetryAttempt = r.RetryAttempt,
+            Error = r.Error,
+        };
+
+    private static MessageLogDetail ToDetail(RelayLogEntity r, IReadOnlyList<MessageLogAttempt> history) => new()
+    {
+        Id = r.Id, LoggedAt = r.LoggedAt, Event = r.Event, Status = r.Status, SpoolId = r.SpoolId,
+        RetryAttempt = r.RetryAttempt, FromAddress = r.FromAddress, FromDomain = r.FromDomain,
+        ToAddresses = ParseJsonArray(r.ToAddresses), ToDomain = r.ToDomain, Subject = r.Subject,
+        SizeBytes = r.SizeBytes, RelayName = r.RelayName, RoutingRuleName = r.RoutingRuleName,
+        RoutingMatched = r.RoutingMatched, Provider = r.Provider, ProviderMessageId = r.ProviderMessageId,
+        ProviderResponse = r.ProviderResponse, DurationMs = r.DurationMs, Error = r.Error,
+        IngestSource = r.IngestSource, SourceIp = r.SourceIp, ApiKeyName = r.ApiKeyName,
+        Tags = ParseJsonArray(r.Tags), XMailer = r.XMailer, AttachmentCount = r.AttachmentCount,
+        History = history,
+    };
 
     private static IReadOnlyList<string> ParseJsonArray(string? json)
     {

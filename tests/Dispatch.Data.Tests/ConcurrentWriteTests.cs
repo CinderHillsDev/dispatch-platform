@@ -1,8 +1,8 @@
 using System.Diagnostics;
-using Dapper;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
 using Dispatch.Data.Repositories;
+using Microsoft.EntityFrameworkCore;
 
 namespace Dispatch.Data.Tests;
 
@@ -30,19 +30,24 @@ public class ConcurrentWriteTests(DatabaseFixture sql) : IClassFixture<DatabaseF
         const int messagesEach = 25;
         const int total = writers * messagesEach;
 
-        var log = new SqlLogRepository(sql.Factory);
-        var counters = new SqlCounterRepository(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var counters = new SqlCounterRepository(sql.Contexts, sql.DbProvider);
 
         // A relay row to attribute the counters to; relay_id is a real FK on relay_counters' sibling tables.
-        await using (var cn = await sql.Factory.OpenAsync())
-        {
-            await cn.ExecuteAsync(
-                "INSERT INTO relays (name, provider, is_default, enabled) VALUES (@n, 'Smtp', false, true);",
-                new { n = "conc-" + Guid.NewGuid().ToString("N")[..8] });
-        }
         int relayId;
-        await using (var cn = await sql.Factory.OpenAsync())
-            relayId = await cn.ExecuteScalarAsync<int>("SELECT MAX(id) FROM relays;");
+        await using (var db = await sql.Contexts.CreateDbContextAsync())
+        {
+            var relay = new RelayEntity
+            {
+                Name = "conc-" + Guid.NewGuid().ToString("N")[..8],
+                Provider = "Smtp",
+                IsDefault = false,
+                Enabled = true,
+            };
+            db.Relays.Add(relay);
+            await db.SaveChangesAsync();
+            relayId = relay.Id;
+        }
 
         var sw = Stopwatch.StartNew();
 
@@ -75,9 +80,8 @@ public class ConcurrentWriteTests(DatabaseFixture sql) : IClassFixture<DatabaseF
         sw.Stop();
 
         // Every row committed: no writer silently lost its work to a lock timeout.
-        await using var verify = await sql.Factory.OpenAsync();
-        var rows = await verify.ExecuteScalarAsync<long>(
-            "SELECT count(*) FROM relay_log WHERE relay_name = 'conc';");
+        await using var verify = await sql.Contexts.CreateDbContextAsync();
+        var rows = await verify.RelayLog.LongCountAsync(r => r.RelayName == "conc");
         Assert.Equal(total, rows);
 
         // The counter upserts are the contended path - every writer targets the same (date, relay_id) row,

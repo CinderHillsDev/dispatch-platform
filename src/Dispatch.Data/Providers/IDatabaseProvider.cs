@@ -71,6 +71,16 @@ public interface IDatabaseProvider
     string UtcNowSql { get; }
 
     /// <summary>
+    /// The collation the schema is created with, or null where the engine has no collation concept.
+    ///
+    /// This is what makes LIKE case-sensitive on MySQL/MariaDB and SQL Server, whose default collations are
+    /// case-INSENSITIVE. Declaring it on the MODEL rather than only on the database matters: a table created
+    /// with an explicit CHARACTER SET does not inherit the database's collation, so relying on inheritance
+    /// silently gives you case-insensitive search on some servers and not others.
+    /// </summary>
+    string? DefaultCollation { get; }
+
+    /// <summary>
     /// A filtered-index predicate, in this engine's syntax, or null when the engine has no filtered
     /// indexes. Callers must handle null by creating an unfiltered index or omitting it - see the call
     /// sites in DispatchDbContext, which document which choice applies where.

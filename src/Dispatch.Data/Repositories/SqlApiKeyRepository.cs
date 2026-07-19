@@ -1,14 +1,14 @@
 using System.Security.Cryptography;
-using Dapper;
 using Dispatch.Core.ApiKeys;
+using Microsoft.EntityFrameworkCore;
 
 namespace Dispatch.Data.Repositories;
 
 /// <summary>
-/// Manages API keys (spec §7.6–§7.7, §17.4): generates <c>dsp_live_…</c> keys with 256 bits of entropy,
+/// Manages API keys (spec §7.6-§7.7, §17.4): generates <c>dsp_live_…</c> keys with 256 bits of entropy,
 /// stores only their bcrypt (cost 12) hash, and verifies in constant time to avoid a timing oracle.
 /// </summary>
-public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyRepository
+public sealed class SqlApiKeyRepository(IDbContextFactory<DispatchDbContext> contexts) : IApiKeyRepository
 {
     private const string Prefix = "dsp_live_";
     private const int KeyIdLength = 12;
@@ -17,65 +17,63 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
     // A real bcrypt hash compared against when the key_id is unknown, so the timing matches the found path.
     private static readonly string DummyHash = BCrypt.Net.BCrypt.HashPassword("dummy", WorkFactor);
 
-    private const string SelectColumns = """
-        id, key_id AS KeyId, key_hash AS KeyHash, name, created_at AS CreatedAt, last_used_at AS LastUsedAt,
-        message_count AS MessageCount, revoked, revoked_at AS RevokedAt, rate_limit_per_minute AS RateLimitPerMinute
-        """;
-
     public async Task<ApiKeyCreated> CreateAsync(string name, int rateLimitPerMinute, CancellationToken ct = default)
     {
         var random = Base64Url(RandomNumberGenerator.GetBytes(32));
         var plaintext = Prefix + random;
-        var keyId = plaintext[..KeyIdLength];
-        var hash = BCrypt.Net.BCrypt.HashPassword(plaintext, WorkFactor);
 
-        const string insert = """
-            INSERT INTO api_keys (key_id, key_hash, name, rate_limit_per_minute)
-            VALUES (@keyId, @hash, @name, @rateLimitPerMinute)
-            RETURNING id, key_id AS "KeyId", key_hash AS "KeyHash", name,
-                   created_at AS "CreatedAt", last_used_at AS "LastUsedAt",
-                   message_count AS "MessageCount", revoked, revoked_at AS "RevokedAt",
-                   rate_limit_per_minute AS "RateLimitPerMinute";
-            """;
+        var entity = new ApiKeyEntity
+        {
+            KeyId = plaintext[..KeyIdLength],
+            KeyHash = BCrypt.Net.BCrypt.HashPassword(plaintext, WorkFactor),
+            Name = name,
+            CreatedAt = DateTime.UtcNow,
+            RateLimitPerMinute = rateLimitPerMinute,
+        };
 
-        await using var cn = await factory.OpenAsync(ct);
-        var inserted = await cn.QuerySingleAsync<Row>(new CommandDefinition(
-            insert, new { keyId, hash, name, rateLimitPerMinute }, cancellationToken: ct));
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        db.ApiKeys.Add(entity);
+        await db.SaveChangesAsync(ct);   // populates the generated id
 
-        return new ApiKeyCreated(inserted.ToApiKey(), plaintext);
+        // The plaintext is returned exactly once, here. Only its hash is stored, so it cannot be recovered.
+        return new ApiKeyCreated(ToApiKey(entity), plaintext);
     }
 
     public async Task<IReadOnlyList<ApiKey>> ListAsync(bool includeRevoked = false, CancellationToken ct = default)
     {
-        var where = includeRevoked ? "" : "WHERE NOT revoked";
-        await using var cn = await factory.OpenAsync(ct);
-        var rows = await cn.QueryAsync<Row>(new CommandDefinition(
-            $"SELECT {SelectColumns} FROM api_keys {where} ORDER BY created_at DESC", cancellationToken: ct));
-        return rows.Select(r => r.ToApiKey()).ToList();
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var query = db.ApiKeys.AsNoTracking();
+        if (!includeRevoked) query = query.Where(k => !k.Revoked);
+
+        var rows = await query.OrderByDescending(k => k.CreatedAt).ToListAsync(ct);
+        return rows.Select(ToApiKey).ToList();
     }
 
     public async Task<bool> RevokeAsync(int id, CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        var affected = await cn.ExecuteAsync(new CommandDefinition(
-            "UPDATE api_keys SET revoked = true, revoked_at = CURRENT_TIMESTAMP WHERE id = @id AND NOT revoked",
-            new { id }, cancellationToken: ct));
-        return affected > 0;
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        // Guarded on NOT revoked so a second revoke reports false rather than resetting revoked_at.
+        return await db.ApiKeys
+            .Where(k => k.Id == id && !k.Revoked)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(k => k.Revoked, true)
+                .SetProperty(k => k.RevokedAt, DateTime.UtcNow), ct) > 0;
     }
 
     public async Task<ApiKey?> VerifyAsync(string rawKey, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(rawKey) || rawKey.Length < KeyIdLength || !rawKey.StartsWith(Prefix))
         {
-            BCrypt.Net.BCrypt.Verify(rawKey ?? "", DummyHash);   // constant-time even on malformed input (verify the input, not a constant)
+            // Verify the input against a real hash, not a constant, so malformed keys cost the same as
+            // well-formed ones and cannot be distinguished by timing.
+            BCrypt.Net.BCrypt.Verify(rawKey ?? "", DummyHash);
             return null;
         }
 
         var keyId = rawKey[..KeyIdLength];
-        await using var cn = await factory.OpenAsync(ct);
-        var row = await cn.QuerySingleOrDefaultAsync<Row>(new CommandDefinition(
-            $"SELECT {SelectColumns} FROM api_keys WHERE key_id = @keyId AND NOT revoked",
-            new { keyId }, cancellationToken: ct));
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var row = await db.ApiKeys.AsNoTracking()
+            .SingleOrDefaultAsync(k => k.KeyId == keyId && !k.Revoked, ct);
 
         if (row is null)
         {
@@ -83,38 +81,30 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
             return null;
         }
 
-        return BCrypt.Net.BCrypt.Verify(rawKey, row.KeyHash) ? row.ToApiKey() : null;
+        return BCrypt.Net.BCrypt.Verify(rawKey, row.KeyHash) ? ToApiKey(row) : null;
     }
 
+    /// <summary>
+    /// Bumps usage counters. Written as a set-based update rather than load-modify-save: it runs on every
+    /// authenticated API request, and a read-then-write would lose counts when a key is used concurrently.
+    /// </summary>
     public async Task RecordUsageAsync(int id, CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        await cn.ExecuteAsync(new CommandDefinition(
-            "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP, message_count = message_count + 1 WHERE id = @id",
-            new { id }, cancellationToken: ct));
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        await db.ApiKeys
+            .Where(k => k.Id == id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(k => k.LastUsedAt, DateTime.UtcNow)
+                .SetProperty(k => k.MessageCount, k => k.MessageCount + 1), ct);
     }
 
     private static string Base64Url(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    private sealed class Row
+    private static ApiKey ToApiKey(ApiKeyEntity e) => new()
     {
-        public int Id { get; init; }
-        public string KeyId { get; init; } = "";
-        public string KeyHash { get; init; } = "";
-        public string Name { get; init; } = "";
-        public DateTime CreatedAt { get; init; }
-        public DateTime? LastUsedAt { get; init; }
-        public long MessageCount { get; init; }
-        public bool Revoked { get; init; }
-        public DateTime? RevokedAt { get; init; }
-        public int RateLimitPerMinute { get; init; }
-
-        public ApiKey ToApiKey() => new()
-        {
-            Id = Id, KeyId = KeyId, KeyHash = KeyHash, Name = Name, CreatedAt = CreatedAt,
-            LastUsedAt = LastUsedAt, MessageCount = MessageCount, Revoked = Revoked,
-            RevokedAt = RevokedAt, RateLimitPerMinute = RateLimitPerMinute,
-        };
-    }
+        Id = e.Id, KeyId = e.KeyId, KeyHash = e.KeyHash, Name = e.Name, CreatedAt = e.CreatedAt,
+        LastUsedAt = e.LastUsedAt, MessageCount = e.MessageCount, Revoked = e.Revoked,
+        RevokedAt = e.RevokedAt, RateLimitPerMinute = e.RateLimitPerMinute,
+    };
 }

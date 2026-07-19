@@ -1,58 +1,65 @@
 using System.Text.Json;
-using Dapper;
 using Dispatch.Core.Logging;
+using Microsoft.EntityFrameworkCore;
 
 namespace Dispatch.Data.Repositories;
 
-/// <summary>Inserts <c>relay_log</c> rows (spec §6.11). The after-the-fact event history.</summary>
-public sealed class SqlLogRepository(SqlConnectionFactory factory) : ILogRepository
+/// <summary>
+/// Inserts <c>relay_log</c> rows (spec §6.11). The after-the-fact event history.
+///
+/// This is the highest-volume write in the system: one row per lifecycle event per message, from every
+/// spool worker thread at once. A fresh context per insert is deliberate - DbContext is not thread-safe,
+/// and a short-lived one has no change-tracking state to accumulate.
+/// </summary>
+public sealed class SqlLogRepository(IDbContextFactory<DispatchDbContext> contexts) : ILogRepository
 {
-    private const string Sql = """
-        INSERT INTO relay_log
-            (spool_id, event, status, retry_attempt, from_address, from_domain, to_addresses, to_domain,
-             subject, size_bytes, relay_id, relay_name, routing_rule_id, routing_rule_name, routing_matched,
-             provider, provider_message_id, provider_response, duration_ms, error, ingest_source, source_ip,
-             api_key_id, api_key_name, tags, x_mailer, attachment_count)
-        VALUES
-            (@SpoolId, @Event, @Status, @RetryAttempt, @FromAddress, @FromDomain, @ToAddresses, @ToDomain,
-             @Subject, @SizeBytes, @RelayId, @RelayName, @RoutingRuleId, @RoutingRuleName, @RoutingMatched,
-             @Provider, @ProviderMessageId, @ProviderResponse, @DurationMs, @Error, @IngestSource, @SourceIp,
-             @ApiKeyId, @ApiKeyName, @Tags, @XMailer, @AttachmentCount);
-        """;
-
     public async Task InsertAsync(RelayLogEntry entry, CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        await cn.ExecuteAsync(new CommandDefinition(Sql, new
+        await using var db = await contexts.CreateDbContextAsync(ct);
+
+        db.RelayLog.Add(new RelayLogEntity
         {
-            entry.SpoolId,
-            entry.Event,
-            entry.Status,
-            entry.RetryAttempt,
-            FromAddress = Trunc(entry.FromAddress, 512),
-            FromDomain = Trunc(entry.FromDomain, 255),
+            // Stamped here, NOT left to the column default.
+            //
+            // SQLite stores timestamps as text and its CURRENT_TIMESTAMP has whole-second precision, while
+            // a DateTime written through EF carries sub-second digits. Within the same second the shorter
+            // string sorts FIRST, so a row the database stamped would appear OLDER than one inserted
+            // moments before it - and the Message Log, which orders by (logged_at DESC, id DESC), would
+            // show them out of order. Setting it explicitly gives every row identical precision.
+            LoggedAt = DateTime.UtcNow,
+            SpoolId = entry.SpoolId,
+            Event = entry.Event,
+            Status = entry.Status,
+            RetryAttempt = entry.RetryAttempt,
+            // The lengths mirror the column widths. SQLite does not enforce them and the other engines
+            // would throw, so truncating here keeps behaviour identical across backends: an over-long
+            // subject shortens the log entry rather than losing the whole row.
+            FromAddress = Trunc(entry.FromAddress, 512) ?? "",
+            FromDomain = Trunc(entry.FromDomain, 255) ?? "",
             ToAddresses = JsonSerializer.Serialize(entry.ToAddresses),
-            ToDomain = Trunc(entry.ToDomain, 255),
-            Subject = Trunc(entry.Subject ?? "", 998),
-            entry.SizeBytes,
-            entry.RelayId,
+            ToDomain = Trunc(entry.ToDomain, 255) ?? "",
+            Subject = Trunc(entry.Subject ?? "", 998) ?? "",
+            SizeBytes = entry.SizeBytes,
+            RelayId = entry.RelayId,
             RelayName = Trunc(entry.RelayName, 128),
-            entry.RoutingRuleId,
+            RoutingRuleId = entry.RoutingRuleId,
             RoutingRuleName = Trunc(entry.RoutingRuleName, 128),
-            entry.RoutingMatched,
+            RoutingMatched = entry.RoutingMatched,
             Provider = Trunc(entry.Provider, 64),
             ProviderMessageId = Trunc(entry.ProviderMessageId, 256),
-            entry.ProviderResponse,
-            entry.DurationMs,
-            entry.Error,
-            IngestSource = Trunc(entry.IngestSource, 16),
+            ProviderResponse = entry.ProviderResponse,
+            DurationMs = entry.DurationMs,
+            Error = entry.Error,
+            IngestSource = Trunc(entry.IngestSource, 16) ?? "SMTP",
             SourceIp = Trunc(entry.SourceIp, 64),
-            entry.ApiKeyId,
+            ApiKeyId = entry.ApiKeyId,
             ApiKeyName = Trunc(entry.ApiKeyName, 256),
             Tags = entry.Tags is { Count: > 0 } ? JsonSerializer.Serialize(entry.Tags) : null,
             XMailer = Trunc(entry.XMailer, 256),
-            entry.AttachmentCount,
-        }, cancellationToken: ct));
+            AttachmentCount = entry.AttachmentCount,
+        });
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static string? Trunc(string? value, int max) =>

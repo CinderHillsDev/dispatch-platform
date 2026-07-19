@@ -35,6 +35,8 @@ public sealed class PostgresDatabaseProvider : IDatabaseProvider
 
     public string UtcNowSql => "now()";
 
+    public string? DefaultCollation => null;
+
     public string? IndexFilter(IndexPredicate predicate) => predicate switch
     {
         IndexPredicate.DefaultRelay => "is_default",

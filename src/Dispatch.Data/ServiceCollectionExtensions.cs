@@ -5,6 +5,7 @@ using Dispatch.Core.Logging;
 using Dispatch.Core.Relays;
 using Dispatch.Core.Routing;
 using Dispatch.Core.Smtp;
+using Dispatch.Data.Providers;
 using Dispatch.Data.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -31,11 +32,9 @@ public static class ServiceCollectionExtensions
         services.AddDbContextFactory<DispatchDbContext>(o =>
             DispatchDbContextFactory.Configure(o, provider, connectionString));
 
-        services.AddSingleton(sp => new SqlConnectionFactory(
-            connectionString,
-            SqlConnectionFactory.CreateDialect(
-                connectionString,
-                sp.GetService<ILoggerFactory>()?.CreateLogger("Dispatch.Data"))));
+        // The repositories reach the engine only through this, for the few things EF cannot express.
+        services.AddSingleton(DatabaseProviders.Get(provider));
+
         services.AddSingleton<DatabaseInitializer>();
 
         services.AddSingleton<SqlLogRepository>();

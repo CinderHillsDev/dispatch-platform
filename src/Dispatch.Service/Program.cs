@@ -67,13 +67,13 @@ try
     var dbProvider = DatabaseProviderResolver.Resolve(
         connectionString, builder.Configuration["Database:Provider"]);
 
-    var bootstrapFactory = new SqlConnectionFactory(connectionString);
-    var bootstrapRepo = new SqlConfigRepository(bootstrapFactory);
+    var bootstrapContexts = DispatchDbContextFactory.Create(dbProvider, connectionString);
+    var bootstrapRepo = new SqlConfigRepository(bootstrapContexts);
     var configCache = new ConfigCache();
     try
     {
         await new DatabaseInitializer(
-            DispatchDbContextFactory.Create(dbProvider, connectionString),
+            bootstrapContexts,
             new DatabaseBootstrap(dbProvider, connectionString,
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseBootstrap>.Instance),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseInitializer>.Instance).InitializeAsync();
@@ -337,7 +337,9 @@ static async Task<int> ResetAdminPasswordAsync(IConfiguration cfg)
 
     try
     {
-        var repo = new SqlConfigRepository(new SqlConnectionFactory(cs));
+        // Resolve the engine the same way startup does, so this works whichever backend is configured.
+        var provider = DatabaseProviderResolver.Resolve(cs, cfg["Database:Provider"]);
+        var repo = new SqlConfigRepository(DispatchDbContextFactory.Create(provider, cs));
         await repo.SetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey,
             BCrypt.Net.BCrypt.HashPassword(pw, 12), encrypted: false);
     }

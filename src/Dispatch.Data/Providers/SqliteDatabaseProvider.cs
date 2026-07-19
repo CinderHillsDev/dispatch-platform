@@ -49,6 +49,8 @@ public sealed class SqliteDatabaseProvider : IDatabaseProvider
 
     public string UtcNowSql => "CURRENT_TIMESTAMP";
 
+    public string? DefaultCollation => null;
+
     public string? IndexFilter(IndexPredicate predicate) => predicate switch
     {
         IndexPredicate.DefaultRelay => "is_default",

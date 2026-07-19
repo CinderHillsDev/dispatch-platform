@@ -1,42 +1,65 @@
-using Dapper;
 using Dispatch.Core.Configuration;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Dispatch.Data.Repositories;
 
 /// <summary>Key/value config store with transparent encryption for sensitive rows (spec §12.3, §19.5).</summary>
-public sealed class SqlConfigRepository(SqlConnectionFactory factory, ILogger<SqlConfigRepository>? logger = null) : IConfigRepository
+public sealed class SqlConfigRepository(
+    IDbContextFactory<DispatchDbContext> contexts,
+    ILogger<SqlConfigRepository>? logger = null) : IConfigRepository
 {
     private readonly ILogger _log = logger ?? NullLogger<SqlConfigRepository>.Instance;
 
     public async Task<string?> GetAsync(string key, CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        var row = await cn.QuerySingleOrDefaultAsync<(string Value, bool Encrypted)?>(
-            new CommandDefinition("SELECT value AS Value, encrypted AS Encrypted FROM config WHERE \"key\" = @key",
-                new { key }, cancellationToken: ct));
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var row = await db.Config.AsNoTracking()
+            .Where(c => c.Key == key)
+            .Select(c => new { c.Value, c.Encrypted })
+            .SingleOrDefaultAsync(ct);
+
         if (row is null) return null;
-        return row.Value.Encrypted ? TryDecrypt(key, row.Value.Value) : row.Value.Value;
+        return row.Encrypted ? TryDecrypt(key, row.Value) : row.Value;
     }
 
+    /// <summary>
+    /// Upsert by key. Written as read-then-write rather than a provider-specific UPSERT because config
+    /// writes are administrative and uncontended - unlike the relay counters, where concurrent workers make
+    /// a single atomic statement mandatory (see IDatabaseProvider.CounterUpsertSql).
+    /// </summary>
     public async Task SetAsync(string key, string value, bool encrypted = false, CancellationToken ct = default)
     {
         var stored = encrypted ? SecureConfig.Encrypt(value) : value;
-        const string sql = """
-            INSERT INTO config ("key", value, encrypted) VALUES (@key, @stored, @encrypted)
-            ON CONFLICT ("key") DO UPDATE SET value = @stored, encrypted = @encrypted, updated_at = CURRENT_TIMESTAMP;
-            """;
-        await using var cn = await factory.OpenAsync(ct);
-        await cn.ExecuteAsync(new CommandDefinition(sql, new { key, stored, encrypted }, cancellationToken: ct));
+
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var existing = await db.Config.SingleOrDefaultAsync(c => c.Key == key, ct);
+        if (existing is null)
+        {
+            db.Config.Add(new ConfigEntity
+            {
+                Key = key,
+                Value = stored,
+                Encrypted = encrypted,
+                UpdatedAt = DateTime.UtcNow,
+            });
+        }
+        else
+        {
+            existing.Value = stored;
+            existing.Encrypted = encrypted;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task<IReadOnlyList<ConfigEntry>> GetAllAsync(CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        var rows = await cn.QueryAsync<(string Key, string Value, bool Encrypted, DateTime UpdatedAt)>(
-            new CommandDefinition("SELECT \"key\" AS \"Key\", value AS Value, encrypted AS Encrypted, updated_at AS UpdatedAt FROM config",
-                cancellationToken: ct));
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var rows = await db.Config.AsNoTracking().ToListAsync(ct);
+
         return rows
             .Select(r => new ConfigEntry(r.Key, r.Encrypted ? TryDecrypt(r.Key, r.Value) ?? "" : r.Value, r.Encrypted, r.UpdatedAt))
             .ToList();

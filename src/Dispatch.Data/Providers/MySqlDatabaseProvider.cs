@@ -81,6 +81,8 @@ public sealed class MySqlDatabaseProvider : IDatabaseProvider
     public string UtcNowSql => "UTC_TIMESTAMP()";
 
     /// <summary>No filtered indexes on any MySQL or MariaDB version. Callers handle null.</summary>
+    public string? DefaultCollation => "utf8mb4_bin";
+
     public string? IndexFilter(IndexPredicate predicate) => null;
 
     public string? CoveringIndexAnnotation => null;
