@@ -25,8 +25,10 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .HasColumnName("id");
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<string>("KeyHash")
                         .IsRequired()
@@ -126,8 +128,10 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .HasColumnName("kind");
 
                     b.Property<DateTime>("LoggedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
-                        .HasColumnName("logged_at");
+                        .HasColumnName("logged_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<string>("Severity")
                         .IsRequired()
@@ -169,8 +173,10 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .HasColumnName("encrypted");
 
                     b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
-                        .HasColumnName("updated_at");
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<string>("Value")
                         .IsRequired()
@@ -248,8 +254,10 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .HasColumnName("id");
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
@@ -288,8 +296,10 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .HasColumnName("provider");
 
                     b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
-                        .HasColumnName("updated_at");
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.HasKey("Id");
 
@@ -361,8 +371,10 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .HasColumnName("ingest_source");
 
                     b.Property<DateTime>("LoggedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
-                        .HasColumnName("logged_at");
+                        .HasColumnName("logged_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<string>("Provider")
                         .HasMaxLength(64)
@@ -505,8 +517,10 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .HasColumnName("id");
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
@@ -556,8 +570,10 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .HasColumnName("id");
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
                     b.Property<DateTime?>("LastUsedAt")
                         .HasColumnType("TEXT")

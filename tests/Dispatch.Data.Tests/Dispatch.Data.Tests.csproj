@@ -11,6 +11,9 @@
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Dapper" Version="2.1.79" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.18" />
+    <PackageReference Include="MySqlConnector" Version="2.4.0" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
@@ -26,6 +29,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dispatch.Core\Dispatch.Core.csproj" />
     <ProjectReference Include="..\..\src\Dispatch.Data\Dispatch.Data.csproj" />
+    <ProjectReference Include="..\..\src\Dispatch.Data.MySql\Dispatch.Data.MySql.csproj" />
+    <ProjectReference Include="..\..\src\Dispatch.Data.Postgres\Dispatch.Data.Postgres.csproj" />
+    <ProjectReference Include="..\..\src\Dispatch.Data.Sqlite\Dispatch.Data.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Dispatch.Data.SqlServer\Dispatch.Data.SqlServer.csproj" />
   </ItemGroup>
 
 </Project>

@@ -32,8 +32,10 @@ namespace Dispatch.Data.SqlServer.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("KeyHash")
                         .IsRequired()
@@ -135,8 +137,10 @@ namespace Dispatch.Data.SqlServer.Migrations
                         .HasColumnName("kind");
 
                     b.Property<DateTime>("LoggedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasColumnName("logged_at");
+                        .HasColumnName("logged_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("Severity")
                         .IsRequired()
@@ -178,8 +182,10 @@ namespace Dispatch.Data.SqlServer.Migrations
                         .HasColumnName("encrypted");
 
                     b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasColumnName("updated_at");
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("Value")
                         .IsRequired()
@@ -261,8 +267,10 @@ namespace Dispatch.Data.SqlServer.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
@@ -301,8 +309,10 @@ namespace Dispatch.Data.SqlServer.Migrations
                         .HasColumnName("provider");
 
                     b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasColumnName("updated_at");
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.HasKey("Id");
 
@@ -376,8 +386,10 @@ namespace Dispatch.Data.SqlServer.Migrations
                         .HasColumnName("ingest_source");
 
                     b.Property<DateTime>("LoggedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasColumnName("logged_at");
+                        .HasColumnName("logged_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("Provider")
                         .HasMaxLength(64)
@@ -528,8 +540,10 @@ namespace Dispatch.Data.SqlServer.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
@@ -581,8 +595,10 @@ namespace Dispatch.Data.SqlServer.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<DateTime?>("LastUsedAt")
                         .HasColumnType("datetime2")

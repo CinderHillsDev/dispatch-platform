@@ -27,7 +27,7 @@ namespace Dispatch.Data.MySql.Migrations
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     name = table.Column<string>(type: "varchar(256)", maxLength: 256, nullable: false)
                         .Annotation("MySql:CharSet", "utf8mb4"),
-                    created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()"),
                     last_used_at = table.Column<DateTime>(type: "datetime(6)", nullable: true),
                     message_count = table.Column<long>(type: "bigint", nullable: false, defaultValue: 0L),
                     revoked = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: false),
@@ -48,7 +48,7 @@ namespace Dispatch.Data.MySql.Migrations
                 {
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    logged_at = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    logged_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()"),
                     kind = table.Column<string>(type: "varchar(16)", maxLength: 16, nullable: false)
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     category = table.Column<string>(type: "varchar(32)", maxLength: 32, nullable: false)
@@ -79,7 +79,7 @@ namespace Dispatch.Data.MySql.Migrations
                     value = table.Column<string>(type: "longtext", nullable: false)
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     encrypted = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: false),
-                    updated_at = table.Column<DateTime>(type: "datetime(6)", nullable: false)
+                    updated_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()")
                 },
                 constraints: table =>
                 {
@@ -97,7 +97,7 @@ namespace Dispatch.Data.MySql.Migrations
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     password_hash = table.Column<string>(type: "varchar(512)", maxLength: 512, nullable: false)
                         .Annotation("MySql:CharSet", "utf8mb4"),
-                    created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()"),
                     last_used_at = table.Column<DateTime>(type: "datetime(6)", nullable: true)
                 },
                 constraints: table =>
@@ -140,8 +140,8 @@ namespace Dispatch.Data.MySql.Migrations
                     enabled = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: true),
                     max_concurrency = table.Column<int>(type: "int", nullable: false, defaultValue: 4),
                     max_message_bytes = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
-                    created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "datetime(6)", nullable: false)
+                    created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()"),
+                    updated_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()")
                 },
                 constraints: table =>
                 {
@@ -164,7 +164,7 @@ namespace Dispatch.Data.MySql.Migrations
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     relay_id = table.Column<int>(type: "int", nullable: false),
                     enabled = table.Column<bool>(type: "tinyint(1)", nullable: false, defaultValue: true),
-                    created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false)
+                    created_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()")
                 },
                 constraints: table =>
                 {
@@ -184,7 +184,7 @@ namespace Dispatch.Data.MySql.Migrations
                 {
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
-                    logged_at = table.Column<DateTime>(type: "datetime(6)", nullable: false),
+                    logged_at = table.Column<DateTime>(type: "datetime(6)", nullable: false, defaultValueSql: "UTC_TIMESTAMP()"),
                     spool_id = table.Column<string>(type: "varchar(64)", maxLength: 64, nullable: false)
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     @event = table.Column<string>(name: "event", type: "varchar(32)", maxLength: 32, nullable: false)

@@ -54,12 +54,20 @@ try
     var connectionString = builder.Configuration.GetConnectionString("DispatchLog")
         ?? throw new InvalidOperationException("ConnectionStrings:DispatchLog is not configured.");
 
+    // The engine is resolved from the connection string, with Database:Provider winning when set --
+    // "Server=h;Database=d;User Id=u" is valid for both SQL Server and MySQL and cannot be sniffed.
+    var dbProvider = DatabaseProviderResolver.Resolve(
+        connectionString, builder.Configuration["Database:Provider"]);
+
     var bootstrapFactory = new SqlConnectionFactory(connectionString);
     var bootstrapRepo = new SqlConfigRepository(bootstrapFactory);
     var configCache = new ConfigCache();
     try
     {
-        await new DatabaseInitializer(bootstrapFactory,
+        await new DatabaseInitializer(
+            DispatchDbContextFactory.Create(dbProvider, connectionString),
+            new DatabaseBootstrap(dbProvider, connectionString,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseBootstrap>.Instance),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseInitializer>.Instance).InitializeAsync();
         await ConfigDefaults.SeedAsync(bootstrapRepo);
         await configCache.LoadAsync(bootstrapRepo);
@@ -183,7 +191,7 @@ try
     builder.Services.AddSingleton<ConfiguredUserAuthenticator>();
 
     // SQL persistence (relay_log, relay_counters, relays, config, api_keys, message-log queries).
-    builder.Services.AddDispatchData(connectionString);
+    builder.Services.AddDispatchData(connectionString, builder.Configuration["Database:Provider"]);
 
     // The dashboard listener is always HTTPS (configured or self-signed cert), so enforce Secure cookies +
     // HSTS in any non-Development run. In Development the dashboard is reached via the Vite proxy over plain

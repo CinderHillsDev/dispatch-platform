@@ -32,8 +32,10 @@ namespace Dispatch.Data.MySql.Migrations
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("UTC_TIMESTAMP()");
 
                     b.Property<string>("KeyHash")
                         .IsRequired()
@@ -132,8 +134,10 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnName("kind");
 
                     b.Property<DateTime>("LoggedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("logged_at");
+                        .HasColumnName("logged_at")
+                        .HasDefaultValueSql("UTC_TIMESTAMP()");
 
                     b.Property<string>("Severity")
                         .IsRequired()
@@ -175,8 +179,10 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnName("encrypted");
 
                     b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("updated_at");
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("UTC_TIMESTAMP()");
 
                     b.Property<string>("Value")
                         .IsRequired()
@@ -258,8 +264,10 @@ namespace Dispatch.Data.MySql.Migrations
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("UTC_TIMESTAMP()");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
@@ -298,8 +306,10 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnName("provider");
 
                     b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("updated_at");
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("UTC_TIMESTAMP()");
 
                     b.HasKey("Id");
 
@@ -368,8 +378,10 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnName("ingest_source");
 
                     b.Property<DateTime>("LoggedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("logged_at");
+                        .HasColumnName("logged_at")
+                        .HasDefaultValueSql("UTC_TIMESTAMP()");
 
                     b.Property<string>("Provider")
                         .HasMaxLength(64)
@@ -513,8 +525,10 @@ namespace Dispatch.Data.MySql.Migrations
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("UTC_TIMESTAMP()");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
@@ -566,8 +580,10 @@ namespace Dispatch.Data.MySql.Migrations
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at");
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("UTC_TIMESTAMP()");
 
                     b.Property<DateTime?>("LastUsedAt")
                         .HasColumnType("datetime(6)")

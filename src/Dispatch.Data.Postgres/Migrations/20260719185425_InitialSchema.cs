@@ -21,7 +21,7 @@ namespace Dispatch.Data.Postgres.Migrations
                     key_id = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
                     key_hash = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false),
                     name = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                     last_used_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     message_count = table.Column<long>(type: "bigint", nullable: false, defaultValue: 0L),
                     revoked = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
@@ -40,7 +40,7 @@ namespace Dispatch.Data.Postgres.Migrations
                 {
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    logged_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    logged_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                     kind = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
                     category = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
                     @event = table.Column<string>(name: "event", type: "character varying(128)", maxLength: 128, nullable: false),
@@ -61,7 +61,7 @@ namespace Dispatch.Data.Postgres.Migrations
                     key = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
                     value = table.Column<string>(type: "text", nullable: false),
                     encrypted = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
@@ -76,7 +76,7 @@ namespace Dispatch.Data.Postgres.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     username = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                     password_hash = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                     last_used_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
@@ -115,8 +115,8 @@ namespace Dispatch.Data.Postgres.Migrations
                     enabled = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
                     max_concurrency = table.Column<int>(type: "integer", nullable: false, defaultValue: 4),
                     max_message_bytes = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
@@ -135,7 +135,7 @@ namespace Dispatch.Data.Postgres.Migrations
                     sender_pattern = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
                     relay_id = table.Column<int>(type: "integer", nullable: false),
                     enabled = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
                 },
                 constraints: table =>
                 {
@@ -154,7 +154,7 @@ namespace Dispatch.Data.Postgres.Migrations
                 {
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    logged_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    logged_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                     spool_id = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     @event = table.Column<string>(name: "event", type: "character varying(32)", maxLength: 32, nullable: false),
                     status = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),

@@ -41,7 +41,7 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.Property(x => x.Key).HasColumnName("key").HasMaxLength(128);
             e.Property(x => x.Value).HasColumnName("value").IsRequired();
             e.Property(x => x.Encrypted).HasColumnName("encrypted").HasDefaultValue(false);
-            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql(UtcNowSql());
         });
 
         b.Entity<RelayEntity>(e =>
@@ -55,8 +55,8 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.Property(x => x.Enabled).HasColumnName("enabled").HasDefaultValue(true);
             e.Property(x => x.MaxConcurrency).HasColumnName("max_concurrency").HasDefaultValue(4);
             e.Property(x => x.MaxMessageBytes).HasColumnName("max_message_bytes").HasDefaultValue(0);
-            e.Property(x => x.CreatedAt).HasColumnName("created_at");
-            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql(UtcNowSql());
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql(UtcNowSql());
             e.HasIndex(x => x.Name).IsUnique();
 
             // At most one default relay, enforced by a unique index over only the rows where is_default is
@@ -79,7 +79,7 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.Property(x => x.SenderPattern).HasColumnName("sender_pattern").HasMaxLength(256);
             e.Property(x => x.RelayId).HasColumnName("relay_id");
             e.Property(x => x.Enabled).HasColumnName("enabled").HasDefaultValue(true);
-            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql(UtcNowSql());
             e.HasIndex(x => x.Priority).IsUnique();
             e.HasOne<RelayEntity>().WithMany().HasForeignKey(x => x.RelayId);
         });
@@ -92,7 +92,7 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.Property(x => x.KeyId).HasColumnName("key_id").HasMaxLength(32).IsRequired();
             e.Property(x => x.KeyHash).HasColumnName("key_hash").HasMaxLength(512).IsRequired();
             e.Property(x => x.Name).HasColumnName("name").HasMaxLength(256).IsRequired();
-            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql(UtcNowSql());
             e.Property(x => x.LastUsedAt).HasColumnName("last_used_at");
             e.Property(x => x.MessageCount).HasColumnName("message_count").HasDefaultValue(0L);
             e.Property(x => x.Revoked).HasColumnName("revoked").HasDefaultValue(false);
@@ -140,7 +140,7 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.ToTable("relay_log");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
-            e.Property(x => x.LoggedAt).HasColumnName("logged_at");
+            e.Property(x => x.LoggedAt).HasColumnName("logged_at").HasDefaultValueSql(UtcNowSql());
             e.Property(x => x.SpoolId).HasColumnName("spool_id").HasMaxLength(64).IsRequired();
             e.Property(x => x.Event).HasColumnName("event").HasMaxLength(32).IsRequired();
             e.Property(x => x.Status).HasColumnName("status").HasMaxLength(16).IsRequired();
@@ -215,7 +215,7 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
             e.Property(x => x.Username).HasColumnName("username").HasMaxLength(256).IsRequired();
             e.Property(x => x.PasswordHash).HasColumnName("password_hash").HasMaxLength(512).IsRequired();
-            e.Property(x => x.CreatedAt).HasColumnName("created_at");
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").HasDefaultValueSql(UtcNowSql());
             e.Property(x => x.LastUsedAt).HasColumnName("last_used_at");
             e.HasIndex(x => x.Username).IsUnique();
         });
@@ -225,7 +225,7 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.ToTable("audit_log");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).HasColumnName("id").ValueGeneratedOnAdd();
-            e.Property(x => x.LoggedAt).HasColumnName("logged_at");
+            e.Property(x => x.LoggedAt).HasColumnName("logged_at").HasDefaultValueSql(UtcNowSql());
             e.Property(x => x.Kind).HasColumnName("kind").HasMaxLength(16).IsRequired();
             e.Property(x => x.Category).HasColumnName("category").HasMaxLength(32).IsRequired();
             e.Property(x => x.Event).HasColumnName("event").HasMaxLength(128).IsRequired();
@@ -238,6 +238,23 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.HasIndex(x => new { x.Kind, x.LoggedAt }).HasDatabaseName("IX_audit_log_kind").IsDescending(false, true);
         });
     }
+
+    /// <summary>
+    /// SQL for "now, in UTC" as a column default.
+    ///
+    /// This is NOT the same expression everywhere, and getting it wrong is silent: CURRENT_TIMESTAMP
+    /// returns *local server time* on SQL Server and MySQL/MariaDB, and UTC on SQLite and Postgres. Dispatch
+    /// stores UTC throughout, so on a server in a non-UTC timezone the portable-looking spelling would write
+    /// skewed timestamps that still look plausible — wrong ordering, wrong retention, no error.
+    /// </summary>
+    private string UtcNowSql() => Provider switch
+    {
+        DbProvider.Postgres => "now()",
+        DbProvider.Sqlite => "CURRENT_TIMESTAMP",
+        DbProvider.SqlServer => "SYSUTCDATETIME()",
+        DbProvider.MySql => "UTC_TIMESTAMP()",
+        _ => throw new InvalidOperationException("Unsupported provider."),
+    };
 
     // ---- Covering-index payloads ------------------------------------------------------------------
     //

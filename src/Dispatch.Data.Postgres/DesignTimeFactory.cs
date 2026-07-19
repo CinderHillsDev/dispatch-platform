@@ -13,7 +13,7 @@ public sealed class DesignTimeFactory : IDesignTimeDbContextFactory<DispatchDbCo
 {
     public DispatchDbContext CreateDbContext(string[] args) =>
         new(new DbContextOptionsBuilder<DispatchDbContext>()
-            .UseNpgsql("Host=localhost;Database=DispatchDesignTime",
+            .UseNpgsql("Host=localhost;Port=55432;Database=efprobe3;Username=postgres;Password=testpass",
                 o => o.MigrationsAssembly(typeof(DesignTimeFactory).Assembly.GetName().Name))
             .Options);
 }

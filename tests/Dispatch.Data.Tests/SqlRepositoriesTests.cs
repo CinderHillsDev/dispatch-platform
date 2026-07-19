@@ -1,4 +1,5 @@
 using Dapper;
+using Microsoft.EntityFrameworkCore;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
 using Dispatch.Data.Repositories;
@@ -26,12 +27,20 @@ public class SqlRepositoriesTests(DatabaseFixture sql) : IClassFixture<DatabaseF
         if (!sql.Available) return;
         await using var cn = await sql.Factory.OpenAsync();
 
-        // All embedded migrations applied (0001_init, 0002_relay_log_indexes, 0003_drop_unconfigured_default).
-        var version = await cn.ExecuteScalarAsync<int>("SELECT MAX(version) FROM schema_version");
-        Assert.True(version >= 3, $"expected at least migration 3 applied, got {version}");
+        // The schema is current: every migration in this provider's assembly has been applied and none is
+        // pending. (Versions used to be tracked in a hand-rolled schema_version table; EF records them in
+        // __EFMigrationsHistory, so this asks the initializer rather than reading the table directly.)
+        await using (var db = await sql.Contexts.CreateDbContextAsync())
+        {
+            var applied = await db.Database.GetAppliedMigrationsAsync();
+            var pending = await db.Database.GetPendingMigrationsAsync();
+            Assert.NotEmpty(applied);
+            Assert.Empty(pending);
+        }
 
-        // Migration 0003 removed the seeded "Unconfigured" placeholder relay - the first-run wizard creates
-        // the first real relay (which becomes the catch-all). No placeholder should remain.
+        // The old 0001 seeded an "Unconfigured" placeholder relay that 0003 then removed, because an empty
+        // relay you must go and edit confused first-run users. The first-run wizard creates the first real
+        // relay instead, and that becomes the catch-all. No placeholder should exist on a fresh database.
         var placeholders = await cn.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM relays WHERE provider = 'Unconfigured' AND is_default");
         Assert.Equal(0, placeholders);

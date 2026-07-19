@@ -1,99 +1,125 @@
-using Dapper;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Data;
 
 /// <summary>
-/// Ensures the target database exists and applies ordered, embedded SQL migrations once each,
-/// tracking applied versions in <c>schema_version</c> (spec §6.11, §12). Idempotent and safe to
-/// run on every startup.
+/// Brings the database up to the current schema on every startup. Idempotent, and safe to run against a
+/// brand-new database, an already-current one, or one created by the pre-EF hand-written migrations.
 ///
-/// Migrations are per-engine: the DDL dialects diverge enough (identity columns, INCLUDE indexes,
-/// DROP CONSTRAINT, timestamp types) that sharing one set would mean a translation layer more fragile
-/// than two readable files. Both sets carry the same version numbers and the same meaning at each
-/// version, so schema_version is comparable across engines.
+/// Three cases, in the order they are checked:
+///
+///  1. <b>Already on EF migrations</b> — __EFMigrationsHistory exists. Apply whatever is pending. The
+///     normal path.
+///
+///  2. <b>Pre-EF database</b> — schema_version exists but __EFMigrationsHistory does not. These are live
+///     PostgreSQL deployments created by Migrations/Postgres/0001-0007. Their tables already hold data, so
+///     running InitialSchema would fail on "relation already exists" and, if it somehow succeeded, would be
+///     catastrophic. Instead the baseline is recorded as already-applied and later migrations proceed
+///     normally. This is only sound because the EF model was verified to produce the same schema those
+///     scripts do (83/83 columns, 27/28 indexes, the difference being an FK index EF adds by convention).
+///
+///  3. <b>Empty database</b> — neither table. Apply everything from scratch.
 /// </summary>
-public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<DatabaseInitializer> log)
+public sealed class DatabaseInitializer(
+    IDbContextFactory<DispatchDbContext> contexts,
+    DatabaseBootstrap bootstrap,
+    ILogger<DatabaseInitializer> log)
 {
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        await factory.Dialect.EnsureDatabaseAsync(factory.ConnectionString, ct);
-        await EnsureSchemaVersionTableAsync(ct);
-        await ApplyMigrationsAsync(ct);
-    }
+        // Create the database/file and wait for the server to accept connections. EF's MigrateAsync can
+        // create a database, but not a PostgreSQL one it lacks permission to create, and it will not wait
+        // for a container that is still starting.
+        await bootstrap.EnsureDatabaseAsync(ct);
 
-    private async Task EnsureSchemaVersionTableAsync(CancellationToken ct)
-    {
-        await using var cn = await factory.OpenAsync(ct);
-        // Written in the portable subset so one statement serves both engines: TEXT/varchar and
-        // int/INTEGER are compatible declarations, and CURRENT_TIMESTAMP exists in both.
-        await cn.ExecuteAsync(new CommandDefinition("""
-            CREATE TABLE IF NOT EXISTS schema_version (
-                version     int  NOT NULL PRIMARY KEY,
-                script_name text NOT NULL,
-                applied_at  text NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            """, cancellationToken: ct));
-    }
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var provider = db.Database.ProviderName;
 
-    private async Task ApplyMigrationsAsync(CancellationToken ct)
-    {
-        await using var cn = await factory.OpenAsync(ct);
-        var applied = (await cn.QueryAsync<int>(new CommandDefinition(
-            "SELECT version FROM schema_version", cancellationToken: ct))).ToHashSet();
-
-        foreach (var (version, name, sql) in LoadMigrations(factory.Dialect.Name))
+        var applied = (await db.Database.GetAppliedMigrationsAsync(ct)).ToList();
+        if (applied.Count == 0 && await HasLegacySchemaAsync(db, ct))
         {
-            if (applied.Contains(version))
-                continue;
-
-            await using var tx = await cn.BeginTransactionAsync(ct);
-            try
-            {
-                await cn.ExecuteAsync(new CommandDefinition(sql, transaction: tx, cancellationToken: ct));
-                await cn.ExecuteAsync(new CommandDefinition(
-                    "INSERT INTO schema_version (version, script_name) VALUES (@version, @name)",
-                    new { version, name }, tx, cancellationToken: ct));
-                await tx.CommitAsync(ct);
-                log.LogInformation("Applied migration {Version} ({Name}) [{Engine}]", version, name, factory.Dialect.Name);
-            }
-            catch
-            {
-                await tx.RollbackAsync(ct);
-                throw;
-            }
+            await AdoptLegacySchemaAsync(db, ct);
+            log.LogInformation(
+                "Adopted an existing pre-EF schema: recorded the baseline migration as applied without " +
+                "re-creating tables. [{Provider}]", provider);
         }
+
+        var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
+        if (pending.Count == 0)
+        {
+            log.LogInformation("Database schema is current. [{Provider}]", provider);
+            return;
+        }
+
+        log.LogInformation("Applying {Count} migration(s): {Migrations} [{Provider}]",
+            pending.Count, string.Join(", ", pending), provider);
+        await db.Database.MigrateAsync(ct);
     }
 
     /// <summary>
-    /// Loads the embedded migrations for one engine. Resource names look like
-    /// "Dispatch.Data.Migrations.Sqlite.0001_init.sql", so the engine name selects the folder.
+    /// True when this database was created by the pre-EF migration runner — schema_version present, and at
+    /// least one real table alongside it (so an orphaned schema_version from a failed run is not mistaken
+    /// for a populated schema and used to skip creating everything).
     /// </summary>
-    internal static IEnumerable<(int Version, string Name, string Sql)> LoadMigrations(string engine)
+    private static async Task<bool> HasLegacySchemaAsync(DispatchDbContext db, CancellationToken ct)
     {
-        var asm = typeof(DatabaseInitializer).Assembly;
-        var prefix = $".Migrations.{engine}.";
-        var migrations = new List<(int, string, string)>();
+        var tables = await ExistingTablesAsync(db, ct);
+        return tables.Contains("schema_version") && tables.Contains("relay_log");
+    }
 
-        foreach (var resource in asm.GetManifestResourceNames())
+    private async Task AdoptLegacySchemaAsync(DispatchDbContext db, CancellationToken ct)
+    {
+        var baseline = db.Database.GetMigrations().FirstOrDefault()
+            ?? throw new InvalidOperationException("No migrations found in the provider's migrations assembly.");
+
+        // EF's own history repository, so the table is created with the shape and quoting this provider
+        // expects rather than hand-written DDL that would differ per engine.
+        var history = db.GetService<IHistoryRepository>();
+        var createScript = history.GetCreateIfNotExistsScript();
+        await db.Database.ExecuteSqlRawAsync(createScript, ct);
+
+        var insert = history.GetInsertScript(new HistoryRow(baseline, ProductInfo.GetVersion()));
+        await db.Database.ExecuteSqlRawAsync(insert, ct);
+    }
+
+    private static async Task<HashSet<string>> ExistingTablesAsync(DispatchDbContext db, CancellationToken ct)
+    {
+        // information_schema covers Postgres, MySQL/MariaDB and SQL Server; SQLite has sqlite_master
+        // instead. Each needs a different way to say "the current database's own tables" — without that
+        // restriction, MySQL would list every table on the server and SQL Server would include system
+        // schemas, so an unrelated database could make this claim a legacy schema exists.
+        var sql = db.Database.ProviderName switch
         {
-            var idx = resource.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
-            if (idx < 0 || !resource.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
-                continue;
+            "Microsoft.EntityFrameworkCore.Sqlite" =>
+                "SELECT name FROM sqlite_master WHERE type = 'table'",
+            "Npgsql.EntityFrameworkCore.PostgreSQL" =>
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
+            "Pomelo.EntityFrameworkCore.MySql" =>
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()",
+            "Microsoft.EntityFrameworkCore.SqlServer" =>
+                "SELECT table_name FROM information_schema.tables WHERE table_catalog = DB_NAME()",
+            var other => throw new InvalidOperationException($"Unsupported EF provider '{other}'."),
+        };
 
-            var name = resource[(idx + prefix.Length)..];                   // e.g. "0001_init.sql"
-            var versionText = name.Split('_', 2)[0];
-            if (!int.TryParse(versionText, out var version))
-                continue;
-
-            using var stream = asm.GetManifestResourceStream(resource)!;
-            using var reader = new StreamReader(stream);
-            migrations.Add((version, name, reader.ReadToEnd()));
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var connection = db.Database.GetDbConnection();
+        var opened = connection.State != System.Data.ConnectionState.Open;
+        if (opened) await connection.OpenAsync(ct);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                names.Add(reader.GetString(0));
         }
-
-        if (migrations.Count == 0)
-            throw new InvalidOperationException($"No embedded migrations found for engine '{engine}'.");
-
-        return migrations.OrderBy(m => m.Item1);
+        finally
+        {
+            if (opened) await connection.CloseAsync();
+        }
+        return names;
     }
 }

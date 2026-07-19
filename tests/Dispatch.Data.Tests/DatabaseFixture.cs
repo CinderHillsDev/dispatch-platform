@@ -1,36 +1,43 @@
 using Dapper;
 using Dispatch.Data;
 using Dispatch.Data.Dialects;
+using Microsoft.Data.SqlClient;
 using Microsoft.Data.Sqlite;
-using Npgsql;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using MySqlConnector;
+using Npgsql;
 
 namespace Dispatch.Data.Tests;
 
 /// <summary>
-/// Provides an isolated, migrated database for the repository integration tests, on whichever engine is
-/// selected. The same 27 tests run unchanged against both backends — that equivalence is the whole point,
-/// so a query that silently behaves differently on one engine fails the suite rather than reaching users.
+/// Provides an isolated, migrated database on whichever engine is selected, so the same repository tests
+/// run unchanged against all four backends. That equivalence is the point: a query that behaves differently
+/// on one engine fails the suite rather than reaching users.
 ///
-/// Engine selection:
-///   * <c>DISPATCH_TEST_SQL</c> set  → PostgreSQL. Creates a uniquely-named database on that server and
-///                                     drops it on dispose. This is the CI path and is unchanged.
-///   * unset                         → SQLite, in a temp file deleted on dispose.
+/// Engine selection, via <c>DISPATCH_TEST_ENGINE</c> (sqlite | postgres | sqlserver | mysql):
+///   * unset, or "sqlite"  → SQLite in a temp file. The default, so a developer with no server running
+///                           still executes the full suite instead of silently skipping it.
+///   * anything else       → that engine, using <c>DISPATCH_TEST_SQL</c> as the base connection string.
+///                           A uniquely-named database is created per run and dropped on dispose.
 ///
-/// The SQLite default means a developer with no database running still executes the full suite instead of
-/// silently skipping it. CI should run the suite twice — once with <c>DISPATCH_TEST_SQL</c> pointed at
-/// Postgres, once without — to cover both engines.
+/// For backwards compatibility, setting <c>DISPATCH_TEST_SQL</c> without <c>DISPATCH_TEST_ENGINE</c> means
+/// PostgreSQL — that is what the variable meant before other engines existed, and CI still sets it that way.
 ///
-/// <c>DISPATCH_REQUIRE_SQL</c> keeps its meaning: it asserts the PostgreSQL path is genuinely configured,
-/// so a misconfigured pipeline fails loudly instead of quietly falling back to SQLite and reporting green.
+/// <c>DISPATCH_REQUIRE_SQL</c> keeps its meaning: it asserts a server engine is genuinely configured, so a
+/// misconfigured pipeline fails loudly instead of quietly falling back to SQLite and reporting green.
 /// </summary>
 public sealed class DatabaseFixture : IAsyncLifetime
 {
     public string? ConnectionString { get; private set; }
     public bool Available => ConnectionString is not null;
+    public DatabaseProvider Provider { get; private set; } = DatabaseProvider.Sqlite;
+    public string Engine => Provider.ToString();
+
     public SqlConnectionFactory Factory => new(ConnectionString!);
-    public ISqlDialect Dialect => Factory.Dialect;
-    public string Engine => Factory.Dialect.Name;
+
+    public IDbContextFactory<DispatchDbContext> Contexts =>
+        DispatchDbContextFactory.Create(Provider, ConnectionString!);
 
     private string? _baseConnection;
     private string? _dbName;
@@ -38,53 +45,48 @@ public sealed class DatabaseFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        var engine = Environment.GetEnvironmentVariable("DISPATCH_TEST_ENGINE");
         var baseConn = Environment.GetEnvironmentVariable("DISPATCH_TEST_SQL");
 
-        if (string.IsNullOrWhiteSpace(baseConn))
+        if (string.IsNullOrWhiteSpace(engine))
+            engine = string.IsNullOrWhiteSpace(baseConn) ? "sqlite" : "postgres";
+
+        if (string.Equals(engine, "sqlite", StringComparison.OrdinalIgnoreCase))
         {
             if (IsTruthy(Environment.GetEnvironmentVariable("DISPATCH_REQUIRE_SQL")))
                 throw new InvalidOperationException(
-                    "DISPATCH_REQUIRE_SQL is set but DISPATCH_TEST_SQL is not - the PostgreSQL integration tests cannot run.");
+                    "DISPATCH_REQUIRE_SQL is set but no server engine is configured - the integration tests cannot run.");
 
+            Provider = DatabaseProvider.Sqlite;
             _sqlitePath = Path.Combine(Path.GetTempPath(), $"dispatchtest_{Guid.NewGuid():N}.db");
             ConnectionString = new SqliteConnectionStringBuilder { DataSource = _sqlitePath }.ConnectionString;
         }
         else
         {
+            if (string.IsNullOrWhiteSpace(baseConn))
+                throw new InvalidOperationException(
+                    $"DISPATCH_TEST_ENGINE is '{engine}' but DISPATCH_TEST_SQL is not set.");
+
+            Provider = DatabaseProviderResolver.Resolve(baseConn, engine);
             _baseConnection = baseConn;
-            // Postgres folds unquoted identifiers to lowercase; Guid's "N" format is already lowercase hex.
+            // Lowercase hex: Postgres folds unquoted identifiers to lowercase, and MySQL database names are
+            // case-sensitive on Linux filesystems.
             _dbName = "dispatchtest_" + Guid.NewGuid().ToString("N");
-            ConnectionString = new NpgsqlConnectionStringBuilder(baseConn) { Database = _dbName }.ConnectionString;
-            await WaitForServerAsync(TimeSpan.FromSeconds(90));
+            ConnectionString = WithDatabase(baseConn, _dbName);
         }
 
-        var initializer = new DatabaseInitializer(Factory, NullLogger<DatabaseInitializer>.Instance);
-        await initializer.InitializeAsync();
+        var bootstrap = new DatabaseBootstrap(Provider, ConnectionString, NullLogger<DatabaseBootstrap>.Instance);
+        await new DatabaseInitializer(Contexts, bootstrap, NullLogger<DatabaseInitializer>.Instance)
+            .InitializeAsync();
     }
 
-    private async Task WaitForServerAsync(TimeSpan timeout)
+    private string WithDatabase(string baseConnection, string database) => Provider switch
     {
-        var maintenance = new NpgsqlConnectionStringBuilder(_baseConnection!) { Database = "postgres", Timeout = 5 }.ConnectionString;
-        var deadline = DateTime.UtcNow + timeout;
-        Exception? last = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            try
-            {
-                await using var cn = new NpgsqlConnection(maintenance);
-                await cn.OpenAsync();
-                await cn.ExecuteAsync("SELECT 1");
-                return;
-            }
-            catch (Exception ex)
-            {
-                last = ex;
-                await Task.Delay(2000);
-            }
-        }
-        throw new InvalidOperationException(
-            $"PostgreSQL server at the DISPATCH_TEST_SQL endpoint was not reachable within {timeout.TotalSeconds:F0}s.", last);
-    }
+        DatabaseProvider.Postgres => new NpgsqlConnectionStringBuilder(baseConnection) { Database = database }.ConnectionString,
+        DatabaseProvider.SqlServer => new SqlConnectionStringBuilder(baseConnection) { InitialCatalog = database }.ConnectionString,
+        DatabaseProvider.MySql => new MySqlConnectionStringBuilder(baseConnection) { Database = database }.ConnectionString,
+        _ => throw new InvalidOperationException($"{Provider} has no server-side database to name."),
+    };
 
     private static bool IsTruthy(string? v) =>
         !string.IsNullOrEmpty(v) && !string.Equals(v, "0", StringComparison.Ordinal)
@@ -94,7 +96,7 @@ public sealed class DatabaseFixture : IAsyncLifetime
     {
         if (_sqlitePath is not null)
         {
-            // Pooled connections keep the file handle open; clear them so the delete can't race on Windows.
+            // Pooled connections keep the file handle open; clear them so the delete cannot race.
             SqliteConnection.ClearAllPools();
             foreach (var suffix in new[] { "", "-wal", "-shm" })
                 File.Delete(_sqlitePath + suffix);
@@ -103,10 +105,38 @@ public sealed class DatabaseFixture : IAsyncLifetime
 
         if (_baseConnection is null || _dbName is null) return;
 
-        var maintenance = new NpgsqlConnectionStringBuilder(_baseConnection) { Database = "postgres" }.ConnectionString;
-        await using var pg = new NpgsqlConnection(maintenance);
-        await pg.OpenAsync();
-        // FORCE (PG 13+) terminates any lingering backends so the drop can't hang on a stray connection.
-        await pg.ExecuteAsync($"DROP DATABASE IF EXISTS \"{_dbName}\" WITH (FORCE);");
+        switch (Provider)
+        {
+            case DatabaseProvider.Postgres:
+            {
+                var maintenance = new NpgsqlConnectionStringBuilder(_baseConnection) { Database = "postgres" }.ConnectionString;
+                await using var cn = new NpgsqlConnection(maintenance);
+                await cn.OpenAsync();
+                // FORCE (PG 13+) terminates lingering backends so the drop cannot hang on a stray connection.
+                await cn.ExecuteAsync($"DROP DATABASE IF EXISTS \"{_dbName}\" WITH (FORCE);");
+                break;
+            }
+            case DatabaseProvider.SqlServer:
+            {
+                var maintenance = new SqlConnectionStringBuilder(_baseConnection) { InitialCatalog = "master" }.ConnectionString;
+                SqlConnection.ClearAllPools();
+                await using var cn = new SqlConnection(maintenance);
+                await cn.OpenAsync();
+                // SINGLE_USER WITH ROLLBACK IMMEDIATE is SQL Server's equivalent of FORCE.
+                await cn.ExecuteAsync(
+                    $"IF DB_ID('{_dbName}') IS NOT NULL BEGIN " +
+                    $"ALTER DATABASE [{_dbName}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; " +
+                    $"DROP DATABASE [{_dbName}]; END");
+                break;
+            }
+            case DatabaseProvider.MySql:
+            {
+                var maintenance = new MySqlConnectionStringBuilder(_baseConnection) { Database = "" }.ConnectionString;
+                await using var cn = new MySqlConnection(maintenance);
+                await cn.OpenAsync();
+                await cn.ExecuteAsync($"DROP DATABASE IF EXISTS `{_dbName}`;");
+                break;
+            }
+        }
     }
 }

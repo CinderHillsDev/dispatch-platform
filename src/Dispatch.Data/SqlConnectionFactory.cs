@@ -42,11 +42,27 @@ public sealed class SqlConnectionFactory
     }
 
     /// <summary>
-    /// Picks the engine from the shape of the connection string, so switching backends is a config change
-    /// and existing Postgres deployments keep working untouched.
+    /// Picks the engine from the shape of the connection string.
+    ///
+    /// IN-PROGRESS: the schema layer (DispatchDbContext and the four migrations assemblies) supports
+    /// PostgreSQL, SQLite, SQL Server and MySQL/MariaDB, but the repositories still run on Dapper through
+    /// this factory and have only been ported to the first two. Until that port lands, resolving a
+    /// SQL Server or MySQL connection string here throws with an explanation rather than constructing an
+    /// Npgsql connection from it and failing later with "Couldn't set data source".
     /// </summary>
-    public static ISqlDialect CreateDialect(string connectionString, ILogger? log = null) =>
-        IsSqlite(connectionString) ? new SqliteDialect(log) : new PostgresDialect(log);
+    public static ISqlDialect CreateDialect(string connectionString, ILogger? log = null)
+    {
+        var provider = DatabaseProviderResolver.Resolve(connectionString);
+        return provider switch
+        {
+            DatabaseProvider.Sqlite => new SqliteDialect(log),
+            DatabaseProvider.Postgres => new PostgresDialect(log),
+            _ => throw new NotSupportedException(
+                $"The {provider} backend is not usable yet: its schema and migrations exist, but the " +
+                "repositories have not been ported off the PostgreSQL/SQLite-only data layer. " +
+                "Use Sqlite or Postgres for now."),
+        };
+    }
 
     /// <summary>
     /// A SQLite connection string is identified by a file-source keyword with no server keywords alongside

@@ -23,6 +23,24 @@ public static class DispatchDbContextFactory
         _ => throw new ArgumentOutOfRangeException(nameof(provider)),
     };
 
+    /// <summary>
+    /// Builds a standalone context factory for a connection string, outside dependency injection — used by
+    /// tests, the migration bootstrap and tooling. Application code gets its factory from DI instead
+    /// (AddDispatchData), which shares one configured instance.
+    /// </summary>
+    public static IDbContextFactory<DispatchDbContext> Create(DatabaseProvider provider, string connectionString)
+    {
+        var builder = new DbContextOptionsBuilder<DispatchDbContext>();
+        Configure(builder, provider, connectionString);
+        return new OptionsFactory(builder.Options);
+    }
+
+    private sealed class OptionsFactory(DbContextOptions<DispatchDbContext> options)
+        : IDbContextFactory<DispatchDbContext>
+    {
+        public DispatchDbContext CreateDbContext() => new(options);
+    }
+
     public static DbContextOptionsBuilder Configure(
         DbContextOptionsBuilder builder, DatabaseProvider provider, string connectionString)
     {

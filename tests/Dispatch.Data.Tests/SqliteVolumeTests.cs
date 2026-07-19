@@ -2,6 +2,8 @@ using System.Diagnostics;
 using Dapper;
 using Dispatch.Core.Logging;
 using Dispatch.Data.Repositories;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Dispatch.Data.Tests;
 
@@ -41,7 +43,10 @@ public class SqliteVolumeTests
         try
         {
             var factory = new SqlConnectionFactory(cs);
-            await new DatabaseInitializer(factory, Microsoft.Extensions.Logging.Abstractions.NullLogger<DatabaseInitializer>.Instance)
+            await new DatabaseInitializer(
+                    DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, cs),
+                    new DatabaseBootstrap(DatabaseProvider.Sqlite, cs, NullLogger<DatabaseBootstrap>.Instance),
+                    NullLogger<DatabaseInitializer>.Instance)
                 .InitializeAsync();
 
             var rows = TargetRows;

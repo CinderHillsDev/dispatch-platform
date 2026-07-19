@@ -18,8 +18,19 @@ public static class ServiceCollectionExtensions
     /// engine is inferred from the connection string (see <see cref="SqlConnectionFactory.CreateDialect"/>),
     /// so a Postgres deployment and a SQLite one differ only by that one setting.
     /// </summary>
-    public static IServiceCollection AddDispatchData(this IServiceCollection services, string connectionString)
+    public static IServiceCollection AddDispatchData(
+        this IServiceCollection services, string connectionString, string? providerName = null)
     {
+        var provider = DatabaseProviderResolver.Resolve(connectionString, providerName);
+
+        services.AddSingleton(sp => new DatabaseBootstrap(
+            provider, connectionString, sp.GetService<ILogger<DatabaseBootstrap>>()));
+
+        // A factory rather than a scoped DbContext: the repositories below are singletons called
+        // concurrently from SpoolWorkerPool's worker threads, and a DbContext is not thread-safe.
+        services.AddDbContextFactory<DispatchDbContext>(o =>
+            DispatchDbContextFactory.Configure(o, provider, connectionString));
+
         services.AddSingleton(sp => new SqlConnectionFactory(
             connectionString,
             SqlConnectionFactory.CreateDialect(

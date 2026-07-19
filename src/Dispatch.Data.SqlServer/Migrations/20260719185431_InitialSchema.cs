@@ -20,7 +20,7 @@ namespace Dispatch.Data.SqlServer.Migrations
                     key_id = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                     key_hash = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: false),
                     name = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
-                    created_at = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    created_at = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
                     last_used_at = table.Column<DateTime>(type: "datetime2", nullable: true),
                     message_count = table.Column<long>(type: "bigint", nullable: false, defaultValue: 0L),
                     revoked = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
@@ -39,7 +39,7 @@ namespace Dispatch.Data.SqlServer.Migrations
                 {
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    logged_at = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    logged_at = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
                     kind = table.Column<string>(type: "nvarchar(16)", maxLength: 16, nullable: false),
                     category = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                     @event = table.Column<string>(name: "event", type: "nvarchar(128)", maxLength: 128, nullable: false),
@@ -60,7 +60,7 @@ namespace Dispatch.Data.SqlServer.Migrations
                     key = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     value = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     encrypted = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
-                    updated_at = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    updated_at = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()")
                 },
                 constraints: table =>
                 {
@@ -75,7 +75,7 @@ namespace Dispatch.Data.SqlServer.Migrations
                         .Annotation("SqlServer:Identity", "1, 1"),
                     username = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: false),
                     password_hash = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: false),
-                    created_at = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    created_at = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
                     last_used_at = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
@@ -114,8 +114,8 @@ namespace Dispatch.Data.SqlServer.Migrations
                     enabled = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
                     max_concurrency = table.Column<int>(type: "int", nullable: false, defaultValue: 4),
                     max_message_bytes = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
-                    created_at = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    created_at = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
+                    updated_at = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()")
                 },
                 constraints: table =>
                 {
@@ -134,7 +134,7 @@ namespace Dispatch.Data.SqlServer.Migrations
                     sender_pattern = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     relay_id = table.Column<int>(type: "int", nullable: false),
                     enabled = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
-                    created_at = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    created_at = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()")
                 },
                 constraints: table =>
                 {
@@ -153,7 +153,7 @@ namespace Dispatch.Data.SqlServer.Migrations
                 {
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    logged_at = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    logged_at = table.Column<DateTime>(type: "datetime2", nullable: false, defaultValueSql: "SYSUTCDATETIME()"),
                     spool_id = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
                     @event = table.Column<string>(name: "event", type: "nvarchar(32)", maxLength: 32, nullable: false),
                     status = table.Column<string>(type: "nvarchar(16)", maxLength: 16, nullable: false),

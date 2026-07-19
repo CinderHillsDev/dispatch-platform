@@ -20,7 +20,7 @@ namespace Dispatch.Data.Sqlite.Migrations
                     key_id = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     key_hash = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
                     name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP"),
                     last_used_at = table.Column<DateTime>(type: "TEXT", nullable: true),
                     message_count = table.Column<long>(type: "INTEGER", nullable: false, defaultValue: 0L),
                     revoked = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: false),
@@ -39,7 +39,7 @@ namespace Dispatch.Data.Sqlite.Migrations
                 {
                     id = table.Column<long>(type: "INTEGER", nullable: false)
                         .Annotation("Sqlite:Autoincrement", true),
-                    logged_at = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    logged_at = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP"),
                     kind = table.Column<string>(type: "TEXT", maxLength: 16, nullable: false),
                     category = table.Column<string>(type: "TEXT", maxLength: 32, nullable: false),
                     @event = table.Column<string>(name: "event", type: "TEXT", maxLength: 128, nullable: false),
@@ -60,7 +60,7 @@ namespace Dispatch.Data.Sqlite.Migrations
                     key = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
                     value = table.Column<string>(type: "TEXT", nullable: false),
                     encrypted = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: false),
-                    updated_at = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    updated_at = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP")
                 },
                 constraints: table =>
                 {
@@ -75,7 +75,7 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .Annotation("Sqlite:Autoincrement", true),
                     username = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false),
                     password_hash = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP"),
                     last_used_at = table.Column<DateTime>(type: "TEXT", nullable: true)
                 },
                 constraints: table =>
@@ -114,8 +114,8 @@ namespace Dispatch.Data.Sqlite.Migrations
                     enabled = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: true),
                     max_concurrency = table.Column<int>(type: "INTEGER", nullable: false, defaultValue: 4),
                     max_message_bytes = table.Column<int>(type: "INTEGER", nullable: false, defaultValue: 0),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP"),
+                    updated_at = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP")
                 },
                 constraints: table =>
                 {
@@ -134,7 +134,7 @@ namespace Dispatch.Data.Sqlite.Migrations
                     sender_pattern = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     relay_id = table.Column<int>(type: "INTEGER", nullable: false),
                     enabled = table.Column<bool>(type: "INTEGER", nullable: false, defaultValue: true),
-                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP")
                 },
                 constraints: table =>
                 {
@@ -153,7 +153,7 @@ namespace Dispatch.Data.Sqlite.Migrations
                 {
                     id = table.Column<long>(type: "INTEGER", nullable: false)
                         .Annotation("Sqlite:Autoincrement", true),
-                    logged_at = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    logged_at = table.Column<DateTime>(type: "TEXT", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP"),
                     spool_id = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
                     @event = table.Column<string>(name: "event", type: "TEXT", maxLength: 32, nullable: false),
                     status = table.Column<string>(type: "TEXT", maxLength: 16, nullable: false),
