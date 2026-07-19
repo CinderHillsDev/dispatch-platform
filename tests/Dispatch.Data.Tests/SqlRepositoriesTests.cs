@@ -9,7 +9,7 @@ namespace Dispatch.Data.Tests;
 /// Integration tests against a real PostgreSQL server. Auto-skip when DISPATCH_TEST_SQL is unset.
 /// Run with: DISPATCH_TEST_SQL="Host=localhost;Port=5432;Username=postgres;Password=..." dotnet test
 /// </summary>
-public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresFixture>
+public class SqlRepositoriesTests(DatabaseFixture sql) : IClassFixture<DatabaseFixture>
 {
     // No relay is seeded any more (migration 0003 removed the placeholder), and relay_log/relay_counters
     // FK to relays(id), so tests that attribute rows to a relay create one first and use its id.
@@ -102,13 +102,14 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
         var maintenance = new SqlLogMaintenance(sql.Factory);
         var spoolId = Guid.NewGuid().ToString("N");
 
-        // Insert a Delivered row dated 100 days ago (bypassing the now() default).
+        // Insert a Delivered row dated 100 days ago (bypassing the CURRENT_TIMESTAMP default). The age is
+        // bound as a parameter rather than written as engine-specific interval arithmetic.
         await using (var cn = await sql.Factory.OpenAsync())
         {
             await cn.ExecuteAsync("""
                 INSERT INTO relay_log (logged_at, spool_id, event, status, from_address, from_domain, to_addresses, to_domain, subject)
-                VALUES (now() - interval '100 days', @spoolId, 'Delivered', 'OK', 'a@x.com', 'x.com', '[]', 'y.com', 's');
-                """, new { spoolId });
+                VALUES (@at, @spoolId, 'Delivered', 'OK', 'a@x.com', 'x.com', '[]', 'y.com', 's');
+                """, new { at = DateTime.UtcNow.AddDays(-100), spoolId });
         }
 
         var deleted = await maintenance.PurgeByRetentionAsync("Delivered", retentionDays: 30);

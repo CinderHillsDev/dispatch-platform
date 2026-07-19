@@ -58,7 +58,7 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
     {
         await using var cn = await factory.OpenAsync(ct);
         var affected = await cn.ExecuteAsync(new CommandDefinition(
-            "UPDATE api_keys SET revoked = true, revoked_at = now() WHERE id = @id AND NOT revoked",
+            "UPDATE api_keys SET revoked = true, revoked_at = CURRENT_TIMESTAMP WHERE id = @id AND NOT revoked",
             new { id }, cancellationToken: ct));
         return affected > 0;
     }
@@ -90,7 +90,7 @@ public sealed class SqlApiKeyRepository(SqlConnectionFactory factory) : IApiKeyR
     {
         await using var cn = await factory.OpenAsync(ct);
         await cn.ExecuteAsync(new CommandDefinition(
-            "UPDATE api_keys SET last_used_at = now(), message_count = message_count + 1 WHERE id = @id",
+            "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP, message_count = message_count + 1 WHERE id = @id",
             new { id }, cancellationToken: ct));
     }
 

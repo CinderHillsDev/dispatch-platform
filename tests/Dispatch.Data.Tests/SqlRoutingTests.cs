@@ -5,7 +5,7 @@ using Dispatch.Data.Repositories;
 namespace Dispatch.Data.Tests;
 
 /// <summary>Integration tests for relay CRUD + routing-rule repositories. Auto-skip without DISPATCH_TEST_SQL.</summary>
-public class SqlRoutingTests(PostgresFixture sql) : IClassFixture<PostgresFixture>
+public class SqlRoutingTests(DatabaseFixture sql) : IClassFixture<DatabaseFixture>
 {
     [Fact]
     public async Task Relay_create_set_default_and_delete()

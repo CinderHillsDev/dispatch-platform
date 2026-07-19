@@ -7,15 +7,24 @@ using Dispatch.Core.Routing;
 using Dispatch.Core.Smtp;
 using Dispatch.Data.Repositories;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Data;
 
 public static class ServiceCollectionExtensions
 {
-    /// <summary>Registers the SQL connection factory, migration runner, and all SQL repositories.</summary>
+    /// <summary>
+    /// Registers the SQL connection factory, migration runner, and all SQL repositories. The database
+    /// engine is inferred from the connection string (see <see cref="SqlConnectionFactory.CreateDialect"/>),
+    /// so a Postgres deployment and a SQLite one differ only by that one setting.
+    /// </summary>
     public static IServiceCollection AddDispatchData(this IServiceCollection services, string connectionString)
     {
-        services.AddSingleton(new SqlConnectionFactory(connectionString));
+        services.AddSingleton(sp => new SqlConnectionFactory(
+            connectionString,
+            SqlConnectionFactory.CreateDialect(
+                connectionString,
+                sp.GetService<ILoggerFactory>()?.CreateLogger("Dispatch.Data"))));
         services.AddSingleton<DatabaseInitializer>();
 
         services.AddSingleton<SqlLogRepository>();

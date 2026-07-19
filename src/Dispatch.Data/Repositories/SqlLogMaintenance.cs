@@ -11,12 +11,15 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
 
     public async Task<int> PurgeByRetentionAsync(string @event, int retentionDays, CancellationToken ct = default)
     {
-        // Postgres has no DELETE ... LIMIT, so bound each batch by ctid membership.
-        const string sql = """
+        // Neither engine supports DELETE ... LIMIT portably, so each batch is bounded by a subquery on the
+        // primary key. (The Postgres original used ctid; id is the PK on both engines and reads the same.)
+        // Batching matters more on SQLite than it did on Postgres: a single unbounded DELETE would hold the
+        // one write lock for its whole duration and stall ingest behind it.
+        var sql = $"""
             DELETE FROM relay_log
-            WHERE ctid IN (
-                SELECT ctid FROM relay_log
-                WHERE event = @event AND logged_at < now() - @retentionDays * interval '1 day'
+            WHERE id IN (
+                SELECT id FROM relay_log
+                WHERE event = @event AND {factory.Dialect.OlderThanDays("logged_at", "@retentionDays")}
                 LIMIT @BatchSize);
             """;
         await using var cn = await factory.OpenAsync(ct);
@@ -35,19 +38,17 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
 
     public async Task<long> GetDatabaseSizeBytesAsync(CancellationToken ct = default)
     {
-        const string sql = "SELECT pg_database_size(current_database());";
         await using var cn = await factory.OpenAsync(ct);
-        return await cn.ExecuteScalarAsync<long>(new CommandDefinition(sql, cancellationToken: ct));
+        return await factory.Dialect.GetDatabaseSizeBytesAsync(cn, ct);
     }
 
     public async Task<(long TableBytes, long RowCount)> GetRelayLogStatsAsync(CancellationToken ct = default)
     {
-        const string sql = """
-            SELECT pg_total_relation_size('relay_log')::bigint AS TableBytes,
-                   (SELECT count(*) FROM relay_log)::bigint     AS RowCount;
-            """;
         await using var cn = await factory.OpenAsync(ct);
-        return await cn.QuerySingleAsync<(long, long)>(new CommandDefinition(sql, cancellationToken: ct));
+        var tableBytes = await factory.Dialect.GetTableSizeBytesAsync(cn, "relay_log", ct);
+        var rowCount = await cn.ExecuteScalarAsync<long>(new CommandDefinition(
+            "SELECT CAST(count(*) AS bigint) FROM relay_log;", cancellationToken: ct));
+        return (tableBytes, rowCount);
     }
 
     public async Task<int> ArchiveAndDeleteOldestRelayLogAsync(int batch, ArchiveRows archive, CancellationToken ct = default)
@@ -63,16 +64,17 @@ public sealed class SqlLogMaintenance(SqlConnectionFactory factory) : ILogMainte
 
         var ids = rows.Select(r => Convert.ToInt64(((IDictionary<string, object>)r)["id"])).ToArray();
         return await cn.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM relay_log WHERE id = ANY(@ids);", new { ids }, cancellationToken: ct));
+            "DELETE FROM relay_log WHERE id IN @ids;", new { ids }, cancellationToken: ct));
     }
 
     public async Task VacuumLogTablesAsync(CancellationToken ct = default)
     {
-        // VACUUM cannot run inside a transaction block; each statement runs on its own. FULL rewrites the
-        // table and returns space to the OS so pg_database_size drops and the size-pressure trigger clears.
+        // Neither engine returns space to the OS on DELETE, so the size-pressure trigger in PurgeWorker only
+        // clears after an explicit reclaim. How that is done differs enough to belong in the dialect:
+        // Postgres rewrites each table with VACUUM (FULL); SQLite's VACUUM is whole-database and ignores the
+        // table list. Either way this is a maintenance action holding heavy locks, never a hot-path call.
         await using var cn = await factory.OpenAsync(ct);
-        await cn.ExecuteAsync(new CommandDefinition("VACUUM (FULL) relay_log;", cancellationToken: ct));
-        await cn.ExecuteAsync(new CommandDefinition("VACUUM (FULL) audit_log;", cancellationToken: ct));
+        await factory.Dialect.ReclaimSpaceAsync(cn, ["relay_log", "audit_log"], ct);
     }
 
     // Materializes a Dapper row into a nullable-friendly read-only dictionary for archiving/serialization.

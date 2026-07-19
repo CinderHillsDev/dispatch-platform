@@ -1,18 +1,67 @@
-using Npgsql;
+using System.Data.Common;
+using Dispatch.Data.Dialects;
+using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Data;
 
-/// <summary>Creates PostgreSQL connections from the configured connection string.</summary>
-public sealed class SqlConnectionFactory(string connectionString)
+/// <summary>
+/// Creates connections to the configured database, whichever engine backs it. Every repository takes its
+/// connections from here and reaches engine-specific SQL only through <see cref="Dialect"/>.
+/// </summary>
+public sealed class SqlConnectionFactory
 {
-    public string ConnectionString { get; } = connectionString;
-
-    public NpgsqlConnection Create() => new(ConnectionString);
-
-    public async Task<NpgsqlConnection> OpenAsync(CancellationToken ct = default)
+    public SqlConnectionFactory(string connectionString, ISqlDialect dialect)
     {
-        var cn = new NpgsqlConnection(ConnectionString);
-        await cn.OpenAsync(ct);
-        return cn;
+        ConnectionString = connectionString;
+        Dialect = dialect;
+    }
+
+    public SqlConnectionFactory(string connectionString, ILogger? log = null)
+        : this(connectionString, CreateDialect(connectionString, log)) { }
+
+    public string ConnectionString { get; }
+
+    public ISqlDialect Dialect { get; }
+
+    public DbConnection Create() => Dialect.CreateConnection(ConnectionString);
+
+    public async Task<DbConnection> OpenAsync(CancellationToken ct = default)
+    {
+        var cn = Dialect.CreateConnection(ConnectionString);
+        try
+        {
+            await cn.OpenAsync(ct);
+            await Dialect.OnConnectionOpenedAsync(cn, ct);
+            return cn;
+        }
+        catch
+        {
+            await cn.DisposeAsync();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Picks the engine from the shape of the connection string, so switching backends is a config change
+    /// and existing Postgres deployments keep working untouched.
+    /// </summary>
+    public static ISqlDialect CreateDialect(string connectionString, ILogger? log = null) =>
+        IsSqlite(connectionString) ? new SqliteDialect(log) : new PostgresDialect(log);
+
+    /// <summary>
+    /// A SQLite connection string is identified by a file-source keyword with no server keywords alongside
+    /// it. Npgsql also accepts "Data Source" as an alias for Host, so server keywords have to win.
+    /// </summary>
+    internal static bool IsSqlite(string connectionString)
+    {
+        var keys = connectionString
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => part.Split('=', 2)[0].Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (keys.Overlaps(new[] { "Host", "Server", "Port", "Username", "User ID", "Password", "Database" }))
+            return false;
+
+        return keys.Contains("Data Source") || keys.Contains("DataSource") || keys.Contains("Filename");
     }
 }

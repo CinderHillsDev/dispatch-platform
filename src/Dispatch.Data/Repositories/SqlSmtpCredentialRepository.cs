@@ -23,7 +23,7 @@ public sealed class SqlSmtpCredentialRepository(SqlConnectionFactory factory) : 
         if (!BCrypt.Net.BCrypt.Verify(password, hash)) return false;
 
         await cn.ExecuteAsync(new CommandDefinition(
-            "UPDATE config_smtp_credentials SET last_used_at = now() WHERE username = @username",
+            "UPDATE config_smtp_credentials SET last_used_at = CURRENT_TIMESTAMP WHERE username = @username",
             new { username }, cancellationToken: ct));
         return true;
     }

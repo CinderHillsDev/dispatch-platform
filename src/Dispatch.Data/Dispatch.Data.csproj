@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Migrations/*.sql" />
+    <EmbeddedResource Include="Migrations/**/*.sql" />
   </ItemGroup>
 
   <ItemGroup>
@@ -15,6 +15,10 @@
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="Dapper" Version="2.1.79" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <!-- Microsoft.Data.Sqlite 10.0.9 pulls SQLitePCLRaw 2.1.11, which carries GHSA-2m69-gcr7-jv3q.
+         Pin the patched 2.1.12 explicitly until the Microsoft.Data.Sqlite dependency moves. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />

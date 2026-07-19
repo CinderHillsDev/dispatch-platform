@@ -82,14 +82,18 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
         {
             await using var cn = await factory.OpenAsync(ct);
             var total = 0;
+            // Neither engine supports DELETE ... LIMIT portably, so each batch is bounded by a subquery on
+            // the primary key. (The Postgres original used ctid; id is the PK on both engines and reads
+            // the same either way.)
+            var old = factory.Dialect.OlderThanDays("logged_at", "@Days");
             // Noisy security events (allow-list denials, SMTP auth failures) are kept shorter.
             if (securityRetentionDays > 0)
                 total += await DeleteBatchedAsync(cn,
-                    "DELETE FROM audit_log WHERE ctid IN (SELECT ctid FROM audit_log WHERE category IN ('Access','SmtpAuth') AND logged_at < now() - @Days * interval '1 day' LIMIT @Batch);",
+                    $"DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log WHERE category IN ('Access','SmtpAuth') AND {old} LIMIT @Batch);",
                     securityRetentionDays, ct);
             if (generalRetentionDays > 0)
                 total += await DeleteBatchedAsync(cn,
-                    "DELETE FROM audit_log WHERE ctid IN (SELECT ctid FROM audit_log WHERE logged_at < now() - @Days * interval '1 day' LIMIT @Batch);",
+                    $"DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log WHERE {old} LIMIT @Batch);",
                     generalRetentionDays, ct);
             return total;
         }
@@ -115,7 +119,7 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
 
             var ids = rows.Select(r => Convert.ToInt64(((IDictionary<string, object>)r)["id"])).ToArray();
             return await cn.ExecuteAsync(new CommandDefinition(
-                "DELETE FROM audit_log WHERE id = ANY(@ids);", new { ids }, cancellationToken: ct));
+                "DELETE FROM audit_log WHERE id IN @ids;", new { ids }, cancellationToken: ct));
         }
         catch (Exception ex)
         {

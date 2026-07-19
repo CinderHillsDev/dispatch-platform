@@ -1,5 +1,4 @@
 using Dapper;
-using Npgsql;
 using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Data;
@@ -8,59 +7,42 @@ namespace Dispatch.Data;
 /// Ensures the target database exists and applies ordered, embedded SQL migrations once each,
 /// tracking applied versions in <c>schema_version</c> (spec §6.11, §12). Idempotent and safe to
 /// run on every startup.
+///
+/// Migrations are per-engine: the DDL dialects diverge enough (identity columns, INCLUDE indexes,
+/// DROP CONSTRAINT, timestamp types) that sharing one set would mean a translation layer more fragile
+/// than two readable files. Both sets carry the same version numbers and the same meaning at each
+/// version, so schema_version is comparable across engines.
 /// </summary>
 public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<DatabaseInitializer> log)
 {
-    private const string MigrationPrefix = ".Migrations.";
-
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        var builder = new NpgsqlConnectionStringBuilder(factory.ConnectionString);
-        var database = builder.Database;
-        if (string.IsNullOrWhiteSpace(database))
-            throw new InvalidOperationException("Connection string must specify a Database.");
-
-        await EnsureDatabaseAsync(builder, database, ct);
+        await factory.Dialect.EnsureDatabaseAsync(factory.ConnectionString, ct);
         await EnsureSchemaVersionTableAsync(ct);
-        await ApplyMigrationsAsync(database, ct);
-    }
-
-    private async Task EnsureDatabaseAsync(NpgsqlConnectionStringBuilder builder, string database, CancellationToken ct)
-    {
-        // Connect to the "postgres" maintenance database to check for / create the target database.
-        var maintenanceBuilder = new NpgsqlConnectionStringBuilder(builder.ConnectionString) { Database = "postgres" };
-        await using var cn = new NpgsqlConnection(maintenanceBuilder.ConnectionString);
-        await OpenWithRetryAsync(cn, ct);
-
-        var exists = await cn.ExecuteScalarAsync<int?>(
-            "SELECT 1 FROM pg_database WHERE datname = @database", new { database });
-        if (exists is null)
-        {
-            // CREATE DATABASE cannot be parameterised or run inside a transaction; the database name comes
-            // from our own config, not user input. Double-quote to allow mixed case / reserved words.
-            await cn.ExecuteAsync($"CREATE DATABASE \"{database.Replace("\"", "\"\"")}\"");
-            log.LogInformation("Created database {Database}", database);
-        }
+        await ApplyMigrationsAsync(ct);
     }
 
     private async Task EnsureSchemaVersionTableAsync(CancellationToken ct)
     {
         await using var cn = await factory.OpenAsync(ct);
-        await cn.ExecuteAsync("""
+        // Written in the portable subset so one statement serves both engines: TEXT/varchar and
+        // int/INTEGER are compatible declarations, and CURRENT_TIMESTAMP exists in both.
+        await cn.ExecuteAsync(new CommandDefinition("""
             CREATE TABLE IF NOT EXISTS schema_version (
-                version     int          NOT NULL PRIMARY KEY,
-                script_name varchar(256) NOT NULL,
-                applied_at  timestamptz  NOT NULL DEFAULT now()
+                version     int  NOT NULL PRIMARY KEY,
+                script_name text NOT NULL,
+                applied_at  text NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-            """);
+            """, cancellationToken: ct));
     }
 
-    private async Task ApplyMigrationsAsync(string database, CancellationToken ct)
+    private async Task ApplyMigrationsAsync(CancellationToken ct)
     {
         await using var cn = await factory.OpenAsync(ct);
-        var applied = (await cn.QueryAsync<int>("SELECT version FROM schema_version")).ToHashSet();
+        var applied = (await cn.QueryAsync<int>(new CommandDefinition(
+            "SELECT version FROM schema_version", cancellationToken: ct))).ToHashSet();
 
-        foreach (var (version, name, sql) in LoadMigrations())
+        foreach (var (version, name, sql) in LoadMigrations(factory.Dialect.Name))
         {
             if (applied.Contains(version))
                 continue;
@@ -68,12 +50,12 @@ public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<Da
             await using var tx = await cn.BeginTransactionAsync(ct);
             try
             {
-                await cn.ExecuteAsync(sql, transaction: tx);
-                await cn.ExecuteAsync(
+                await cn.ExecuteAsync(new CommandDefinition(sql, transaction: tx, cancellationToken: ct));
+                await cn.ExecuteAsync(new CommandDefinition(
                     "INSERT INTO schema_version (version, script_name) VALUES (@version, @name)",
-                    new { version, name }, tx);
+                    new { version, name }, tx, cancellationToken: ct));
                 await tx.CommitAsync(ct);
-                log.LogInformation("Applied migration {Version} ({Name})", version, name);
+                log.LogInformation("Applied migration {Version} ({Name}) [{Engine}]", version, name, factory.Dialect.Name);
             }
             catch
             {
@@ -83,37 +65,23 @@ public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<Da
         }
     }
 
-    /// <summary>Opens a connection, retrying for up to ~60s so a just-started Postgres container (CI/docker) is tolerated.</summary>
-    private async Task OpenWithRetryAsync(NpgsqlConnection cn, CancellationToken ct)
-    {
-        const int maxAttempts = 30;
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                await cn.OpenAsync(ct);
-                return;
-            }
-            catch (NpgsqlException) when (attempt < maxAttempts)
-            {
-                if (attempt == 1) log.LogInformation("Waiting for PostgreSQL to accept connections…");
-                await Task.Delay(TimeSpan.FromSeconds(2), ct);
-            }
-        }
-    }
-
-    private static IEnumerable<(int Version, string Name, string Sql)> LoadMigrations()
+    /// <summary>
+    /// Loads the embedded migrations for one engine. Resource names look like
+    /// "Dispatch.Data.Migrations.Sqlite.0001_init.sql", so the engine name selects the folder.
+    /// </summary>
+    internal static IEnumerable<(int Version, string Name, string Sql)> LoadMigrations(string engine)
     {
         var asm = typeof(DatabaseInitializer).Assembly;
+        var prefix = $".Migrations.{engine}.";
         var migrations = new List<(int, string, string)>();
 
         foreach (var resource in asm.GetManifestResourceNames())
         {
-            var idx = resource.IndexOf(MigrationPrefix, StringComparison.Ordinal);
+            var idx = resource.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
             if (idx < 0 || !resource.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var name = resource[(idx + MigrationPrefix.Length)..];          // e.g. "0001_init.sql"
+            var name = resource[(idx + prefix.Length)..];                   // e.g. "0001_init.sql"
             var versionText = name.Split('_', 2)[0];
             if (!int.TryParse(versionText, out var version))
                 continue;
@@ -122,6 +90,9 @@ public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<Da
             using var reader = new StreamReader(stream);
             migrations.Add((version, name, reader.ReadToEnd()));
         }
+
+        if (migrations.Count == 0)
+            throw new InvalidOperationException($"No embedded migrations found for engine '{engine}'.");
 
         return migrations.OrderBy(m => m.Item1);
     }

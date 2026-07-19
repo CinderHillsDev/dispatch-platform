@@ -38,11 +38,11 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
     {
         const string sql = """
             SELECT
-                COALESCE(SUM(received), 0)::bigint  AS Received,
-                COALESCE(SUM(delivered), 0)::bigint AS Delivered,
-                COALESCE(SUM(failed), 0)::bigint    AS Failed,
-                COALESCE(SUM(retried), 0)::bigint   AS Retried,
-                COALESCE(SUM(denied), 0)::bigint    AS Denied
+                CAST(COALESCE(SUM(received), 0) AS bigint)  AS Received,
+                CAST(COALESCE(SUM(delivered), 0) AS bigint) AS Delivered,
+                CAST(COALESCE(SUM(failed), 0) AS bigint)    AS Failed,
+                CAST(COALESCE(SUM(retried), 0) AS bigint)   AS Retried,
+                CAST(COALESCE(SUM(denied), 0) AS bigint)    AS Denied
             FROM relay_counters
             WHERE date = CURRENT_DATE;
             """;
@@ -54,11 +54,11 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
     {
         const string sql = """
             SELECT relay_id AS RelayId,
-                   COALESCE(SUM(received), 0)::bigint  AS Received,
-                   COALESCE(SUM(delivered), 0)::bigint AS Delivered,
-                   COALESCE(SUM(failed), 0)::bigint    AS Failed,
-                   COALESCE(SUM(retried), 0)::bigint   AS Retried,
-                   COALESCE(SUM(denied), 0)::bigint    AS Denied
+                   CAST(COALESCE(SUM(received), 0) AS bigint)  AS Received,
+                   CAST(COALESCE(SUM(delivered), 0) AS bigint) AS Delivered,
+                   CAST(COALESCE(SUM(failed), 0) AS bigint)    AS Failed,
+                   CAST(COALESCE(SUM(retried), 0) AS bigint)   AS Retried,
+                   CAST(COALESCE(SUM(denied), 0) AS bigint)    AS Denied
             FROM relay_counters
             WHERE date = CURRENT_DATE
               AND relay_id > 0              -- exclude the relay_id 0 "no relay" bucket (denials) from per-relay views
@@ -73,34 +73,34 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
     {
         const string sql = """
             SELECT
-                COALESCE(SUM(received), 0)::bigint  AS Received,
-                COALESCE(SUM(delivered), 0)::bigint AS Delivered,
-                COALESCE(SUM(failed), 0)::bigint    AS Failed,
-                COALESCE(SUM(retried), 0)::bigint   AS Retried,
-                COALESCE(SUM(denied), 0)::bigint    AS Denied
+                CAST(COALESCE(SUM(received), 0) AS bigint)  AS Received,
+                CAST(COALESCE(SUM(delivered), 0) AS bigint) AS Delivered,
+                CAST(COALESCE(SUM(failed), 0) AS bigint)    AS Failed,
+                CAST(COALESCE(SUM(retried), 0) AS bigint)   AS Retried,
+                CAST(COALESCE(SUM(denied), 0) AS bigint)    AS Denied
             FROM relay_counters
             WHERE date >= @From AND date <= @To;
             """;
         await using var cn = await factory.OpenAsync(ct);
-        return await cn.QuerySingleAsync<CounterTotals>(new CommandDefinition(sql, new { From = fromUtc.Date, To = toUtc.Date }, cancellationToken: ct));
+        return await cn.QuerySingleAsync<CounterTotals>(new CommandDefinition(sql, new { From = factory.Dialect.DateParam(fromUtc), To = factory.Dialect.DateParam(toUtc) }, cancellationToken: ct));
     }
 
     public async Task<IReadOnlyList<DailyCounterTotals>> GetDailyAsync(DateTime fromUtc, DateTime toUtc, CancellationToken ct = default)
     {
-        const string sql = """
-            SELECT to_char(date, 'YYYY-MM-DD') AS Date,
-                   COALESCE(SUM(received), 0)::bigint  AS Received,
-                   COALESCE(SUM(delivered), 0)::bigint AS Delivered,
-                   COALESCE(SUM(failed), 0)::bigint    AS Failed,
-                   COALESCE(SUM(retried), 0)::bigint   AS Retried,
-                   COALESCE(SUM(denied), 0)::bigint    AS Denied
+        var sql = $"""
+            SELECT {factory.Dialect.FormatDate("date")} AS Date,
+                   CAST(COALESCE(SUM(received), 0) AS bigint)  AS Received,
+                   CAST(COALESCE(SUM(delivered), 0) AS bigint) AS Delivered,
+                   CAST(COALESCE(SUM(failed), 0) AS bigint)    AS Failed,
+                   CAST(COALESCE(SUM(retried), 0) AS bigint)   AS Retried,
+                   CAST(COALESCE(SUM(denied), 0) AS bigint)    AS Denied
             FROM relay_counters
             WHERE date >= @From AND date <= @To
             GROUP BY date
             ORDER BY date ASC;
             """;
         await using var cn = await factory.OpenAsync(ct);
-        var rows = await cn.QueryAsync<DailyCounterTotals>(new CommandDefinition(sql, new { From = fromUtc.Date, To = toUtc.Date }, cancellationToken: ct));
+        var rows = await cn.QueryAsync<DailyCounterTotals>(new CommandDefinition(sql, new { From = factory.Dialect.DateParam(fromUtc), To = factory.Dialect.DateParam(toUtc) }, cancellationToken: ct));
         return rows.ToList();
     }
 
@@ -108,11 +108,11 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
     {
         const string sql = """
             SELECT c.relay_id AS RelayId, r.name AS RelayName,
-                   COALESCE(SUM(c.received), 0)::bigint  AS Received,
-                   COALESCE(SUM(c.delivered), 0)::bigint AS Delivered,
-                   COALESCE(SUM(c.failed), 0)::bigint    AS Failed,
-                   COALESCE(SUM(c.retried), 0)::bigint   AS Retried,
-                   COALESCE(SUM(c.denied), 0)::bigint    AS Denied
+                   CAST(COALESCE(SUM(c.received), 0) AS bigint)  AS Received,
+                   CAST(COALESCE(SUM(c.delivered), 0) AS bigint) AS Delivered,
+                   CAST(COALESCE(SUM(c.failed), 0) AS bigint)    AS Failed,
+                   CAST(COALESCE(SUM(c.retried), 0) AS bigint)   AS Retried,
+                   CAST(COALESCE(SUM(c.denied), 0) AS bigint)    AS Denied
             FROM relay_counters c
             JOIN relays r ON r.id = c.relay_id
             WHERE c.date >= @From AND c.date <= @To
@@ -120,7 +120,7 @@ public sealed class SqlCounterRepository(SqlConnectionFactory factory) : ICounte
             ORDER BY SUM(c.received) DESC, SUM(c.delivered) DESC;
             """;
         await using var cn = await factory.OpenAsync(ct);
-        var rows = await cn.QueryAsync<RelayReportRow>(new CommandDefinition(sql, new { From = fromUtc.Date, To = toUtc.Date }, cancellationToken: ct));
+        var rows = await cn.QueryAsync<RelayReportRow>(new CommandDefinition(sql, new { From = factory.Dialect.DateParam(fromUtc), To = factory.Dialect.DateParam(toUtc) }, cancellationToken: ct));
         return rows.ToList();
     }
 }

@@ -93,14 +93,34 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
     // spool_id. Connection-level rows with no spool_id (denials, pre-DATA failures) each get their own group.
     private const string GroupKey = "CASE WHEN spool_id IS NULL OR spool_id = '' THEN CONCAT('id:', id) ELSE spool_id END";
 
+    /// <summary>
+    /// Appends "col IN (@name0, @name1, ...)" with one scalar parameter per value.
+    ///
+    /// Expanded by hand rather than relying on Dapper's "IN @list" support, which only fires for anonymous
+    /// parameter objects and not for DynamicParameters - the array would be bound as a single parameter,
+    /// which Postgres rejects outright and SQLite has no array type for. Postgres could use = ANY(@list),
+    /// but that has no SQLite equivalent; one scalar per value is valid on both. The lists here are short
+    /// closed sets (status and event values), so the expansion stays small and the plan cache stays sane.
+    /// </summary>
+    private static void AppendInList(StringBuilder where, DynamicParameters p, string column, string prefix, string[] values)
+    {
+        var names = new string[values.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            names[i] = $"@{prefix}{i}";
+            p.Add($"{prefix}{i}", values[i]);
+        }
+        where.Append($" AND {column} IN ({string.Join(", ", names)})");
+    }
+
     // Shared filter clauses (no cursor/paging). Every user value is a parameter - never interpolated.
     private static void AppendFilters(StringBuilder where, DynamicParameters p, MessageLogFilter filter)
     {
         // Bind dates as timestamp to match the timestamptz column type.
         if (filter.FromUtc is { } from) { where.Append(" AND logged_at >= @FromUtc"); p.Add("FromUtc", from, DbType.DateTime); }
         if (filter.ToUtc is { } to) { where.Append(" AND logged_at < @ToUtc"); p.Add("ToUtc", to, DbType.DateTime); }
-        if (filter.Statuses is { Length: > 0 } s) { where.Append(" AND status = ANY(@Statuses)"); p.Add("Statuses", s); }
-        if (filter.Events is { Length: > 0 } ev) { where.Append(" AND event = ANY(@Events)"); p.Add("Events", ev); }
+        if (filter.Statuses is { Length: > 0 } s) AppendInList(where, p, "status", "Status", s);
+        if (filter.Events is { Length: > 0 } ev) AppendInList(where, p, "event", "Event", ev);
         if (!string.IsNullOrWhiteSpace(filter.IngestSource)) { where.Append(" AND ingest_source = @IngestSource"); p.Add("IngestSource", filter.IngestSource); }
         if (!string.IsNullOrWhiteSpace(filter.FromDomain)) { where.Append(" AND from_domain = @FromDomain"); p.Add("FromDomain", filter.FromDomain); }
         if (!string.IsNullOrWhiteSpace(filter.ToDomain)) { where.Append(" AND to_domain = @ToDomain"); p.Add("ToDomain", filter.ToDomain); }
@@ -151,7 +171,7 @@ public sealed class SqlMessageLogQuery(SqlConnectionFactory factory) : IMessageL
         var p = new DynamicParameters();
         p.Add("ApiKeyId", apiKeyId);
         p.Add("Limit", limit);
-        if (statuses is { Length: > 0 }) { where.Append(" AND status = ANY(@Statuses)"); p.Add("Statuses", statuses); }
+        if (statuses is { Length: > 0 }) AppendInList(where, p, "status", "Status", statuses);
 
         // One row per message (latest event), matching the dashboard list - see GroupKey.
         var sql = $"""

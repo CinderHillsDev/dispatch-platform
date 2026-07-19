@@ -25,7 +25,7 @@ public sealed class SqlConfigRepository(SqlConnectionFactory factory, ILogger<Sq
         var stored = encrypted ? SecureConfig.Encrypt(value) : value;
         const string sql = """
             INSERT INTO config ("key", value, encrypted) VALUES (@key, @stored, @encrypted)
-            ON CONFLICT ("key") DO UPDATE SET value = @stored, encrypted = @encrypted, updated_at = now();
+            ON CONFLICT ("key") DO UPDATE SET value = @stored, encrypted = @encrypted, updated_at = CURRENT_TIMESTAMP;
             """;
         await using var cn = await factory.OpenAsync(ct);
         await cn.ExecuteAsync(new CommandDefinition(sql, new { key, stored, encrypted }, cancellationToken: ct));

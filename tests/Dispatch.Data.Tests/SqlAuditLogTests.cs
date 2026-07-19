@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Dispatch.Data.Tests;
 
 /// <summary>Integration tests for the audit log (System Logs). Auto-skip when DISPATCH_TEST_SQL is unset.</summary>
-public class SqlAuditLogTests(PostgresFixture sql) : IClassFixture<PostgresFixture>
+public class SqlAuditLogTests(DatabaseFixture sql) : IClassFixture<DatabaseFixture>
 {
     private SqlAuditLog NewLog() => new(sql.Factory, NullLogger<SqlAuditLog>.Instance);
 
@@ -38,11 +38,12 @@ public class SqlAuditLogTests(PostgresFixture sql) : IClassFixture<PostgresFixtu
         await using var cn = await sql.Factory.OpenAsync();
 
         // Seed rows with explicit ages: an old security event (10d), an old general event (100d), and a
-        // fresh one. Dapper-parameterised inserts mirroring the table shape.
+        // fresh one. The age is computed here and bound as a parameter rather than written as engine-specific
+        // interval arithmetic, so this seeds identically on both backends.
         async Task Seed(string kind, string category, int daysOld) =>
             await Dapper.SqlMapper.ExecuteAsync(cn,
-                "INSERT INTO audit_log (logged_at, kind, category, event, severity) VALUES (now() - @d * interval '1 day', @k, @c, 'x', 'Info');",
-                new { d = daysOld, k = kind, c = category });
+                "INSERT INTO audit_log (logged_at, kind, category, event, severity) VALUES (@at, @k, @c, 'x', 'Info');",
+                new { at = DateTime.UtcNow.AddDays(-daysOld), k = kind, c = category });
 
         await Seed("audit", "SmtpAuth", 10);   // security, older than 7d → purged
         await Seed("audit", "Config", 100);    // general, older than 90d → purged

@@ -76,7 +76,7 @@ public sealed class SqlRelayRepository(SqlConnectionFactory factory) : IRelayRep
     {
         const string sql = """
             UPDATE relays SET name = @name, provider = @provider, enabled = @enabled, max_concurrency = @maxConcurrency,
-                              max_message_bytes = @maxMessageBytes, updated_at = now()
+                              max_message_bytes = @maxMessageBytes, updated_at = CURRENT_TIMESTAMP
             WHERE id = @id;
             """;
         await using var cn = await factory.OpenAsync(ct);
