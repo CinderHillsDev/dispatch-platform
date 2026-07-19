@@ -89,9 +89,8 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("KeyId")
-                        .IsUnique()
-                        .HasDatabaseName("UQ_api_keys_key_id");
+                    b.HasIndex(new[] { "KeyId" }, "UQ_api_keys_key_id")
+                        .IsUnique();
 
                     b.ToTable("api_keys", (string)null);
                 });
@@ -152,9 +151,11 @@ namespace Dispatch.Data.MySql.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Kind", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_audit_log_kind");
 
                     b.HasIndex("LoggedAt", "Id")
+                        .IsDescending()
                         .HasDatabaseName("IX_audit_log_at");
 
                     b.ToTable("audit_log", (string)null);
@@ -237,6 +238,7 @@ namespace Dispatch.Data.MySql.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Date")
+                        .IsDescending()
                         .HasDatabaseName("IX_relay_counters_date");
 
                     b.HasIndex("Date", "RelayId")
@@ -468,24 +470,31 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasDatabaseName("IX_relay_log_purge");
 
                     b.HasIndex("ApiKeyId", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_api_key");
 
                     b.HasIndex("FromDomain", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_from_domain");
 
                     b.HasIndex("IngestSource", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_source");
 
                     b.HasIndex("RelayId", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_relay");
 
                     b.HasIndex("RoutingRuleId", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_rule");
 
                     b.HasIndex("Status", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_status_date");
 
                     b.HasIndex("ToDomain", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_to_domain");
 
                     b.HasIndex("SpoolId", "LoggedAt", "Id")

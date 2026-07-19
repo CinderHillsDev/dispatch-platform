@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Dispatch.Data;
 
@@ -98,15 +99,18 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.Property(x => x.RevokedAt).HasColumnName("revoked_at");
             e.Property(x => x.RateLimitPerMinute).HasColumnName("rate_limit_per_minute").HasDefaultValue(100);
             e.Property(x => x.Scope).HasColumnName("scope").HasMaxLength(64).HasDefaultValue("send");
-            // key_id is unique across ALL keys, revoked or not — a revoked key's id must never be reissued.
-            // Unfiltered on purpose.
-            e.HasIndex(x => x.KeyId).IsUnique().HasDatabaseName("UQ_api_keys_key_id");
-
-            // Separate, non-unique lookup path for authenticating a presented key. Partial where supported,
-            // so revoked keys — which accumulate and are never authenticated — stay out of it entirely.
+            // TWO indexes on key_id, and they must stay two. The named HasIndex overload is what keeps them
+            // distinct: EF identifies an index by its property set, so two unnamed HasIndex calls on the
+            // same property MERGE into one — which silently produced a single *filtered unique* index and
+            // would have let a revoked key's id be reissued.
+            //
+            //   UQ — unique across ALL keys, revoked or not. A revoked key's id must never come back.
+            e.HasIndex(x => x.KeyId, "UQ_api_keys_key_id").IsUnique();
+            //   IX — non-unique lookup path for authenticating a presented key. Partial where supported, so
+            //        revoked keys (which accumulate and are never authenticated) stay out of it entirely.
             var liveKeyFilter = LiveApiKeyIndexFilter();
             if (liveKeyFilter is not null)
-                e.HasIndex(x => x.KeyId).HasFilter(liveKeyFilter).HasDatabaseName("IX_api_keys_key_id");
+                e.HasIndex(x => x.KeyId, "IX_api_keys_key_id").HasFilter(liveKeyFilter);
         });
 
         b.Entity<RelayCounterEntity>(e =>
@@ -127,7 +131,8 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.Property(x => x.Denied).HasColumnName("denied").HasDefaultValue(0L);
             // The upsert target: SqlCounterRepository increments via a single atomic statement keyed on this.
             e.HasIndex(x => new { x.Date, x.RelayId }).IsUnique().HasDatabaseName("UQ_relay_counters");
-            e.HasIndex(x => x.Date).HasDatabaseName("IX_relay_counters_date");
+            // Reports read most-recent-first.
+            e.HasIndex(x => x.Date).HasDatabaseName("IX_relay_counters_date").IsDescending(true);
         });
 
         b.Entity<RelayLogEntity>(e =>
@@ -174,19 +179,32 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             // it serves was scanning the table. The Postgres originals attach INCLUDE(...) payloads to make
             // some of these covering; EF has no cross-provider way to express that, so the covering payloads
             // are reapplied per-provider in the Postgres and SqlServer migrations.
-            e.HasIndex(x => new { x.Status, x.LoggedAt }).HasDatabaseName("IX_relay_log_status_date");
-            e.HasIndex(x => new { x.FromDomain, x.LoggedAt }).HasDatabaseName("IX_relay_log_from_domain");
-            e.HasIndex(x => new { x.ToDomain, x.LoggedAt }).HasDatabaseName("IX_relay_log_to_domain");
-            e.HasIndex(x => new { x.IngestSource, x.LoggedAt }).HasDatabaseName("IX_relay_log_source");
+            // logged_at is DESC in every one of these: the Message Log always reads newest-first, and an
+            // ascending index would leave the engine reading the whole range backwards or sorting.
+            e.HasIndex(x => new { x.Status, x.LoggedAt }).HasDatabaseName("IX_relay_log_status_date")
+                .IsDescending(false, true)
+                .Covering(Provider, ListColumns);
+            e.HasIndex(x => new { x.FromDomain, x.LoggedAt }).HasDatabaseName("IX_relay_log_from_domain")
+                .IsDescending(false, true);
+            e.HasIndex(x => new { x.ToDomain, x.LoggedAt }).HasDatabaseName("IX_relay_log_to_domain")
+                .IsDescending(false, true);
+            e.HasIndex(x => new { x.IngestSource, x.LoggedAt }).HasDatabaseName("IX_relay_log_source")
+                .IsDescending(false, true);
             e.HasIndex(x => x.LoggedAt).HasDatabaseName("IX_relay_log_purge");
-            e.HasIndex(x => new { x.RelayId, x.LoggedAt }).HasDatabaseName("IX_relay_log_relay");
-            e.HasIndex(x => new { x.RoutingRuleId, x.LoggedAt }).HasDatabaseName("IX_relay_log_rule");
+            e.HasIndex(x => new { x.RelayId, x.LoggedAt }).HasDatabaseName("IX_relay_log_relay")
+                .IsDescending(false, true)
+                .Covering(Provider, FilterColumns);
+            e.HasIndex(x => new { x.RoutingRuleId, x.LoggedAt }).HasDatabaseName("IX_relay_log_rule")
+                .IsDescending(false, true)
+                .Covering(Provider, FilterColumns);
             e.HasIndex(x => new { x.SpoolId, x.LoggedAt, x.Id }).HasDatabaseName("IX_relay_log_spool_id");
 
             // Per-API-key message list. The vast majority of rows are SMTP ingest with a NULL api_key_id;
             // filtering them out keeps this index small where the engine supports it.
             var apiKeyRows = ApiKeyLogIndexFilter();
-            var apiKeyIndex = e.HasIndex(x => new { x.ApiKeyId, x.LoggedAt }).HasDatabaseName("IX_relay_log_api_key");
+            var apiKeyIndex = e.HasIndex(x => new { x.ApiKeyId, x.LoggedAt })
+                .HasDatabaseName("IX_relay_log_api_key")
+                .IsDescending(false, true);
             if (apiKeyRows is not null) apiKeyIndex.HasFilter(apiKeyRows);
         });
 
@@ -215,10 +233,33 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
             e.Property(x => x.Actor).HasColumnName("actor").HasMaxLength(128);
             e.Property(x => x.SourceIp).HasColumnName("source_ip").HasMaxLength(64);
             e.Property(x => x.Detail).HasColumnName("detail");
-            e.HasIndex(x => new { x.LoggedAt, x.Id }).HasDatabaseName("IX_audit_log_at");
-            e.HasIndex(x => new { x.Kind, x.LoggedAt }).HasDatabaseName("IX_audit_log_kind");
+            // Default listing order (newest first) + keyset tie-break, and the 'audit' vs 'error' filter.
+            e.HasIndex(x => new { x.LoggedAt, x.Id }).HasDatabaseName("IX_audit_log_at").IsDescending(true, true);
+            e.HasIndex(x => new { x.Kind, x.LoggedAt }).HasDatabaseName("IX_audit_log_kind").IsDescending(false, true);
         });
     }
+
+    // ---- Covering-index payloads ------------------------------------------------------------------
+    //
+    // The columns the Message Log list projects. Carrying them in the index means the two hot list queries
+    // are answered from the index alone instead of doing a heap lookup per matched row. Postgres and SQL
+    // Server both support this (INCLUDE); SQLite and MySQL/MariaDB have no equivalent and simply get the
+    // key columns, which is a performance difference, not a correctness one.
+
+    private static readonly string[] ListColumns =
+    [
+        nameof(RelayLogEntity.SpoolId), nameof(RelayLogEntity.FromAddress), nameof(RelayLogEntity.FromDomain),
+        nameof(RelayLogEntity.ToDomain), nameof(RelayLogEntity.Subject), nameof(RelayLogEntity.SizeBytes),
+        nameof(RelayLogEntity.RelayName), nameof(RelayLogEntity.RoutingRuleName), nameof(RelayLogEntity.Provider),
+        nameof(RelayLogEntity.DurationMs), nameof(RelayLogEntity.IngestSource), nameof(RelayLogEntity.RetryAttempt),
+    ];
+
+    private static readonly string[] FilterColumns =
+    [
+        nameof(RelayLogEntity.Status), nameof(RelayLogEntity.Event), nameof(RelayLogEntity.SpoolId),
+        nameof(RelayLogEntity.FromAddress), nameof(RelayLogEntity.ToDomain), nameof(RelayLogEntity.Subject),
+        nameof(RelayLogEntity.Provider), nameof(RelayLogEntity.DurationMs),
+    ];
 
     // ---- Provider-conditional index filters -------------------------------------------------------
     //
@@ -261,4 +302,23 @@ public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> option
     };
 
     private enum DbProvider { Postgres, Sqlite, SqlServer, MySql }
+}
+
+internal static class IndexBuilderExtensions
+{
+    /// <summary>
+    /// Attaches a covering (INCLUDE) payload where the engine supports one.
+    ///
+    /// Set through the raw provider annotations rather than the providers' own IncludeProperties()
+    /// extension methods: Dispatch.Data references every provider package, and those extensions share a
+    /// name, so calling one is an ambiguous-reference compile error. The annotation is what
+    /// IncludeProperties() writes anyway, and each provider ignores the others'.
+    /// </summary>
+    public static IndexBuilder<T> Covering<T>(this IndexBuilder<T> index, object provider, string[] properties) =>
+        provider.ToString() switch
+        {
+            "Postgres" => index.HasAnnotation("Npgsql:IndexInclude", properties),
+            "SqlServer" => index.HasAnnotation("SqlServer:Include", properties),
+            _ => index,   // SQLite and MySQL/MariaDB have no covering-index concept
+        };
 }

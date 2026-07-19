@@ -3,16 +3,16 @@ using System;
 using Dispatch.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Dispatch.Data.Postgres.Migrations
+namespace Dispatch.Data.MySql.Migrations
 {
     [DbContext(typeof(DispatchDbContext))]
-    [Migration("20260719182829_InitialSchema")]
+    [Migration("20260719183909_InitialSchema")]
     partial class InitialSchema
     {
         /// <inheritdoc />
@@ -21,37 +21,37 @@ namespace Dispatch.Data.Postgres.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "9.0.18")
-                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+                .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
-            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+            MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
 
             modelBuilder.Entity("Dispatch.Data.ApiKeyEntity", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("id");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("created_at");
 
                     b.Property<string>("KeyHash")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
+                        .HasColumnType("varchar(512)")
                         .HasColumnName("key_hash");
 
                     b.Property<string>("KeyId")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
+                        .HasColumnType("varchar(32)")
                         .HasColumnName("key_id");
 
                     b.Property<DateTime?>("LastUsedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("last_used_at");
 
                     b.Property<long>("MessageCount")
@@ -63,39 +63,37 @@ namespace Dispatch.Data.Postgres.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
+                        .HasColumnType("varchar(256)")
                         .HasColumnName("name");
 
                     b.Property<int>("RateLimitPerMinute")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasDefaultValue(100)
                         .HasColumnName("rate_limit_per_minute");
 
                     b.Property<bool>("Revoked")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
+                        .HasColumnType("tinyint(1)")
                         .HasDefaultValue(false)
                         .HasColumnName("revoked");
 
                     b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("revoked_at");
 
                     b.Property<string>("Scope")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
+                        .HasColumnType("varchar(64)")
                         .HasDefaultValue("send")
                         .HasColumnName("scope");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("KeyId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_api_keys_key_id")
-                        .HasFilter("NOT revoked");
+                    b.HasIndex(new[] { "KeyId" }, "UQ_api_keys_key_id")
+                        .IsUnique();
 
                     b.ToTable("api_keys", (string)null);
                 });
@@ -107,58 +105,60 @@ namespace Dispatch.Data.Postgres.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("id");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<string>("Actor")
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasColumnType("varchar(128)")
                         .HasColumnName("actor");
 
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
+                        .HasColumnType("varchar(32)")
                         .HasColumnName("category");
 
                     b.Property<string>("Detail")
-                        .HasColumnType("text")
+                        .HasColumnType("longtext")
                         .HasColumnName("detail");
 
                     b.Property<string>("Event")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasColumnType("varchar(128)")
                         .HasColumnName("event");
 
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
+                        .HasColumnType("varchar(16)")
                         .HasColumnName("kind");
 
                     b.Property<DateTime>("LoggedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("logged_at");
 
                     b.Property<string>("Severity")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
+                        .HasColumnType("varchar(16)")
                         .HasDefaultValue("Info")
                         .HasColumnName("severity");
 
                     b.Property<string>("SourceIp")
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
+                        .HasColumnType("varchar(64)")
                         .HasColumnName("source_ip");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Kind", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_audit_log_kind");
 
                     b.HasIndex("LoggedAt", "Id")
+                        .IsDescending()
                         .HasDatabaseName("IX_audit_log_at");
 
                     b.ToTable("audit_log", (string)null);
@@ -168,22 +168,22 @@ namespace Dispatch.Data.Postgres.Migrations
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasColumnType("varchar(128)")
                         .HasColumnName("key");
 
                     b.Property<bool>("Encrypted")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
+                        .HasColumnType("tinyint(1)")
                         .HasDefaultValue(false)
                         .HasColumnName("encrypted");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("updated_at");
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("longtext")
                         .HasColumnName("value");
 
                     b.HasKey("Key");
@@ -195,10 +195,10 @@ namespace Dispatch.Data.Postgres.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("id");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date")
@@ -229,7 +229,7 @@ namespace Dispatch.Data.Postgres.Migrations
                         .HasColumnName("received");
 
                     b.Property<int>("RelayId")
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("relay_id");
 
                     b.Property<long>("Retried")
@@ -241,6 +241,7 @@ namespace Dispatch.Data.Postgres.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Date")
+                        .IsDescending()
                         .HasDatabaseName("IX_relay_counters_date");
 
                     b.HasIndex("Date", "RelayId")
@@ -254,61 +255,56 @@ namespace Dispatch.Data.Postgres.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("id");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("created_at");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
+                        .HasColumnType("tinyint(1)")
                         .HasDefaultValue(true)
                         .HasColumnName("enabled");
 
                     b.Property<bool>("IsDefault")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
+                        .HasColumnType("tinyint(1)")
                         .HasDefaultValue(false)
                         .HasColumnName("is_default");
 
                     b.Property<int>("MaxConcurrency")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasDefaultValue(4)
                         .HasColumnName("max_concurrency");
 
                     b.Property<int>("MaxMessageBytes")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasDefaultValue(0)
                         .HasColumnName("max_message_bytes");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasColumnType("varchar(128)")
                         .HasColumnName("name");
 
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
+                        .HasColumnType("varchar(64)")
                         .HasColumnName("provider");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("updated_at");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("IsDefault")
-                        .IsUnique()
-                        .HasDatabaseName("IX_relays_default")
-                        .HasFilter("is_default");
 
                     b.HasIndex("Name")
                         .IsUnique();
@@ -323,152 +319,152 @@ namespace Dispatch.Data.Postgres.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("id");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<int?>("ApiKeyId")
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("api_key_id");
 
                     b.Property<string>("ApiKeyName")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
+                        .HasColumnType("varchar(256)")
                         .HasColumnName("api_key_name");
 
                     b.Property<int>("AttachmentCount")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasDefaultValue(0)
                         .HasColumnName("attachment_count");
 
                     b.Property<int?>("DurationMs")
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("duration_ms");
 
                     b.Property<string>("Error")
-                        .HasColumnType("text")
+                        .HasColumnType("longtext")
                         .HasColumnName("error");
 
                     b.Property<string>("Event")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
+                        .HasColumnType("varchar(32)")
                         .HasColumnName("event");
 
                     b.Property<string>("FromAddress")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
+                        .HasColumnType("varchar(512)")
                         .HasColumnName("from_address");
 
                     b.Property<string>("FromDomain")
                         .IsRequired()
                         .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
+                        .HasColumnType("varchar(255)")
                         .HasColumnName("from_domain");
 
                     b.Property<string>("IngestSource")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
+                        .HasColumnType("varchar(16)")
                         .HasDefaultValue("SMTP")
                         .HasColumnName("ingest_source");
 
                     b.Property<DateTime>("LoggedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("logged_at");
 
                     b.Property<string>("Provider")
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
+                        .HasColumnType("varchar(64)")
                         .HasColumnName("provider");
 
                     b.Property<string>("ProviderMessageId")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
+                        .HasColumnType("varchar(256)")
                         .HasColumnName("provider_message_id");
 
                     b.Property<string>("ProviderResponse")
-                        .HasColumnType("text")
+                        .HasColumnType("longtext")
                         .HasColumnName("provider_response");
 
                     b.Property<int?>("RelayId")
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("relay_id");
 
                     b.Property<string>("RelayName")
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasColumnType("varchar(128)")
                         .HasColumnName("relay_name");
 
                     b.Property<int>("RetryAttempt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasDefaultValue(0)
                         .HasColumnName("retry_attempt");
 
                     b.Property<bool>("RoutingMatched")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
+                        .HasColumnType("tinyint(1)")
                         .HasDefaultValue(false)
                         .HasColumnName("routing_matched");
 
                     b.Property<int?>("RoutingRuleId")
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("routing_rule_id");
 
                     b.Property<string>("RoutingRuleName")
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasColumnType("varchar(128)")
                         .HasColumnName("routing_rule_name");
 
                     b.Property<int>("SizeBytes")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasDefaultValue(0)
                         .HasColumnName("size_bytes");
 
                     b.Property<string>("SourceIp")
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
+                        .HasColumnType("varchar(64)")
                         .HasColumnName("source_ip");
 
                     b.Property<string>("SpoolId")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
+                        .HasColumnType("varchar(64)")
                         .HasColumnName("spool_id");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
+                        .HasColumnType("varchar(16)")
                         .HasColumnName("status");
 
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(998)
-                        .HasColumnType("character varying(998)")
+                        .HasColumnType("varchar(998)")
                         .HasColumnName("subject");
 
                     b.Property<string>("Tags")
-                        .HasColumnType("text")
+                        .HasColumnType("longtext")
                         .HasColumnName("tags");
 
                     b.Property<string>("ToAddresses")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasColumnType("longtext")
                         .HasColumnName("to_addresses");
 
                     b.Property<string>("ToDomain")
                         .IsRequired()
                         .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
+                        .HasColumnType("varchar(255)")
                         .HasColumnName("to_domain");
 
                     b.Property<string>("XMailer")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
+                        .HasColumnType("varchar(256)")
                         .HasColumnName("x_mailer");
 
                     b.HasKey("Id");
@@ -477,25 +473,31 @@ namespace Dispatch.Data.Postgres.Migrations
                         .HasDatabaseName("IX_relay_log_purge");
 
                     b.HasIndex("ApiKeyId", "LoggedAt")
-                        .HasDatabaseName("IX_relay_log_api_key")
-                        .HasFilter("api_key_id IS NOT NULL");
+                        .IsDescending(false, true)
+                        .HasDatabaseName("IX_relay_log_api_key");
 
                     b.HasIndex("FromDomain", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_from_domain");
 
                     b.HasIndex("IngestSource", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_source");
 
                     b.HasIndex("RelayId", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_relay");
 
                     b.HasIndex("RoutingRuleId", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_rule");
 
                     b.HasIndex("Status", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_status_date");
 
                     b.HasIndex("ToDomain", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_to_domain");
 
                     b.HasIndex("SpoolId", "LoggedAt", "Id")
@@ -508,43 +510,43 @@ namespace Dispatch.Data.Postgres.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("id");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("created_at");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
+                        .HasColumnType("tinyint(1)")
                         .HasDefaultValue(true)
                         .HasColumnName("enabled");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
+                        .HasColumnType("varchar(128)")
                         .HasColumnName("name");
 
                     b.Property<int>("Priority")
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("priority");
 
                     b.Property<string>("RecipientPattern")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
+                        .HasColumnType("varchar(256)")
                         .HasColumnName("recipient_pattern");
 
                     b.Property<int>("RelayId")
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("relay_id");
 
                     b.Property<string>("SenderPattern")
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
+                        .HasColumnType("varchar(256)")
                         .HasColumnName("sender_pattern");
 
                     b.HasKey("Id");
@@ -561,29 +563,29 @@ namespace Dispatch.Data.Postgres.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
+                        .HasColumnType("int")
                         .HasColumnName("id");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("created_at");
 
                     b.Property<DateTime?>("LastUsedAt")
-                        .HasColumnType("timestamp with time zone")
+                        .HasColumnType("datetime(6)")
                         .HasColumnName("last_used_at");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
+                        .HasColumnType("varchar(512)")
                         .HasColumnName("password_hash");
 
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
+                        .HasColumnType("varchar(256)")
                         .HasColumnName("username");
 
                     b.HasKey("Id");

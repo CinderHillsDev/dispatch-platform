@@ -82,10 +82,11 @@ namespace Dispatch.Data.Sqlite.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("KeyId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_api_keys_key_id")
+                    b.HasIndex(new[] { "KeyId" }, "IX_api_keys_key_id")
                         .HasFilter("NOT revoked");
+
+                    b.HasIndex(new[] { "KeyId" }, "UQ_api_keys_key_id")
+                        .IsUnique();
 
                     b.ToTable("api_keys", (string)null);
                 });
@@ -144,9 +145,11 @@ namespace Dispatch.Data.Sqlite.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Kind", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_audit_log_kind");
 
                     b.HasIndex("LoggedAt", "Id")
+                        .IsDescending()
                         .HasDatabaseName("IX_audit_log_at");
 
                     b.ToTable("audit_log", (string)null);
@@ -227,6 +230,7 @@ namespace Dispatch.Data.Sqlite.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Date")
+                        .IsDescending()
                         .HasDatabaseName("IX_relay_counters_date");
 
                     b.HasIndex("Date", "RelayId")
@@ -459,25 +463,32 @@ namespace Dispatch.Data.Sqlite.Migrations
                         .HasDatabaseName("IX_relay_log_purge");
 
                     b.HasIndex("ApiKeyId", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_api_key")
                         .HasFilter("api_key_id IS NOT NULL");
 
                     b.HasIndex("FromDomain", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_from_domain");
 
                     b.HasIndex("IngestSource", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_source");
 
                     b.HasIndex("RelayId", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_relay");
 
                     b.HasIndex("RoutingRuleId", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_rule");
 
                     b.HasIndex("Status", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_status_date");
 
                     b.HasIndex("ToDomain", "LoggedAt")
+                        .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_to_domain");
 
                     b.HasIndex("SpoolId", "LoggedAt", "Id")

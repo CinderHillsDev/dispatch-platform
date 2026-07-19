@@ -206,18 +206,25 @@ namespace Dispatch.Data.Sqlite.Migrations
                 name: "IX_api_keys_key_id",
                 table: "api_keys",
                 column: "key_id",
-                unique: true,
                 filter: "NOT revoked");
+
+            migrationBuilder.CreateIndex(
+                name: "UQ_api_keys_key_id",
+                table: "api_keys",
+                column: "key_id",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_audit_log_at",
                 table: "audit_log",
-                columns: new[] { "logged_at", "id" });
+                columns: new[] { "logged_at", "id" },
+                descending: new bool[0]);
 
             migrationBuilder.CreateIndex(
                 name: "IX_audit_log_kind",
                 table: "audit_log",
-                columns: new[] { "kind", "logged_at" });
+                columns: new[] { "kind", "logged_at" },
+                descending: new[] { false, true });
 
             migrationBuilder.CreateIndex(
                 name: "IX_config_smtp_credentials_username",
@@ -228,7 +235,8 @@ namespace Dispatch.Data.Sqlite.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_relay_counters_date",
                 table: "relay_counters",
-                column: "date");
+                column: "date",
+                descending: new bool[0]);
 
             migrationBuilder.CreateIndex(
                 name: "UQ_relay_counters",
@@ -240,12 +248,14 @@ namespace Dispatch.Data.Sqlite.Migrations
                 name: "IX_relay_log_api_key",
                 table: "relay_log",
                 columns: new[] { "api_key_id", "logged_at" },
+                descending: new[] { false, true },
                 filter: "api_key_id IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_relay_log_from_domain",
                 table: "relay_log",
-                columns: new[] { "from_domain", "logged_at" });
+                columns: new[] { "from_domain", "logged_at" },
+                descending: new[] { false, true });
 
             migrationBuilder.CreateIndex(
                 name: "IX_relay_log_purge",
@@ -255,17 +265,20 @@ namespace Dispatch.Data.Sqlite.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_relay_log_relay",
                 table: "relay_log",
-                columns: new[] { "relay_id", "logged_at" });
+                columns: new[] { "relay_id", "logged_at" },
+                descending: new[] { false, true });
 
             migrationBuilder.CreateIndex(
                 name: "IX_relay_log_rule",
                 table: "relay_log",
-                columns: new[] { "routing_rule_id", "logged_at" });
+                columns: new[] { "routing_rule_id", "logged_at" },
+                descending: new[] { false, true });
 
             migrationBuilder.CreateIndex(
                 name: "IX_relay_log_source",
                 table: "relay_log",
-                columns: new[] { "ingest_source", "logged_at" });
+                columns: new[] { "ingest_source", "logged_at" },
+                descending: new[] { false, true });
 
             migrationBuilder.CreateIndex(
                 name: "IX_relay_log_spool_id",
@@ -275,12 +288,14 @@ namespace Dispatch.Data.Sqlite.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_relay_log_status_date",
                 table: "relay_log",
-                columns: new[] { "status", "logged_at" });
+                columns: new[] { "status", "logged_at" },
+                descending: new[] { false, true });
 
             migrationBuilder.CreateIndex(
                 name: "IX_relay_log_to_domain",
                 table: "relay_log",
-                columns: new[] { "to_domain", "logged_at" });
+                columns: new[] { "to_domain", "logged_at" },
+                descending: new[] { false, true });
 
             migrationBuilder.CreateIndex(
                 name: "IX_relays_default",
