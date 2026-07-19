@@ -248,7 +248,7 @@ jobs:
           Dispatch SMTP Relay ${ver} - Linux (universal: x64 + arm64, self-contained; no .NET SDK required).
 
           install.sh auto-detects your CPU arch (uses bin-x64 or bin-arm64) - no flags needed:
-            sudo ./install.sh --install-postgres --db-password '<StrongDbPassw0rd!>' --admin-password '<DashboardPassword!>'
+            sudo ./install.sh --admin-password '<DashboardPassword!>'
 
           Or use an existing PostgreSQL server:
             sudo ./install.sh --sql-connection 'Host=...;Port=5432;Database=DispatchLog;Username=...;Password=...' --admin-password '<DashboardPassword!>'

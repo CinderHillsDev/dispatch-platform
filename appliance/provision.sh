@@ -2,21 +2,18 @@
 #
 # Dispatch appliance - in-guest provisioning, run by virt-customize during the image build (NOT at runtime).
 # virt-customize runs --run scripts with /bin/sh, so this is POSIX sh (no bashisms). Runs with NO network
-# (libguestfs's passt networking is unreliable on CI runners): the PostgreSQL packages are pre-downloaded on
-# the host into /opt/stage/debs (see build-appliance.sh) and installed offline here. PostgreSQL is only
-# unpacked - it's configured per-VM on first boot (appliance/firstboot.sh).
+# (libguestfs's passt networking is unreliable on CI runners): the guest-agent packages are pre-downloaded
+# on the host into /opt/stage/debs (see build-appliance.sh) and installed offline here. There is no database
+# server to install - Dispatch uses the bundled SQLite file it creates under /var/lib/dispatch.
 #
 set -eu
 export DEBIAN_FRONTEND=noninteractive
 STAGE="/opt/stage"
 
-echo "==> Install PostgreSQL (offline from pre-downloaded .debs)"
+echo "==> Install staged guest-agent packages (offline from pre-downloaded .debs)"
 dpkg -i "$STAGE"/debs/*.deb || true   # may report ordering warnings; configure resolves them
-# Tolerant: a guest-agent postinst can be noisy in an offline chroot (no running systemd). PostgreSQL
-# correctness is hard-verified immediately below, so a nonzero configure here must not abort the build.
+# Tolerant: a guest-agent postinst can be noisy in an offline chroot (no running systemd).
 dpkg --configure -a || true
-ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1 || { echo "ERROR: postgresql did not install" >&2; exit 1; }
-command -v psql >/dev/null 2>&1 || { echo "ERROR: psql (postgresql client) did not install" >&2; exit 1; }
 
 echo "==> Enable hypervisor guest agents (best-effort; each idles harmlessly on a non-matching host)"
 # So Hyper-V Manager / vCenter / Proxmox can show the VM's IP. The .debs are installed above; enable only the
@@ -26,27 +23,20 @@ for unit in hv-kvp-daemon.service hv-vss-daemon.service hv-fcopy-daemon.service 
   if systemctl --root=/ enable "$unit" >/dev/null 2>&1; then echo "  enabled $unit"; else echo "  (skip $unit - not installed)"; fi
 done
 
-echo "==> Stage Dispatch (enabled, not started; DB password finalized on first boot)"
-bash "$STAGE/install.sh" --prebuilt "$STAGE/bin" --no-start \
-  --sql-connection "Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=__DB_PASSWORD__"
+echo "==> Stage Dispatch (enabled, not started)"
+# No --sql-connection: the appliance uses the bundled SQLite database, which the service creates under
+# /var/lib/dispatch on first start. That removes the whole first-boot database bootstrap the appliance used
+# to need - no server to install offline, no per-VM password to generate, and a much faster first boot.
+bash "$STAGE/install.sh" --prebuilt "$STAGE/bin" --no-start
 
-echo "==> Install the dispatch-set-ip helper"
 install -m 755 "$STAGE/dispatch-set-ip" /usr/local/sbin/dispatch-set-ip
 
-echo "==> First-boot unit + start ordering"
-install -m 755 -D "$STAGE/firstboot.sh" /opt/dispatch-appliance/firstboot.sh
-install -m 644 "$STAGE/dispatch-firstboot.service" /etc/systemd/system/dispatch-firstboot.service
-mkdir -p /etc/systemd/system/dispatch.service.d
-# Dispatch must start only after first-boot configures PostgreSQL.
-printf '[Unit]\nAfter=dispatch-firstboot.service\nRequires=dispatch-firstboot.service\n' \
-  > /etc/systemd/system/dispatch.service.d/10-appliance.conf
-# Enable both units offline. `systemctl --root=/` creates the WantedBy symlinks without a running systemd
-# (a plain `systemctl enable` is a silent no-op in the build appliance), and the explicit ln is a fallback.
-# Without this neither first-boot nor Dispatch starts at boot (VM comes up to a bare login - the boot smoke
-# caught exactly that).
-systemctl --root=/ enable dispatch-firstboot.service dispatch.service 2>&1 || echo "WARN: systemctl --root enable returned nonzero"
+echo "==> Enable Dispatch at boot"
+# `systemctl --root=/` creates the WantedBy symlinks without a running systemd (a plain `systemctl enable`
+# is a silent no-op in the build appliance), and the explicit ln is a fallback. Without this Dispatch does
+# not start at boot and the VM comes up to a bare login - the boot smoke caught exactly that.
+systemctl --root=/ enable dispatch.service 2>&1 || echo "WARN: systemctl --root enable returned nonzero"
 mkdir -p /etc/systemd/system/multi-user.target.wants
-ln -sf ../dispatch-firstboot.service /etc/systemd/system/multi-user.target.wants/dispatch-firstboot.service
 ln -sf ../dispatch.service /etc/systemd/system/multi-user.target.wants/dispatch.service
 
 echo "==> Ensure the UEFI removable/fallback bootloader path exists"

@@ -29,15 +29,15 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
     202 / 250 OK instantly   spool directory
     (before any DB or        (durable in-flight queue)
      network call)                  ↕
-                              relay_log in PostgreSQL
+                              relay_log in the database
                               (after-the-fact history)
                                     ↕
                              Web UI (port 8420)
                          Configure · Monitor · Debug
 ```
 
-- **`250 OK` before anything else** - Dispatch writes the message to a local spool file and acknowledges the sender immediately. PostgreSQL is written to only *after* the provider accepts the message.
-- **The spool directory is the queue** - `.eml` files survive restarts, crashes, and database outages. If PostgreSQL is down, mail still flows.
+- **`250 OK` before anything else** - Dispatch writes the message to a local spool file and acknowledges the sender immediately. The database is written to only *after* the provider accepts the message.
+- **The spool directory is the queue** - `.eml` files survive restarts, crashes, and database outages. If the database is down, mail still flows.
 - **One place for credentials** - rotate an API key once, not in every app.
 - **Test before you commit** - verify provider credentials with a live relay log, or capture mail to the **Local Inbox** without delivering anything.
 
@@ -52,7 +52,7 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 - **Secure by default** - HTTPS-only dashboard, a shared TLS cert for SMTP + the API, bcrypt-hashed passwords & API keys, encrypted secrets at rest, CIDR allow-lists so it's never an open relay.
 - **Privacy first - no call home** - no telemetry, no analytics, no usage stats, no automatic update pings. The only outbound connections are to the mail providers you configure; updates are applied from a signed package you upload yourself.
 - **Observability** - unauthenticated `/health` and Prometheus `/metrics` (dashboard-port, allow-list-gated).
-- **Deploy anywhere** - Windows & Linux installers (bundled PostgreSQL), a multi-arch Docker image, or a ready-to-import virtual appliance for Hyper-V, VMware, KVM & Proxmox.
+- **Deploy anywhere** - Windows & Linux installers, a multi-arch Docker image, or a ready-to-import virtual appliance for Hyper-V, VMware, KVM & Proxmox. No database server to install: Dispatch bundles SQLite, or points at a PostgreSQL, MariaDB/MySQL or SQL Server you already run ([docs/database.md](docs/database.md)).
 
 ## Quickstart
 
@@ -75,7 +75,7 @@ Then open **https://localhost:8420**, set the admin password, add a relay, and p
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FCinderHillsDev%2Fdispatch-platform%2Fmain%2Fdeploy%2Fazure%2Fazuredeploy.json)
 
-Spins up an Ubuntu VM and installs Dispatch + PostgreSQL via cloud-init - no Marketplace account needed. See **[deploy/azure/](deploy/azure/)**.
+Spins up an Ubuntu VM and installs Dispatch via cloud-init - no Marketplace account needed. See **[deploy/azure/](deploy/azure/)**.
 
 ## Documentation
 
@@ -101,19 +101,19 @@ Full details: **[Security docs](https://docs.dispatchrelay.app/security/)**. Ple
 
 ## Building from source
 
-Prerequisites: the **.NET 10 SDK**, **Node.js 20+**, and **Docker** (for PostgreSQL).
+Prerequisites: the **.NET 10 SDK** and **Node.js 20+**. Docker is optional - only needed to test against a database server rather than the bundled SQLite default.
 
 ```bash
 git clone https://github.com/CinderHillsDev/dispatch-platform.git
 cd dispatch-platform
-docker compose up -d                       # PostgreSQL; schema auto-created on first run
+docker compose up -d                       # bundled SQLite; schema auto-created on first run
 cd src/Dispatch.UI && npm install && npm run build && cd ../..
 rm -rf src/Dispatch.Web/wwwroot && mkdir -p src/Dispatch.Web/wwwroot
 cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
 ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service
 ```
 
-`appsettings.Development.json` (git-ignored) needs at least the PostgreSQL connection string and an `AdminPassword`. Tests: `dotnet test` (Data integration tests run only when `DISPATCH_TEST_SQL` is set, auto-skipped otherwise). The documentation site lives in its own repo (`dispatch-docs`, published at [docs.dispatchrelay.app](https://docs.dispatchrelay.app/)); the marketing site is `dispatch-website`.
+`appsettings.Development.json` (git-ignored) needs at least a connection string and an `AdminPassword`. Tests: `dotnet test` - the Data integration tests run against bundled SQLite by default, or set `DISPATCH_TEST_ENGINE` + `DISPATCH_TEST_SQL` to run them against another engine. The documentation site lives in its own repo (`dispatch-docs`, published at [docs.dispatchrelay.app](https://docs.dispatchrelay.app/)); the marketing site is `dispatch-website`.
 
 ## Adding a provider
 

@@ -4,7 +4,7 @@
 #
 # Customizes the official Ubuntu cloud image offline with libguestfs (no Hyper-V host, no nested virt) and
 # converts it to a Gen2/UEFI dynamic VHDX. PostgreSQL's binaries are baked in; each VM configures the
-# database with a unique password and starts Dispatch on first boot (see appliance/firstboot.sh).
+# Dispatch starts on first boot against the bundled SQLite database it creates under /var/lib/dispatch.
 #
 # Requires (host): libguestfs-tools, qemu-utils, curl.
 # Usage:
@@ -62,10 +62,8 @@ cp "$REPO/installer/linux/dispatch-updater.service" "$STAGE/dispatch-updater.ser
 cp "$REPO/installer/linux/dispatch-update.path"     "$STAGE/dispatch-update.path"
 cp "$REPO/installer/linux/dispatch-update.sh"       "$STAGE/dispatch-update.sh"
 cp "$REPO/src/Dispatch.Core/Updates/dispatch-update-public.pem" "$STAGE/dispatch-update-public.pem"
-cp "$REPO/appliance/firstboot.sh"                "$STAGE/firstboot.sh"
-cp "$REPO/appliance/dispatch-firstboot.service"  "$STAGE/dispatch-firstboot.service"
 cp "$REPO/appliance/dispatch-set-ip"             "$STAGE/dispatch-set-ip"
-chmod +x "$STAGE/install.sh" "$STAGE/dispatch-update.sh" "$STAGE/firstboot.sh" "$STAGE/dispatch-set-ip" "$STAGE/bin/Dispatch.Service"
+chmod +x "$STAGE/install.sh" "$STAGE/dispatch-update.sh" "$STAGE/dispatch-set-ip" "$STAGE/bin/Dispatch.Service"
 
 echo "==> Detecting the guest kernel version (for Hyper-V integration tools, which are kernel-tied)"
 # The Hyper-V KVP/VSS/fcopy daemons ship in a per-kernel package, so we must fetch the set matching THIS
@@ -73,7 +71,7 @@ echo "==> Detecting the guest kernel version (for Hyper-V integration tools, whi
 KVER="$(virt-ls -a "$WORK/base.img" /lib/modules 2>/dev/null | grep -E '^[0-9]' | sort -V | tail -1 || true)"
 echo "guest kernel: ${KVER:-<unknown - Hyper-V IP reporting may be skipped>}"
 
-echo "==> Pre-downloading PostgreSQL (.debs) for an offline in-guest install"
+echo "==> Pre-downloading guest-agent packages (.debs) for an offline in-guest install"
 # Done on the host in a clean Ubuntu 24.04 container so the dependency closure matches the cloud image and
 # the image build itself needs no in-guest network (libguestfs passt networking is unreliable on CI).
 mkdir -p "$STAGE/debs"
@@ -85,10 +83,9 @@ docker run --rm -e KVER="$KVER" -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
   cd /debs
   # Full recursive runtime dependency closure of the target packages (skip virtual/undownloadable entries).
   deps=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances \
-           postgresql postgresql-contrib | grep "^\w" | sort -u)
+           | grep "^\w" | sort -u)
   for d in $deps; do apt-get download "$d" 2>/dev/null || true; done
-  echo "downloaded $(ls -1 /debs/*.deb | wc -l) PostgreSQL packages"
-  ls /debs/postgresql*_*.deb >/dev/null   # fail the build if the core package is missing
+  echo "downloaded $(ls -1 /debs/*.deb | wc -l) packages"
 
   # Hypervisor guest agents so each hypervisor manager can display the VM IP (installed offline in the guest;
   # NO first-boot network, so this keeps the appliance no-call-home): open-vm-tools = VMware, qemu-guest-agent
@@ -125,11 +122,11 @@ echo "ESP /EFI/ubuntu:"; virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/ubuntu 2>/d
 virt-ls -a "$WORK/disk.qcow2" /boot/efi/EFI/BOOT 2>/dev/null | grep -qi '^BOOTX64.EFI$' \
   || { echo "ERROR: UEFI fallback bootloader \EFI\BOOT\BOOTX64.EFI missing - image would not boot on empty-NVRAM firmware" >&2; exit 1; }
 
-for unit in dispatch.service dispatch-firstboot.service; do
+for unit in dispatch.service; do
   virt-ls -a "$WORK/disk.qcow2" /etc/systemd/system/multi-user.target.wants 2>/dev/null | grep -qx "$unit" \
     || { echo "ERROR: $unit is not enabled (no WantedBy symlink) - it would not start at boot" >&2; exit 1; }
 done
-echo "verified: bootloader fallback + dispatch/firstboot units enabled"
+echo "verified: bootloader fallback + dispatch unit enabled"
 
 # Informational: which hypervisor guest agents ended up enabled (best-effort - never fails the build). At
 # least open-vm-tools + qemu-guest-agent should be present; the Hyper-V KVP daemon requires the kernel-tied
