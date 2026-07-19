@@ -21,7 +21,7 @@ namespace Dispatch.Data;
 /// Timestamps are UTC everywhere. Each provider stores them natively (timestamptz / datetime2 /
 /// datetime(6) / ISO-8601 TEXT); nothing in the application should depend on the storage form.
 /// </summary>
-public sealed class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : DbContext(options)
+public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : DbContext(options)
 {
     public DbSet<ConfigEntity> Config => Set<ConfigEntity>();
     public DbSet<RelayEntity> Relays => Set<RelayEntity>();

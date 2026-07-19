@@ -47,6 +47,14 @@ try
     SecureConfig.UseKeyDirectory(
         Environment.GetEnvironmentVariable("DISPATCH_KEY_DIR") ?? builder.Environment.ContentRootPath);
 
+    // CLI: `Dispatch.Service migrate-database --to "<connection string>"` copies this install's database
+    // onto another engine and exits - the 0.7 path from a bundled PostgreSQL onto bundled SQLite. Placed
+    // after UseKeyDirectory so the encryption key is resolved the same way the service resolves it; the
+    // migration copies ciphertext verbatim, but a mis-set key directory should fail here rather than at
+    // the first read after cutover.
+    if (args.Contains("migrate-database", StringComparer.OrdinalIgnoreCase))
+        return await MigrateDatabaseAsync(builder.Configuration, args);
+
     // --- Bootstrap (spec §12.1, §12.6, §12.8) -------------------------------------------------
     // appsettings.json holds ONLY the DB connection string and the Web UI TLS cert. Everything else lives
     // in the SQL config table. SQL must be reachable at startup: initialise the schema, seed default config
@@ -356,4 +364,87 @@ static string ReadSecret()
         if (!char.IsControl(k.KeyChar)) sb.Append(k.KeyChar);
     }
     return sb.ToString();
+}
+
+// --- CLI: migrate-database ---------------------------------------------------------------------
+// Copies this install's database onto another engine. The 0.7 path for moving an existing PostgreSQL
+// deployment onto the bundled SQLite backend:
+//
+//   Dispatch.Service migrate-database --to "Data Source=/var/lib/dispatch/dispatch.db"
+//
+// The source is whatever ConnectionStrings:DispatchLog currently points at, so this is run from the
+// install directory with the service STOPPED - a running service would keep writing rows into the old
+// database that the copy has already passed.
+//
+// Nothing is deleted and the source is only ever read: if the result is wrong, the fix is to point the
+// connection string back and try again. After a successful run, update ConnectionStrings:DispatchLog to
+// the new target and start the service.
+//
+// The at-rest encryption key is NOT part of the database. Encrypted config rows are copied as ciphertext,
+// so the migrated install must keep the same DISPATCH_KEY_DIR - migrating onto a different host means
+// carrying that key across too, or every encrypted setting becomes unreadable.
+static async Task<int> MigrateDatabaseAsync(IConfiguration cfg, string[] args)
+{
+    var source = cfg.GetConnectionString("DispatchLog");
+    if (string.IsNullOrWhiteSpace(source))
+    {
+        Console.Error.WriteLine("ConnectionStrings:DispatchLog is not configured (run from the install dir or set the env var).");
+        return 1;
+    }
+
+    var target = ValueAfter(args, "--to");
+    if (string.IsNullOrWhiteSpace(target))
+    {
+        Console.Error.WriteLine("Usage: Dispatch.Service migrate-database --to \"<connection string>\" [--to-provider <name>]");
+        Console.Error.WriteLine("  e.g. Dispatch.Service migrate-database --to \"Data Source=/var/lib/dispatch/dispatch.db\"");
+        return 1;
+    }
+
+    try
+    {
+        var sourceProvider = DatabaseProviderResolver.Resolve(source, cfg["Database:Provider"]);
+        var targetProvider = DatabaseProviderResolver.Resolve(target, ValueAfter(args, "--to-provider"));
+
+        if (sourceProvider == targetProvider)
+        {
+            Console.Error.WriteLine($"Source and target are both {sourceProvider}; nothing to migrate.");
+            return 1;
+        }
+
+        Console.WriteLine($"Migrating {sourceProvider} -> {targetProvider}");
+        Console.WriteLine("Ensure the Dispatch service is STOPPED before continuing, or rows written during");
+        Console.WriteLine("the copy will be missed. Press Ctrl+C to abort.");
+
+        // Bring the target up to the current schema first; the migrator refuses a target that is behind.
+        using var loggerFactory = LoggerFactory.Create(b => b.AddSimpleConsole());
+        await new DatabaseInitializer(
+                DispatchDbContextFactory.Create(targetProvider, target),
+                new DatabaseBootstrap(targetProvider, target, loggerFactory.CreateLogger<DatabaseBootstrap>()),
+                loggerFactory.CreateLogger<DatabaseInitializer>())
+            .InitializeAsync();
+
+        var result = await new DatabaseMigrator(loggerFactory.CreateLogger<DatabaseMigrator>())
+            .CopyAsync(sourceProvider, source, targetProvider, target);
+
+        Console.WriteLine();
+        foreach (var (table, rows) in result.RowsCopied.OrderBy(kv => kv.Key))
+            Console.WriteLine($"  {table,-24} {rows,10:N0}");
+        Console.WriteLine($"  {"total",-24} {result.Total,10:N0}   in {result.Elapsed.TotalSeconds:N1}s");
+        Console.WriteLine();
+        Console.WriteLine("Row counts verified against the source. Now update ConnectionStrings:DispatchLog");
+        Console.WriteLine("to the new target and start the service. The old database is untouched.");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Migration failed: {ex.Message}");
+        Console.Error.WriteLine("The source database has not been modified.");
+        return 1;
+    }
+
+    static string? ValueAfter(string[] argv, string flag)
+    {
+        var i = Array.FindIndex(argv, a => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase));
+        return i >= 0 && i + 1 < argv.Length ? argv[i + 1] : null;
+    }
 }
