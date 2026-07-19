@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Dispatch.Data.Providers;
 
 namespace Dispatch.Data;
 
@@ -183,7 +184,7 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
             // ascending index would leave the engine reading the whole range backwards or sorting.
             e.HasIndex(x => new { x.Status, x.LoggedAt }).HasDatabaseName("IX_relay_log_status_date")
                 .IsDescending(false, true)
-                .Covering(Provider, ListColumns);
+                .Covering(Engine, ListColumns);
             e.HasIndex(x => new { x.FromDomain, x.LoggedAt }).HasDatabaseName("IX_relay_log_from_domain")
                 .IsDescending(false, true);
             e.HasIndex(x => new { x.ToDomain, x.LoggedAt }).HasDatabaseName("IX_relay_log_to_domain")
@@ -193,10 +194,10 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
             e.HasIndex(x => x.LoggedAt).HasDatabaseName("IX_relay_log_purge");
             e.HasIndex(x => new { x.RelayId, x.LoggedAt }).HasDatabaseName("IX_relay_log_relay")
                 .IsDescending(false, true)
-                .Covering(Provider, FilterColumns);
+                .Covering(Engine, FilterColumns);
             e.HasIndex(x => new { x.RoutingRuleId, x.LoggedAt }).HasDatabaseName("IX_relay_log_rule")
                 .IsDescending(false, true)
-                .Covering(Provider, FilterColumns);
+                .Covering(Engine, FilterColumns);
             e.HasIndex(x => new { x.SpoolId, x.LoggedAt, x.Id }).HasDatabaseName("IX_relay_log_spool_id");
 
             // Per-API-key message list. The vast majority of rows are SMTP ingest with a NULL api_key_id;
@@ -240,21 +241,19 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
     }
 
     /// <summary>
-    /// SQL for "now, in UTC" as a column default.
-    ///
-    /// This is NOT the same expression everywhere, and getting it wrong is silent: CURRENT_TIMESTAMP
-    /// returns *local server time* on SQL Server and MySQL/MariaDB, and UTC on SQLite and Postgres. Dispatch
-    /// stores UTC throughout, so on a server in a non-UTC timezone the portable-looking spelling would write
-    /// skewed timestamps that still look plausible — wrong ordering, wrong retention, no error.
+    /// The engine backing this context. EF only exposes its own provider name, so it is mapped back to the
+    /// registry here — the one place in the model that needs to know the correspondence.
     /// </summary>
-    private string UtcNowSql() => Provider switch
+    private IDatabaseProvider Engine => Database.ProviderName switch
     {
-        DbProvider.Postgres => "now()",
-        DbProvider.Sqlite => "CURRENT_TIMESTAMP",
-        DbProvider.SqlServer => "SYSUTCDATETIME()",
-        DbProvider.MySql => "UTC_TIMESTAMP()",
-        _ => throw new InvalidOperationException("Unsupported provider."),
+        "Npgsql.EntityFrameworkCore.PostgreSQL" => DatabaseProviders.Get(DatabaseProvider.Postgres),
+        "Microsoft.EntityFrameworkCore.Sqlite" => DatabaseProviders.Get(DatabaseProvider.Sqlite),
+        "Microsoft.EntityFrameworkCore.SqlServer" => DatabaseProviders.Get(DatabaseProvider.SqlServer),
+        "Pomelo.EntityFrameworkCore.MySql" => DatabaseProviders.Get(DatabaseProvider.MySql),
+        var other => throw new InvalidOperationException($"Unsupported EF provider '{other}'."),
     };
+
+    private string UtcNowSql() => Engine.UtcNowSql;
 
     // ---- Covering-index payloads ------------------------------------------------------------------
     //
@@ -288,37 +287,10 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
     // These read Database.ProviderName rather than the IsNpgsql()/IsSqlServer() helpers so the context does
     // not need a compile-time reference to every provider package.
 
-    private string? DefaultRelayIndexFilter() => Provider switch
-    {
-        DbProvider.Postgres or DbProvider.Sqlite => "is_default",
-        DbProvider.SqlServer => "[is_default] = 1",
-        _ => null,     // MySQL/MariaDB: enforced in SqlRelayRepository instead
-    };
+    private string? DefaultRelayIndexFilter() => Engine.IndexFilter(IndexPredicate.DefaultRelay);
+    private string? LiveApiKeyIndexFilter() => Engine.IndexFilter(IndexPredicate.LiveApiKey);
+    private string? ApiKeyLogIndexFilter() => Engine.IndexFilter(IndexPredicate.ApiKeyAttributedLog);
 
-    private string? LiveApiKeyIndexFilter() => Provider switch
-    {
-        DbProvider.Postgres or DbProvider.Sqlite => "NOT revoked",
-        DbProvider.SqlServer => "[revoked] = 0",
-        _ => null,
-    };
-
-    private string? ApiKeyLogIndexFilter() => Provider switch
-    {
-        DbProvider.Postgres or DbProvider.Sqlite => "api_key_id IS NOT NULL",
-        DbProvider.SqlServer => "[api_key_id] IS NOT NULL",
-        _ => null,
-    };
-
-    private DbProvider Provider => Database.ProviderName switch
-    {
-        "Npgsql.EntityFrameworkCore.PostgreSQL" => DbProvider.Postgres,
-        "Microsoft.EntityFrameworkCore.Sqlite" => DbProvider.Sqlite,
-        "Microsoft.EntityFrameworkCore.SqlServer" => DbProvider.SqlServer,
-        "Pomelo.EntityFrameworkCore.MySql" => DbProvider.MySql,
-        var other => throw new InvalidOperationException($"Unsupported EF provider '{other}'."),
-    };
-
-    private enum DbProvider { Postgres, Sqlite, SqlServer, MySql }
 }
 
 internal static class IndexBuilderExtensions
@@ -331,11 +303,8 @@ internal static class IndexBuilderExtensions
     /// name, so calling one is an ambiguous-reference compile error. The annotation is what
     /// IncludeProperties() writes anyway, and each provider ignores the others'.
     /// </summary>
-    public static IndexBuilder<T> Covering<T>(this IndexBuilder<T> index, object provider, string[] properties) =>
-        provider.ToString() switch
-        {
-            "Postgres" => index.HasAnnotation("Npgsql:IndexInclude", properties),
-            "SqlServer" => index.HasAnnotation("SqlServer:Include", properties),
-            _ => index,   // SQLite and MySQL/MariaDB have no covering-index concept
-        };
+    public static IndexBuilder<T> Covering<T>(this IndexBuilder<T> index, IDatabaseProvider provider, string[] properties) =>
+        provider.CoveringIndexAnnotation is { } annotation
+            ? index.HasAnnotation(annotation, properties)
+            : index;   // SQLite and MySQL/MariaDB have no covering-index concept
 }

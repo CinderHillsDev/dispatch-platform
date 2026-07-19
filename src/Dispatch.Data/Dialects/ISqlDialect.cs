@@ -3,6 +3,12 @@ using System.Data.Common;
 namespace Dispatch.Data.Dialects;
 
 /// <summary>
+/// SUPERSEDED by <see cref="Dispatch.Data.Providers.IDatabaseProvider"/>, which is the provider contract
+/// for the multi-engine framework. This interface survives only because the Dapper repositories have not
+/// been ported to EF yet and still reach for it; it covers PostgreSQL and SQLite alone, which is why those
+/// are the only engines the repositories currently work on. Porting the repositories deletes this file.
+/// Do not add members here — add them to IDatabaseProvider, or better, avoid needing them.
+///
 /// The database-engine-specific surface. Everything Dispatch does in SQL is deliberately written in the
 /// portable subset both engines share (<c>CAST(x AS bigint)</c>, <c>CURRENT_TIMESTAMP</c>, <c>CURRENT_DATE</c>,
 /// <c>ON CONFLICT ... DO UPDATE</c>, <c>RETURNING</c>, window functions, partial indexes, <c>IN @list</c>) —
