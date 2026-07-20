@@ -95,9 +95,28 @@ generate_cert() {
   chmod 600 "$TLS_CERT_PATH"
 }
 
-# Bundled SQLite is the default: a file under the data directory, which is created and chowned to the
-# service user further down. Nothing to install, and no credentials to manage.
-if [[ -z "$SQL_CONNECTION" ]]; then
+# An upgrade must never repoint the database.
+#
+# This script rewrites appsettings.json wholesale, and appsettings holds exactly two things: the database
+# connection string and the Web UI TLS certificate. So on an existing install with no --sql-connection, the
+# file is left completely alone rather than parsed and rebuilt. Without that, an operator upgrading in
+# place - the normal way, with no flags - would silently be moved onto a brand-new empty SQLite file: the
+# service would start, look healthy, show no mail history and ask for first-run setup, while every message
+# they had ever relayed sat untouched in the database they were using. Nothing would report an error.
+#
+# Not parsing the old file is deliberate. Reading a connection string back out of JSON with shell tools
+# means getting quote escaping right in a password, and getting it subtly wrong is the same silent failure
+# by another route. Preserving the file byte for byte cannot be subtly wrong.
+PRESERVE_CONFIG="0"
+if [[ -z "$SQL_CONNECTION" && -f "$CONFIG_DIR/appsettings.json" ]]; then
+  PRESERVE_CONFIG="1"
+  echo "==> Existing install detected; keeping its configuration and database unchanged"
+  if [[ "$GENERATE_CERT" == "1" ]]; then
+    echo "    NOTE: --generate-cert was ignored because the existing configuration was preserved."
+    echo "          Set the dashboard certificate under Settings -> Connections -> TLS certificate."
+    GENERATE_CERT="0"
+  fi
+elif [[ -z "$SQL_CONNECTION" ]]; then
   SQL_CONNECTION="Data Source=${DATA_DIR}/dispatch.db"
   echo "==> Using the bundled SQLite database at ${DATA_DIR}/dispatch.db"
 else
@@ -220,6 +239,9 @@ if [[ -n "$TLS_CERT_PATH" ]]; then
   WEBUI_TLS=",
   \"WebUi\": { \"TlsCertPath\": \"${TLS_CERT_PATH_J}\", \"TlsCertPassword\": \"${TLS_CERT_PASSWORD_J}\" }"
 fi
+if [[ "$PRESERVE_CONFIG" == "1" ]]; then
+  echo "==> Preserved $CONFIG_DIR/appsettings.json (connection string and TLS settings unchanged)"
+else
 cat > "$CONFIG_DIR/appsettings.json" <<JSON
 {
   "ConnectionStrings": { "DispatchLog": "${SQL_CONNECTION_J}" }${DB_PROVIDER_J},
@@ -227,6 +249,7 @@ cat > "$CONFIG_DIR/appsettings.json" <<JSON
   "Logging": { "LogLevel": { "Default": "Information", "Microsoft.AspNetCore": "Warning" } }${WEBUI_TLS}
 }
 JSON
+fi
 
 # The admin password is consumed once on first start: hashed into the database, then the plaintext seed is wiped
 # from appsettings.json by the service so the password lives only in the database. File is root/dispatch-only.

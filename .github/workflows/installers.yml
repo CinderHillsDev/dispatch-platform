@@ -346,6 +346,17 @@ jobs:
           done
           [ "$tls_ok" = 1 ] || { echo "STARTTLS negotiation failed on all SMTP ports"; exit 1; }
 
+      # The real binary upgrade, and LAST because it rewrites the machine's install: take the last
+      # PUBLISHED release, run mail through it, then upgrade to this build in place and migrate onto
+      # bundled SQLite. Everything else tests this build against a database shaped like an old one; this
+      # uses the actual shipped artifact, old installer and old binaries included. It is what catches an
+      # upgrade that repoints a customer's database or refuses their schema, neither of which a test built
+      # from current source can see.
+      - name: Upgrade from the published release
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: tests/smoke/upgrade-from-released-version.sh dispatch-ci-linux-x64.tar.gz
   linux-installer:
     runs-on: ubuntu-latest
     steps:
