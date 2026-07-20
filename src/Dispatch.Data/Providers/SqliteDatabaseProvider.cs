@@ -74,8 +74,15 @@ public sealed class SqliteDatabaseProvider : IDatabaseProvider
         //                         against a JSON array, audit search) was written against case-sensitive
         //                         semantics, so without this the choice of backend would silently widen
         //                         user-facing search results.
+        //   synchronous         - NORMAL is the standard pairing with WAL: it drops the fsync on every
+        //                         commit, which is the dominant cost of a small write, while staying
+        //                         crash-safe (the residual risk is losing the last few commits on host
+        //                         power loss, not corruption). Unlike journal_mode this is NOT stored in
+        //                         the file, so it must be set here rather than once at bootstrap.
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON; PRAGMA case_sensitive_like = ON;";
+        cmd.CommandText =
+            "PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON; " +
+            "PRAGMA case_sensitive_like = ON; PRAGMA synchronous = NORMAL;";
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -111,11 +118,10 @@ public sealed class SqliteDatabaseProvider : IDatabaseProvider
         await OnConnectionOpenedAsync(cn, ct);
 
         // WAL is what makes the single-writer model workable: readers never block the writer and the writer
-        // never blocks readers. synchronous=NORMAL is the standard WAL pairing - it drops the per-commit
-        // fsync, which is the main throughput limit, while staying crash-safe; the residual risk is losing
-        // the last few commits on host power loss, not corruption.
+        // never blocks readers. This one IS persisted in the file header, so setting it once here is enough
+        // - unlike synchronous, which is per-connection and is set in OnConnectionOpenedAsync.
         await using var pragma = cn.CreateCommand();
-        pragma.CommandText = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;";
+        pragma.CommandText = "PRAGMA journal_mode = WAL;";
         await pragma.ExecuteNonQueryAsync(ct);
     }
 

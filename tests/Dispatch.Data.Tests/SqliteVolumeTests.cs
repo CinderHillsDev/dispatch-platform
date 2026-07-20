@@ -62,8 +62,19 @@ public class SqliteVolumeTests
             var loadRate = rows * 1000.0 / sw.ElapsedMilliseconds;
             Console.WriteLine($"VOLUME load    {rows:N0} rows in {sw.ElapsedMilliseconds:N0}ms ({loadRate:N0} rows/sec)");
 
-            var fileBytes = new FileInfo(path).Length;
-            Console.WriteLine($"VOLUME size    {fileBytes / 1024.0 / 1024.0:N1} MiB total, {(double)fileBytes / rows:N0} bytes/row");
+            // Both numbers, because they answer different questions and differ a lot in WAL mode. The file
+            // is what df reports and includes the -wal sidecar, which is transient write-ahead churn. The
+            // logical size is the data itself, and is what the file settles at after a checkpoint - it is
+            // also what the storage page and the size-pressure trigger read.
+            var fileBytes = new FileInfo(path).Length
+                          + (File.Exists(path + "-wal") ? new FileInfo(path + "-wal").Length : 0);
+            long logicalBytes;
+            await using (var probe = await contexts.CreateDbContextAsync())
+                logicalBytes = await Dispatch.Data.Providers.DatabaseProviders
+                    .Get(DatabaseProvider.Sqlite).GetDatabaseSizeBytesAsync(probe);
+
+            Console.WriteLine($"VOLUME size    logical {logicalBytes / 1024.0 / 1024.0:N1} MiB " +
+                              $"({(double)logicalBytes / rows:N0} bytes/row), files-on-disk {fileBytes / 1024.0 / 1024.0:N1} MiB");
 
             var query = new SqlMessageLogQuery(contexts);
 
