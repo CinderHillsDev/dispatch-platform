@@ -205,15 +205,18 @@ public class SqlRepositoriesTests(DatabaseFixture sql) : IClassFixture<DatabaseF
         await log.InsertAsync(new RelayLogEntry { Event = "Retrying", Status = "Error", SpoolId = spool, FromAddress = $"a@{dom}", FromDomain = dom, ToAddresses = ["b@y.com"], ToDomain = "y.com", Provider = "None", Error = "temp" });
         await log.InsertAsync(new RelayLogEntry { Event = "Retrying", Status = "Error", SpoolId = spool, FromAddress = $"a@{dom}", FromDomain = dom, ToAddresses = ["b@y.com"], ToDomain = "y.com", Provider = "None", Error = "temp" });
         await log.InsertAsync(new RelayLogEntry { Event = "Delivered", Status = "OK", SpoolId = spool, FromAddress = $"a@{dom}", FromDomain = dom, ToAddresses = ["b@y.com"], ToDomain = "y.com", Provider = "None" });
-        // A connection-level denial has no spool id and is its own message.
+        // TWO connection-level denials. Denials have no spool id, and each is its OWN message - they must
+        // never collapse together the way lifecycle rows sharing a spool id do. Two, not one, so a dedup
+        // that keyed only on spool_id would visibly merge them and fail here.
         await log.InsertAsync(new RelayLogEntry { Event = "Denied", Status = "Denied", SpoolId = "", FromAddress = $"c@{dom}", FromDomain = dom, ToAddresses = [], ToDomain = "", IngestSource = "SMTP", Error = "blocked" });
+        await log.InsertAsync(new RelayLogEntry { Event = "Denied", Status = "Denied", SpoolId = "", FromAddress = $"d@{dom}", FromDomain = dom, ToAddresses = [], ToDomain = "", IngestSource = "SMTP", Error = "blocked" });
 
         var page = await query.PageAsync(new MessageLogFilter { FromDomain = dom, Limit = 50 }, offset: 0);
 
-        // The 3 lifecycle rows collapse to ONE row showing the latest event (Delivered); the denial stays its own.
-        Assert.Equal(2, page.Total);
+        // The 3 lifecycle rows collapse to ONE (latest event = Delivered); each denial stays its own row.
+        Assert.Equal(3, page.Total);
         Assert.Equal("Delivered", page.Rows.Single(r => r.SpoolId == spool).Event);
-        Assert.Single(page.Rows, r => r.Event == "Denied");
+        Assert.Equal(2, page.Rows.Count(r => r.Event == "Denied"));
     }
 
     [Fact]
