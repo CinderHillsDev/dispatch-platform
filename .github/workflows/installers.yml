@@ -1,9 +1,10 @@
 name: Installers
 
 # Validates the installer artifacts on GitHub-hosted runners (free for this public repo). Non-destructive
-# by default: the Windows job builds the MSI + Burn bundle (proving the WiX sources + net472 launcher
-# compile) and the Linux job lints install.sh. The actual PostgreSQL install + service smoke test is
-# destructive (it installs PostgreSQL on the runner), so it only runs when dispatched with full_install=true.
+# by default: the Windows job builds the MSI + Burn bundle (proving the WiX sources compile) and the Linux
+# job lints install.sh. The full install and upgrade smokes are destructive - they install and reinstall
+# Dispatch on the runner, and the upgrade one installs PostgreSQL via the OLD released installer - so on a
+# manual dispatch they run only with full_install=true.
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +15,10 @@ on:
   push:
     paths:
       - "installer/**"
+      # The smoke scripts this workflow runs. Without them here, editing a smoke test does not re-run the
+      # workflow that executes it, so a fix to one sits unverified until something else happens to touch
+      # installer/.
+      - "tests/smoke/**"
       - ".github/workflows/installers.yml"
 
 env:
