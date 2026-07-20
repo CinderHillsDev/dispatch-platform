@@ -35,7 +35,7 @@ public sealed class MessageLogRow
     public string SpoolId { get; init; } = "";
     public string FromAddress { get; init; } = "";
     public string ToDomain { get; init; } = "";
-    /// <summary>Raw to_addresses JSON column (mapped by Dapper); not serialised - use <see cref="ToAddresses"/>.</summary>
+    /// <summary>Raw to_addresses JSON column; not serialised - use <see cref="ToAddresses"/>.</summary>
     [JsonIgnore] public string? ToAddressesJson { get; init; }
     /// <summary>Full recipient list, parsed from <see cref="ToAddressesJson"/>, so the log can show real
     /// addresses (and a +N count for multiple recipients) rather than only the domain.</summary>

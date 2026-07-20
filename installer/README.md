@@ -38,8 +38,9 @@ To use a database **server you already run**, pass a connection string:
 
 ### 2. MSI only (`windows/Dispatch.wxs`)
 
-Binaries + service + firewall + `appsettings.json`. Defaults `SQLCONN` to the local bundled PostgreSQL
-instance; override via the `SQLCONN` property for an existing server.
+Binaries + service + firewall + `appsettings.json`. With `SQLCONN` unset it uses the bundled SQLite
+database under `%ProgramData%\Dispatch`; set `SQLCONN` to point at a database server you already run, and
+`DBPROVIDER` when the connection string could target either SQL Server or MySQL.
 
 ### 3. Script (`windows/install.ps1`)
 

@@ -101,6 +101,11 @@ differences that remain are declared in each provider's `ProviderCapabilities` a
    BEFORE `'…:16.847'` within the same second, so a database-stamped row can look older than one written
    moments earlier. Dispatch therefore stamps `logged_at` in code, never from the column default.
 
+**SQL Server object schema.** Tables are created in the connection's default schema, which is `dbo` unless
+the server or login says otherwise. Dispatch does not pin it: doing so would bake an assumption into the
+migrations that a site with a different schema convention could not override. If you need a specific schema,
+grant the Dispatch login a default schema on the server and it will be used.
+
 **Case sensitivity is deliberately normalised.** SQLite's `LIKE`, SQL Server's default collation, and
 MySQL's default collation are all case-**in**sensitive; PostgreSQL's is not. Left alone, Message Log
 subject search, tag matching and audit search would silently return more results on some backends than
