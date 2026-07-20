@@ -433,6 +433,8 @@ static async Task<int> MigrateDatabaseAsync(IConfiguration cfg, string[] args)
             Console.WriteLine($"  {table,-24} {rows,10:N0}");
         Console.WriteLine($"  {"total",-24} {result.Total,10:N0}   in {result.Elapsed.TotalSeconds:N1}s");
         Console.WriteLine();
+        AlignTargetFileOwnership(targetProvider, target);
+
         Console.WriteLine("Row counts verified against the source. Now update ConnectionStrings:DispatchLog");
         Console.WriteLine("to the new target and start the service. The old database is untouched.");
         return 0;
@@ -442,6 +444,54 @@ static async Task<int> MigrateDatabaseAsync(IConfiguration cfg, string[] args)
         Console.Error.WriteLine($"Migration failed: {ex.Message}");
         Console.Error.WriteLine("The source database has not been modified.");
         return 1;
+    }
+
+    // Give the new SQLite file the same owner as the directory it sits in.
+    //
+    // This command has to run as root - it reads the install's appsettings.json - so the file it creates is
+    // owned by root, while the service runs as its own user. SQLite then fails EVERY WRITE while reads keep
+    // working, so the service starts, reports healthy, serves the dashboard and shows all the migrated
+    // history, and silently drops every message that arrives. Reads succeeding is what makes it so hard to
+    // spot.
+    //
+    // chown --reference is used rather than P/Invoke because marshalling struct stat across libc versions
+    // to read the directory's uid is genuinely fragile, and this is a one-shot interactive admin command
+    // where shelling out is honest and visible.
+    static void AlignTargetFileOwnership(DatabaseProvider provider, string connectionString)
+    {
+        if (provider != DatabaseProvider.Sqlite || OperatingSystem.IsWindows()) return;
+
+        var path = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString).DataSource;
+        if (string.IsNullOrWhiteSpace(path) || path == ":memory:") return;
+
+        var full = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(full);
+        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return;
+
+        foreach (var suffix in new[] { "", "-wal", "-shm" })
+        {
+            var file = full + suffix;
+            if (!File.Exists(file)) continue;
+            try
+            {
+                using var chown = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "chown",
+                    ArgumentList = { $"--reference={directory}", file },
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                });
+                chown?.WaitForExit(5000);
+            }
+            catch
+            {
+                // Best-effort: a system without chown, or one where this is already the right owner, is not
+                // a reason to fail a migration that has already succeeded. The warning below still fires.
+            }
+        }
+
+        Console.WriteLine($"Set ownership of {Path.GetFileName(full)} to match {directory}.");
+        Console.WriteLine("If the service still cannot write to it, chown it to the account the service runs as.");
     }
 
     static string? ValueAfter(string[] argv, string flag)

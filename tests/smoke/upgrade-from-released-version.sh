@@ -38,9 +38,12 @@ say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 ok()   { printf '   \033[32mok\033[0m   %s\n' "$*"; }
 fail() {
     printf '   \033[31mFAIL\033[0m %s\n' "$*" >&2
-    # Bounded, and clearly fenced: an unbounded journal dump buries the line that actually says what broke.
+    # Everything to stderr. These helpers get called inside $( ) command substitutions, which capture
+    # stdout - so diagnostics written there vanish into the variable being assigned instead of the log.
     printf '\n   --- last 25 journal lines ---\n' >&2
-    sudo journalctl -u dispatch --no-pager -n 25 2>/dev/null || true
+    sudo journalctl -u dispatch --no-pager -n 25 >&2 2>/dev/null || true
+    printf '   --- database file ---\n' >&2
+    sudo ls -l /var/lib/dispatch/dispatch.db* >&2 2>/dev/null || true
     exit 1
 }
 
@@ -194,6 +197,16 @@ cfg["ConnectionStrings"]["DispatchLog"] = "Data Source=/var/lib/dispatch/dispatc
 json.dump(cfg, open(p, "w"), indent=2)
 PYEOF
 sudo chown dispatch:dispatch /var/lib/dispatch/appsettings.json
+
+# The migration runs as root, so the file it creates is root-owned unless the migrator corrects it. The
+# service runs as 'dispatch' and SQLite would then fail every write while reads kept working - which is
+# exactly how this went unnoticed the first time. Assert the ownership rather than fixing it here: fixing
+# it in the test would hide the very bug the test exists to catch.
+DB_OWNER="$(sudo stat -c '%U' /var/lib/dispatch/dispatch.db)"
+[[ "$DB_OWNER" == "dispatch" ]] \
+    || fail "the migrated database is owned by '$DB_OWNER', not the service account - the service will fail every write"
+ok "migrated database is owned by the service account"
+
 sudo systemctl start dispatch
 wait_healthy || fail "the service did not come up on SQLite"
 ok "running on bundled SQLite"
@@ -220,6 +233,12 @@ sleep 6
 dget '/api/messages?pageSize=50' | jq_ "'found' if any('after the upgrade' in str(r.get('subject','')) for r in d['rows']) else 'missing'" \
     | grep -q found || fail "new mail does not flow after the upgrade"
 ok "new mail flows, alongside the migrated history"
+
+# A write that touches the database directly, not just the spool. Reads kept working when the file was
+# root-owned, so only a write proves the service really owns its database.
+dget '/api/keys' | jq_ "'found' if any(k.get('name') == 'post-upgrade' for k in d) else 'missing'" \
+    | grep -q found || fail "the key created after the upgrade was not persisted"
+ok "writes persist to the migrated database"
 
 say "PASSED - $tag on PostgreSQL upgraded in place and migrated to bundled SQLite"
 printf '   %s messages from the released version survived binaries, schema and engine changing\n\n' "$OLD_ROWS"

@@ -56,6 +56,12 @@ When it finishes, update `ConnectionStrings:DispatchLog` to the new target and s
 > in `DISPATCH_KEY_DIR`, so migrating onto a *different host* means carrying that directory across too -
 > otherwise every encrypted setting becomes unreadable.
 
+> **File ownership.** `migrate-database` runs as root, so it sets the new SQLite file to the same owner as
+> the directory holding it - normally the account the service runs as. If you move the file afterwards,
+> check that owner again. A database the service can read but not write is the nastiest version of this to
+> diagnose: the service starts, reports healthy and shows all your history, while silently failing to
+> record anything new.
+
 SQL Server is not supported as a migration *target* (inserting explicit identity values needs
 `SET IDENTITY_INSERT` handling that is neither implemented nor tested). It works fine as a backend.
 
