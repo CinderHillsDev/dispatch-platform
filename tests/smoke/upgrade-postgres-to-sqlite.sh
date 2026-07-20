@@ -110,6 +110,24 @@ print($expr)
 " <<<"$body"
 }
 
+# Waits for a message with the given subject fragment to reach the log, rather than sleeping a fixed time
+# and hoping. Delivery is asynchronous - API accepts, spool worker picks the file up, provider responds,
+# only then is the row written - so how long that takes depends entirely on how busy the machine is. A
+# fixed sleep passes on a quiet laptop and fails on a CI runner that has just finished four test suites,
+# which is exactly what happened.
+wait_for_message() {
+    local fragment="$1" limit="${2:-50}"
+    for _ in $(seq 1 30); do
+        if dget "/api/messages?pageSize=$limit" \
+            | jq_ "'found' if any('$fragment' in str(r.get('subject','')) for r in d['rows']) else ''" 2>/dev/null \
+            | grep -q found; then
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
+
 authenticate() {
     rm -f "$JAR"
     local needs
@@ -188,8 +206,8 @@ for i in $(seq 1 25); do
         -d "{\"from\":\"pre@local.test\",\"to\":[\"dest@local.test\"],\"subject\":\"pre-migration $i\",\"text\":\"body $i\"}" \
         >/dev/null
 done
-sleep 5
-BEFORE_COUNT=$(dget '/api/messages?limit=200' | jq_ "len(d['rows'])")
+wait_for_message "pre-migration 25" || fail "mail sent before the migration never reached the log"
+BEFORE_COUNT=$(dget '/api/messages?pageSize=50' | jq_ "len(d['rows'])")
 [[ "$BEFORE_COUNT" -ge 25 ]] || fail "expected at least 25 messages before migration, saw $BEFORE_COUNT"
 ok "$BEFORE_COUNT messages logged on postgres"
 
@@ -244,14 +262,10 @@ NEW_KEY=$(dpost /api/keys '{"name":"post-migration","rateLimitPerMinute":0}' | j
 curl -s -X POST "$API/api/v1/messages" -H "Authorization: Bearer $NEW_KEY" \
     -H 'Content-Type: application/json' \
     -d '{"from":"post@local.test","to":["dest@local.test"],"subject":"post-migration","text":"after cutover"}' >/dev/null
-sleep 5
-
 # Assert the message is PRESENT rather than that the row count grew. The log is paginated, so once there
 # is more history than fits on a page the count stops moving - which made the old check pass only while the
 # database was nearly empty. Newest-first ordering puts a just-sent message on the first page.
-dget '/api/messages?pageSize=50' \
-    | jq_ "'found' if any(r.get('subject') == 'post-migration' for r in d['rows']) else 'missing'" \
-    | grep -q found || fail "the message sent after cutover is not in the log"
+wait_for_message "post-migration" || fail "the message sent after cutover never reached the log"
 
 # And it must sit alongside the migrated history, not in place of it.
 dget '/api/messages?pageSize=200' \

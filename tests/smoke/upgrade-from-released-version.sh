@@ -76,6 +76,24 @@ create_key() {
     printf '%s' "$key"
 }
 
+# Waits for a message with the given subject fragment to reach the log, rather than sleeping a fixed time
+# and hoping. Delivery is asynchronous - API accepts, spool worker picks the file up, provider responds,
+# only then is the row written - so how long that takes depends entirely on how busy the machine is. A
+# fixed sleep passes on a quiet laptop and fails on a CI runner that has just finished four test suites,
+# which is exactly what happened.
+wait_for_message() {
+    local fragment="$1" limit="${2:-50}"
+    for _ in $(seq 1 30); do
+        if dget "/api/messages?pageSize=$limit" \
+            | jq_ "'found' if any('$fragment' in str(r.get('subject','')) for r in d['rows']) else ''" 2>/dev/null \
+            | grep -q found; then
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
+
 authenticate() {
     rm -f "$JAR"
     local needs; needs=$(dget /api/auth/status | jq_ "str(d.get('needsSetup', False)).lower()")
@@ -140,7 +158,7 @@ for i in $(seq 1 20); do
         -H 'Content-Type: application/json' \
         -d "{\"from\":\"old@local.test\",\"to\":[\"dest@local.test\"],\"subject\":\"sent on the old version $i\",\"text\":\"body\"}" >/dev/null
 done
-sleep 6
+wait_for_message "sent on the old version" || fail "mail sent on the released version never reached the log"
 OLD_ROWS=$(sudo -u postgres psql -d DispatchLog -tAc "SELECT count(*) FROM relay_log;" 2>/dev/null | tr -d '[:space:]')
 [[ "${OLD_ROWS:-0}" -ge 20 ]] || fail "expected at least 20 rows written by the old version, saw ${OLD_ROWS:-0}"
 ok "$OLD_ROWS rows written by the released version"
@@ -229,9 +247,7 @@ ok "mail sent on the released version is visible in the upgraded install"
 NEW_KEY="$(create_key post-upgrade)"
 curl -s -X POST "$API/api/v1/messages" -H "Authorization: Bearer $NEW_KEY" -H 'Content-Type: application/json' \
     -d '{"from":"new@local.test","to":["dest@local.test"],"subject":"sent after the upgrade","text":"body"}' >/dev/null
-sleep 6
-dget '/api/messages?pageSize=50' | jq_ "'found' if any('after the upgrade' in str(r.get('subject','')) for r in d['rows']) else 'missing'" \
-    | grep -q found || fail "new mail does not flow after the upgrade"
+wait_for_message "after the upgrade" || fail "new mail does not flow after the upgrade"
 ok "new mail flows, alongside the migrated history"
 
 # A write that touches the database directly, not just the spool. Reads kept working when the file was
