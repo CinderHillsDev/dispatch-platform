@@ -21,6 +21,10 @@ jobs:
       - name: Parse + analyze PowerShell
         shell: pwsh
         run: |
+          # Register the gallery if the runner image has not, then trust it. Set-PSRepository fails hard when
+          # PSGallery is not registered yet - an intermittent runner-image state that has flaked this job -
+          # so register-if-missing rather than assume it is there.
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) { Register-PSRepository -Default }
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
           $dirs = 'appliance', 'installer/windows'
@@ -51,6 +55,7 @@ jobs:
       - name: Pester (Hyper-V import logic, cmdlets mocked)
         shell: pwsh
         run: |
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) { Register-PSRepository -Default }
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module Pester -MinimumVersion 5.5.0 -Force -Scope CurrentUser -SkipPublisherCheck
           Import-Module Pester
