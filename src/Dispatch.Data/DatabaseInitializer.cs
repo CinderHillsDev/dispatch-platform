@@ -1,15 +1,28 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Data;
 
 /// <summary>
-/// Brings the database up to the current schema on every startup. Idempotent: safe against a brand-new
-/// database and an already-current one alike.
+/// Brings the database up to the current schema on every startup. Idempotent, and safe against a brand-new
+/// database, an already-current one, or one created before 0.7 moved the schema to EF Core.
 ///
-/// There is deliberately no handling for databases created before EF migrations existed. Every install is
-/// a new install, so that path was dead code guarding against a situation that cannot arise - and dead
-/// recovery code is worse than none, because it looks like a safety net nobody has tested.
+/// Three cases, in the order they are checked:
+///
+///  1. <b>Already on EF migrations</b> - apply whatever is pending. The normal path.
+///
+///  2. <b>Pre-0.7 database</b> - a `schema_version` table and no `__EFMigrationsHistory`. These were built
+///     by the hand-written PostgreSQL scripts and hold live mail history, so re-creating their tables would
+///     fail on "relation already exists" and, if it somehow succeeded, would be catastrophic. The baseline
+///     migration is recorded as already-applied instead, and later migrations then run normally.
+///
+///     This is only sound because the EF model was verified to produce the same schema those scripts do:
+///     83/83 columns and defaults identical, 27/28 indexes, the difference being an index EF adds on a
+///     foreign key by convention.
+///
+///  3. <b>Empty database</b> - apply everything from scratch.
 /// </summary>
 public sealed class DatabaseInitializer(
     IDbContextFactory<DispatchDbContext> contexts,
@@ -26,6 +39,15 @@ public sealed class DatabaseInitializer(
         await using var db = await contexts.CreateDbContextAsync(ct);
         var provider = db.Database.ProviderName;
 
+        var applied = (await db.Database.GetAppliedMigrationsAsync(ct)).ToList();
+        if (applied.Count == 0 && await HasPreEfSchemaAsync(db, ct))
+        {
+            await AdoptPreEfSchemaAsync(db, ct);
+            log.LogInformation(
+                "Adopted an existing pre-0.7 schema: recorded the baseline migration as applied without " +
+                "re-creating tables that already hold data. [{Provider}]", provider);
+        }
+
         var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
         if (pending.Count == 0)
         {
@@ -36,5 +58,67 @@ public sealed class DatabaseInitializer(
         log.LogInformation("Applying {Count} migration(s): {Migrations} [{Provider}]",
             pending.Count, string.Join(", ", pending), provider);
         await db.Database.MigrateAsync(ct);
+    }
+
+    /// <summary>
+    /// True when this database was built by the pre-0.7 migration runner: a schema_version table AND a real
+    /// table alongside it, so an orphaned schema_version from a failed run is not mistaken for a populated
+    /// schema and used to skip creating everything.
+    /// </summary>
+    public static async Task<bool> HasPreEfSchemaAsync(DispatchDbContext db, CancellationToken ct = default)
+    {
+        var tables = await ExistingTablesAsync(db, ct);
+        return tables.Contains("schema_version") && tables.Contains("relay_log");
+    }
+
+    private static async Task AdoptPreEfSchemaAsync(DispatchDbContext db, CancellationToken ct)
+    {
+        var baseline = db.Database.GetMigrations().FirstOrDefault()
+            ?? throw new InvalidOperationException("No migrations found in the provider's migrations assembly.");
+
+        // EF's own history repository, so the table is created with the shape and quoting this provider
+        // expects rather than hand-written DDL that would differ per engine.
+        var history = db.GetService<IHistoryRepository>();
+        await db.Database.ExecuteSqlRawAsync(history.GetCreateIfNotExistsScript(), ct);
+        await db.Database.ExecuteSqlRawAsync(
+            history.GetInsertScript(new HistoryRow(baseline, ProductInfo.GetVersion())), ct);
+    }
+
+    private static async Task<HashSet<string>> ExistingTablesAsync(DispatchDbContext db, CancellationToken ct)
+    {
+        // information_schema covers Postgres, MySQL/MariaDB and SQL Server; SQLite has sqlite_master
+        // instead. Each needs a different way to say "the current database's own tables" - without that
+        // restriction MySQL would list every table on the server and SQL Server would include system
+        // schemas, so an unrelated database could make this claim a pre-0.7 schema exists.
+        var sql = db.Database.ProviderName switch
+        {
+            "Microsoft.EntityFrameworkCore.Sqlite" =>
+                "SELECT name FROM sqlite_master WHERE type = 'table'",
+            "Npgsql.EntityFrameworkCore.PostgreSQL" =>
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
+            "Pomelo.EntityFrameworkCore.MySql" =>
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()",
+            "Microsoft.EntityFrameworkCore.SqlServer" =>
+                "SELECT table_name FROM information_schema.tables WHERE table_catalog = DB_NAME()",
+            var other => throw new InvalidOperationException($"Unsupported EF provider '{other}'."),
+        };
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var connection = db.Database.GetDbConnection();
+        var opened = connection.State != System.Data.ConnectionState.Open;
+        if (opened) await connection.OpenAsync(ct);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                names.Add(reader.GetString(0));
+        }
+        finally
+        {
+            if (opened) await connection.CloseAsync();
+        }
+        return names;
     }
 }

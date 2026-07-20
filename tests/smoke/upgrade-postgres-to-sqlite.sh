@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 #
-# Upgrade smoke test: an existing PostgreSQL install moves onto bundled SQLite.
+# Upgrade smoke test: a PRE-0.7 PostgreSQL install moves onto bundled SQLite.
 #
-# This is the 0.7 upgrade path for the one deployment in the field, exercised end to end against the real
-# service rather than the migrator in isolation. DatabaseMigratorTests already proves rows and keys survive
-# a copy; what this proves is the thing an operator actually does:
+# The 0.7 upgrade path for the deployment in the field, end to end against the real service:
 #
-#   1. run the service on PostgreSQL and put real data through it (relay, API key, delivered mail)
-#   2. stop it
-#   3. Dispatch.Service migrate-database --to "Data Source=..."
-#   4. repoint the connection string and start it again
-#   5. everything still works, and history is still there
+#   1. build a genuine pre-0.7 database - the hand-written schema, with schema_version and no
+#      __EFMigrationsHistory - and put mail history in it, as 0.6 would have left it
+#   2. start 0.7 against it: the schema is adopted IN PLACE, without re-creating tables that hold data
+#   3. put new mail through it, so both eras of data are present
+#   4. stop it
+#   5. Dispatch.Service migrate-database --to "Data Source=..."
+#   6. repoint the connection string and start it again
+#   7. everything still works, and both the old and the new history are there
+#
+# Starting from the REAL old schema is the point. An earlier version of this test built its source with
+# current code, so the source was already an EF schema - and it passed while the actual customer upgrade was
+# broken, because the migrator reads the source through the EF model and refused a pre-0.7 database.
 #
 # The checks that matter are the ones that would fail SILENTLY:
 #   * logging in with the SAME password proves the config table came across, bcrypt hash and all
@@ -127,8 +132,47 @@ ok "postgres ready on $PG_PORT"
 dotnet build "$ROOT/Dispatch.slnx" -v q --nologo >/dev/null
 ok "built"
 
-say "2. Run Dispatch on PostgreSQL and put real data through it"
+say "2. Build a genuine pre-0.7 database (the shipped 0.6 schema)"
+docker exec "$PG_NAME" psql -U postgres -q -c 'CREATE DATABASE "DispatchLog";'
+docker exec -i "$PG_NAME" psql -U postgres -d DispatchLog -q -v ON_ERROR_STOP=1 <<'SQL'
+CREATE TABLE schema_version (
+    version     int          NOT NULL PRIMARY KEY,
+    script_name varchar(256) NOT NULL,
+    applied_at  timestamptz  NOT NULL DEFAULT now()
+);
+SQL
+for f in "$ROOT"/tests/Dispatch.Data.Tests/Fixtures/PreEfPostgres/0*.sql; do
+    n="$(basename "$f" .sql)"
+    docker exec -i "$PG_NAME" psql -U postgres -d DispatchLog -q -v ON_ERROR_STOP=1 < "$f" \
+        || fail "pre-0.7 script $n did not apply"
+    docker exec "$PG_NAME" psql -U postgres -d DispatchLog -q \
+        -c "INSERT INTO schema_version (version, script_name) VALUES (${n%%_*}, '$n.sql');"
+done
+ok "applied the pre-0.7 schema"
+
+# Mail history, as 0.6 would have written it. relay_id is read back rather than assumed: migration 0003
+# deletes the seeded placeholder, so the first real relay does not get id 1.
+docker exec "$PG_NAME" psql -U postgres -d DispatchLog -q \
+    -c "INSERT INTO relays (name, provider, is_default, enabled) VALUES ('legacy-relay', 'Smtp', true, true);"
+LEGACY_RELAY=$(docker exec "$PG_NAME" psql -U postgres -d DispatchLog -tAc "SELECT id FROM relays WHERE name = 'legacy-relay';" | tr -d '[:space:]')
+docker exec "$PG_NAME" psql -U postgres -d DispatchLog -q \
+    -c "INSERT INTO relay_log (spool_id, event, status, from_address, from_domain, to_addresses, to_domain, subject, relay_id)
+        SELECT 'legacy-'||g, 'Delivered', 'OK', 'old@customer.com', 'customer.com', '[]', 'dest.com',
+               'Message from 0.6 #'||g, $LEGACY_RELAY FROM generate_series(1, 300) g;"
+LEGACY_ROWS=$(docker exec "$PG_NAME" psql -U postgres -d DispatchLog -tAc "SELECT count(*) FROM relay_log;" | tr -d '[:space:]')
+[[ "$LEGACY_ROWS" -eq 300 ]] || fail "expected 300 rows of 0.6-era history, seeded $LEGACY_ROWS"
+ok "seeded $LEGACY_ROWS rows of 0.6-era mail history on relay $LEGACY_RELAY"
+
+say "3. Start 0.7 against it - the schema upgrades in place"
 start_service "$PG_CS" postgres
+
+AFTER_ADOPT=$(docker exec "$PG_NAME" psql -U postgres -d DispatchLog -tAc "SELECT count(*) FROM relay_log;" | tr -d '[:space:]')
+[[ "$AFTER_ADOPT" -eq "$LEGACY_ROWS" ]] || fail "history changed during the in-place upgrade: $LEGACY_ROWS -> $AFTER_ADOPT"
+EF_ROWS=$(docker exec "$PG_NAME" psql -U postgres -d DispatchLog -tAc 'SELECT count(*) FROM "__EFMigrationsHistory";' | tr -d '[:space:]')
+[[ "$EF_ROWS" -ge 1 ]] || fail "the pre-0.7 schema was not adopted (no __EFMigrationsHistory rows)"
+ok "schema adopted in place, all $AFTER_ADOPT historical rows intact"
+
+say "4. Put new mail through the upgraded install"
 authenticate
 
 RELAY_ID=$(dpost /api/relays '{"name":"upgrade-smoke","provider":"Local"}' | jq_ "d['id']")
@@ -155,7 +199,7 @@ ok "$BEFORE_COUNT messages logged on postgres"
 BEFORE_TLS=$(dget /api/settings | jq_ "json.dumps(d.get('tls', d.get('webUi', {})), sort_keys=True)")
 ok "tls state captured before migration"
 
-say "3. Stop the service (as an operator would) and migrate"
+say "5. Stop the service (as an operator would) and migrate"
 stop_service
 
 ConnectionStrings__DispatchLog="$PG_CS" DISPATCH_KEY_DIR="$WORK/keys" \
@@ -165,7 +209,7 @@ ConnectionStrings__DispatchLog="$PG_CS" DISPATCH_KEY_DIR="$WORK/keys" \
 [[ -f "$WORK/dispatch.db" ]] || fail "no sqlite database was produced"
 ok "migrated to $(du -h "$WORK/dispatch.db" | cut -f1) sqlite file"
 
-say "4. Restart on SQLite and verify the upgrade"
+say "6. Restart on SQLite and verify the upgrade"
 start_service "$SQLITE_CS" sqlite
 
 # The password came across in the config table, hash and all. A fresh install would demand setup instead.
@@ -177,6 +221,14 @@ authenticate
 AFTER_COUNT=$(dget '/api/messages?limit=200' | jq_ "len(d['rows'])")
 [[ "$AFTER_COUNT" -eq "$BEFORE_COUNT" ]] || fail "message history changed across the migration: $BEFORE_COUNT -> $AFTER_COUNT"
 ok "all $AFTER_COUNT messages still present"
+
+# The 0.6-era rows specifically: written by the OLD schema, adopted in place, then copied to a different
+# engine. The dashboard page only returns a page of results, so ask the database directly.
+MIGRATED_LEGACY=$(sqlite3 "$WORK/dispatch.db" "SELECT count(*) FROM relay_log WHERE spool_id LIKE 'legacy-%';" 2>/dev/null \
+    || python3 -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute(\"SELECT count(*) FROM relay_log WHERE spool_id LIKE 'legacy-%'\").fetchone()[0])" "$WORK/dispatch.db")
+[[ "$MIGRATED_LEGACY" -eq "$LEGACY_ROWS" ]] \
+    || fail "0.6-era history did not survive: seeded $LEGACY_ROWS, found $MIGRATED_LEGACY after migration"
+ok "all $MIGRATED_LEGACY rows of 0.6-era history survived the upgrade AND the engine change"
 
 MIGRATED_RELAY=$(dget /api/relays | jq_ "[r['id'] for r in d if r['name']=='upgrade-smoke'][0]")
 [[ "$MIGRATED_RELAY" -eq "$RELAY_ID" ]] || fail "relay id changed ($RELAY_ID -> $MIGRATED_RELAY); historical attribution is broken"
@@ -194,11 +246,19 @@ curl -s -X POST "$API/api/v1/messages" -H "Authorization: Bearer $NEW_KEY" \
     -d '{"from":"post@local.test","to":["dest@local.test"],"subject":"post-migration","text":"after cutover"}' >/dev/null
 sleep 5
 
-FINAL_COUNT=$(dget '/api/messages?limit=200' | jq_ "len(d['rows'])")
-[[ "$FINAL_COUNT" -gt "$AFTER_COUNT" ]] || fail "new message after cutover did not appear (count stayed $AFTER_COUNT)"
-dget '/api/messages?limit=200' | jq_ "'post-migration' if any(r.get('subject')=='post-migration' for r in d['rows']) else ''" | grep -q post-migration \
-    || fail "the post-migration message is missing from the log"
-ok "new mail flows and lands beside the migrated history"
+# Assert the message is PRESENT rather than that the row count grew. The log is paginated, so once there
+# is more history than fits on a page the count stops moving - which made the old check pass only while the
+# database was nearly empty. Newest-first ordering puts a just-sent message on the first page.
+dget '/api/messages?pageSize=50' \
+    | jq_ "'found' if any(r.get('subject') == 'post-migration' for r in d['rows']) else 'missing'" \
+    | grep -q found || fail "the message sent after cutover is not in the log"
 
-say "PASSED - postgres -> sqlite upgrade is clean"
-printf '   %s messages migrated, relay id preserved, encrypted config intact, new mail delivering\n\n' "$BEFORE_COUNT"
+# And it must sit alongside the migrated history, not in place of it.
+dget '/api/messages?pageSize=200' \
+    | jq_ "'found' if any(str(r.get('spoolId','')).startswith('legacy-') for r in d['rows']) else 'missing'" \
+    | grep -q found || fail "0.6-era messages are not visible in the log after the upgrade"
+ok "new mail flows and lands beside the migrated 0.6 history"
+
+say "PASSED - pre-0.7 postgres -> 0.7 sqlite upgrade is clean"
+printf '   %s rows of 0.6-era history adopted in place then migrated; relay id preserved,\n' "$LEGACY_ROWS"
+printf '   encrypted config intact, new mail delivering\n\n'

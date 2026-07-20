@@ -58,9 +58,21 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
         await using (var check = await source.CreateDbContextAsync(ct))
         {
             if (await check.Database.GetPendingMigrationsAsync(ct) is { } sourcePending && sourcePending.Any())
-                throw new InvalidOperationException(
-                    $"The source database is not a current Dispatch schema ({sourcePending.Count()} migration(s) " +
-                    "not applied). Check that the connection string points at the running install's database.");
+            {
+                // A pre-0.7 database is the expected reason to land here, and it has a specific fix. The
+                // copy reads the source THROUGH the EF model, so the source has to be a schema EF
+                // recognises; one built by the old hand-written scripts is not, until the service has
+                // started against it once and adopted it. Saying that is far more use than "not a current
+                // schema" to someone midway through upgrading a production install.
+                var preEf = await DatabaseInitializer.HasPreEfSchemaAsync(check, ct);
+                throw new InvalidOperationException(preEf
+                    ? "The source is a pre-0.7 Dispatch database (it still has a schema_version table). "
+                      + "Start the 0.7 service against it once - that upgrades the schema in place, without "
+                      + "touching your data - then stop it and re-run this migration."
+                    : $"The source database is not a current Dispatch schema ({sourcePending.Count()} "
+                      + "migration(s) not applied). Check that the connection string points at the running "
+                      + "install's database.");
+            }
         }
 
         await using (var check = await target.CreateDbContextAsync(ct))

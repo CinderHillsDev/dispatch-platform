@@ -22,6 +22,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The shipped pre-0.7 PostgreSQL scripts, copied out so UpgradeFromPreEfTests can build a genuine
+         old database rather than a reconstruction of one. -->
+    <None Include="Fixtures/**/*.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
