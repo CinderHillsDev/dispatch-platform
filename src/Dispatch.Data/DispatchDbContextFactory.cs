@@ -28,11 +28,13 @@ public static class DispatchDbContextFactory
     /// A standalone factory for use outside dependency injection - tests, the migrator, and tooling.
     /// Application code takes its factory from DI (AddDispatchData), which shares one configured instance.
     ///
-    /// POOLED, matching what DI registers. Every repository call creates a context, and on the ingest path
-    /// that happens several times per message from many threads at once; constructing one per call means
-    /// re-running the context's internal service resolution each time. Pooling reuses the instances and
-    /// resets their state instead, which is the difference between about 1,000 and several thousand
-    /// concurrent writes per second (see ConcurrentWriteTests).
+    /// POOLED, matching what DI registers (AddDispatchData). Every repository call creates a context, and on
+    /// the ingest path that happens several times per message from many threads at once; pooling reuses the
+    /// instances and resets their state instead of re-running the context's internal service resolution.
+    /// The measured gain is modest - roughly 1.1x-1.5x on SQLite (ProductionPoolingBenchmarkTests) - and is
+    /// NOT the 3.5x the WAL synchronous pragma delivers; see the note in ServiceCollectionExtensions. The
+    /// reason this path must also be pooled is correctness of measurement, not the speed-up: the tests and
+    /// production must exercise the same shape.
     /// </summary>
     public static IDbContextFactory<DispatchDbContext> Create(DatabaseProvider provider, string connectionString)
     {
