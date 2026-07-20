@@ -33,7 +33,12 @@ Describe 'Import-DispatchAppliance (unattended)' {
         Mock Set-VMMemory {}
         Mock Set-VMNetworkAdapterVlan {}
         Mock Start-VM {}
-        Mock Copy-Item {}
+        # Create the destination, rather than mocking the copy away to nothing. The script verifies the
+        # copy landed (Test-Path -PathType Leaf) before handing the path to New-VM - a real guard, since a
+        # silently failed copy would otherwise produce a VM pointed at a missing disk. A no-op mock made
+        # that guard throw on every test that got as far as the copy, which is why four of the six here have
+        # failed since they were written.
+        Mock Copy-Item { New-Item -ItemType File -Path $Destination -Force | Out-Null }
     }
 
     It 'keeps VM config + disk together under <storage>\<name>' {
