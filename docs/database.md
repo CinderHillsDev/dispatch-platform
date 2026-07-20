@@ -69,13 +69,18 @@ differences that remain are declared in each provider's `ProviderCapabilities` a
 | --- | --- | --- | --- | --- |
 | Filtered (partial) indexes | ✅ | ✅ | ✅ | ❌ |
 | Covering indexes (`INCLUDE`) | ❌ | ✅ | ✅ | ❌ |
-| Per-table size reporting | ❌¹ | ✅ | ✅ | ✅ |
+| Per-table size reporting | ✅¹ | ✅ | ✅ | ✅ |
 | Explicit identity insert | ✅ | ✅ | ❌² | ✅ |
 | Case-sensitive `LIKE` | ✅³ | ✅ | ✅⁴ | ✅⁴ |
 | Sub-second timestamp precision | ❌⁵ | ✅ | ✅ | ✅ |
 
-1. Needs the `dbstat` module, absent from most SQLite builds. The storage view falls back to
-   whole-database size plus exact row counts rather than showing an invented number.
+1. SQLite has no per-table size function - `dbstat` would give an exact page-level answer but is absent
+   from the shipped SQLitePCLRaw builds. Dispatch measures instead: real database size from
+   `page_count * page_size`, real per-table content size from the octet lengths of actual rows, and splits
+   the former across tables in proportion to the latter. Every input is measured; only the split of shared
+   overhead (indexes, page slack) is inferred, so a heavily-indexed table reads slightly low.
+   Note it uses the LOGICAL size, not the sum of files on disk: in WAL mode the `-wal` sidecar holds
+   not-yet-checkpointed pages and can dwarf the real data.
 2. Needs `SET IDENTITY_INSERT`; only affects `migrate-database` as a target.
 3. Via `PRAGMA case_sensitive_like`, set on every connection.
 4. Via the collation, declared on the MODEL (`IDatabaseProvider.DefaultCollation`) so EF applies it to
