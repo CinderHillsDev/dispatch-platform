@@ -15,7 +15,8 @@
 #     with no flags would silently repoint a PostgreSQL install at a new empty database - a service that
 #     starts, looks healthy, and shows none of the customer's mail.
 #
-# Linux only: the released tarball is self-contained linux-x64 and install.sh drives systemd.
+# Linux only: install.sh drives systemd. The released tarball is universal (bin-x64 / bin-arm64) and
+# its installer selects by architecture, so no --prebuilt is passed to either side.
 #
 # Usage:  tests/smoke/upgrade-from-released-version.sh <path-to-new-tarball.tar.gz> [release-tag]
 #
@@ -35,7 +36,13 @@ trap cleanup EXIT
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 ok()   { printf '   \033[32mok\033[0m   %s\n' "$*"; }
-fail() { printf '   \033[31mFAIL\033[0m %s\n' "$*" >&2; sudo journalctl -u dispatch --no-pager -n 40 2>/dev/null || true; exit 1; }
+fail() {
+    printf '   \033[31mFAIL\033[0m %s\n' "$*" >&2
+    # Bounded, and clearly fenced: an unbounded journal dump buries the line that actually says what broke.
+    printf '\n   --- last 25 journal lines ---\n' >&2
+    sudo journalctl -u dispatch --no-pager -n 25 2>/dev/null || true
+    exit 1
+}
 
 dget()  { curl -sk -b "$JAR" -c "$JAR" "$DASH$1"; }
 dpost() { curl -sk -b "$JAR" -c "$JAR" -H 'Content-Type: application/json' -H 'X-Dispatch-Request: 1' -X POST -d "$2" "$DASH$1"; }
@@ -95,7 +102,10 @@ ok "extracted to $(basename "$old_dir")"
 say "2. Install the released version, on PostgreSQL, exactly as its own docs say"
 # The old installer provisions PostgreSQL itself - the behaviour this branch removes. That is the install
 # the one existing customer is running, so it is what the upgrade has to start from.
-sudo "$old_dir/install.sh" --prebuilt "$old_dir/bin" --install-postgres \
+# No --prebuilt: the released tarball is universal (bin-x64 / bin-arm64) and its installer picks the right
+# one by architecture. This is verbatim the command its own README gives, which is the point - the test is
+# worth less the moment it stops being what an operator would actually type.
+sudo "$old_dir/install.sh" --install-postgres \
     --db-password "$DB_PW" --admin-password "$ADMIN_PW" >"$WORK/install-old.log" 2>&1 \
     || { tail -30 "$WORK/install-old.log"; fail "the released installer failed"; }
 
@@ -131,7 +141,9 @@ sudo systemctl stop dispatch
 mkdir -p "$WORK/new" && tar -xzf "$NEW_TARBALL" -C "$WORK/new"
 new_dir="$(find "$WORK/new" -maxdepth 1 -mindepth 1 -type d | head -n1)"
 
-sudo "$new_dir/install.sh" --prebuilt "$new_dir/bin" >"$WORK/install-new.log" 2>&1 \
+# Again no flags at all - the whole question is what happens to an existing install when someone upgrades
+# the ordinary way.
+sudo "$new_dir/install.sh" >"$WORK/install-new.log" 2>&1 \
     || { tail -30 "$WORK/install-new.log"; fail "the upgrade install failed"; }
 grep -q "keeping its configuration and database unchanged" "$WORK/install-new.log" \
     || fail "the upgrade did not report preserving the existing configuration"
