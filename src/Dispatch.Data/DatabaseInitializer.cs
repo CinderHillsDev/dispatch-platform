@@ -86,10 +86,9 @@ public sealed class DatabaseInitializer(
 
     private static async Task<HashSet<string>> ExistingTablesAsync(DispatchDbContext db, CancellationToken ct)
     {
-        // information_schema covers Postgres, MySQL/MariaDB and SQL Server; SQLite has sqlite_master
-        // instead. Each needs a different way to say "the current database's own tables" - without that
-        // restriction MySQL would list every table on the server and SQL Server would include system
-        // schemas, so an unrelated database could make this claim a pre-0.7 schema exists.
+        // Every engine names its catalog differently, and each needs a way to say "the tables of THIS
+        // database" - without that restriction MySQL lists every table on the server, so an unrelated
+        // database could make this claim a pre-0.7 schema exists.
         var sql = db.Database.ProviderName switch
         {
             "Microsoft.EntityFrameworkCore.Sqlite" =>
@@ -98,8 +97,13 @@ public sealed class DatabaseInitializer(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
             "Pomelo.EntityFrameworkCore.MySql" =>
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()",
+            // sys.tables, not INFORMATION_SCHEMA. Dispatch creates SQL Server databases with a
+            // case-sensitive collation (Latin1_General_BIN2, so LIKE matches the other engines), which makes
+            // identifier resolution case-sensitive too - and the view is really named
+            // INFORMATION_SCHEMA.TABLES, so the lowercase spelling that works everywhere else fails here.
+            // sys.tables is canonically lowercase and immune to that.
             "Microsoft.EntityFrameworkCore.SqlServer" =>
-                "SELECT table_name FROM information_schema.tables WHERE table_catalog = DB_NAME()",
+                "SELECT name FROM sys.tables",
             var other => throw new InvalidOperationException($"Unsupported EF provider '{other}'."),
         };
 
