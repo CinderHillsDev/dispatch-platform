@@ -62,6 +62,17 @@ wait_healthy() {
     return 1
 }
 
+# Creates an API key and returns its plaintext. Reports the response body when there is no key in it:
+# /api/keys answers 200 with the key, or 400 with {"error": ...}, and both are valid JSON - so extracting
+# the field blind turns a real API error into an opaque KeyError with nothing to diagnose from.
+create_key() {
+    local name="$1" body
+    body="$(dpost /api/keys "{\"name\":\"$name\",\"rateLimitPerMinute\":0}")"
+    local key; key="$(printf '%s' "$body" | jq_ "d.get('key', '')" 2>/dev/null || true)"
+    [[ -n "$key" ]] || fail "creating API key '$name' returned no key. Response: ${body:-(empty)}"
+    printf '%s' "$key"
+}
+
 authenticate() {
     rm -f "$JAR"
     local needs; needs=$(dget /api/auth/status | jq_ "str(d.get('needsSetup', False)).lower()")
@@ -120,7 +131,7 @@ say "3. Put real mail through the OLD version"
 authenticate
 RELAY_ID=$(dpost /api/relays '{"name":"released-relay","provider":"Local"}' | jq_ "d['id']")
 dpost "/api/relays/$RELAY_ID/set-default" '{}' >/dev/null
-API_KEY=$(dpost /api/keys '{"name":"released-key","rateLimitPerMinute":0}' | jq_ "d['key']")
+API_KEY="$(create_key released-key)"
 for i in $(seq 1 20); do
     curl -s -X POST "$API/api/v1/messages" -H "Authorization: Bearer $API_KEY" \
         -H 'Content-Type: application/json' \
@@ -202,7 +213,7 @@ dget '/api/messages?pageSize=50' | jq_ "'found' if any('old version' in str(r.ge
     | grep -q found || fail "messages sent on the released version are not in the log"
 ok "mail sent on the released version is visible in the upgraded install"
 
-NEW_KEY=$(dpost /api/keys '{"name":"post-upgrade","rateLimitPerMinute":0}' | jq_ "d['key']")
+NEW_KEY="$(create_key post-upgrade)"
 curl -s -X POST "$API/api/v1/messages" -H "Authorization: Bearer $NEW_KEY" -H 'Content-Type: application/json' \
     -d '{"from":"new@local.test","to":["dest@local.test"],"subject":"sent after the upgrade","text":"body"}' >/dev/null
 sleep 6

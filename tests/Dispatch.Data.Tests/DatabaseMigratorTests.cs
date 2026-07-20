@@ -124,6 +124,13 @@ public class DatabaseMigratorTests(DatabaseFixture sql) : IClassFixture<Database
             var page = await query.QueryAsync(new MessageLogFilter { Limit = 50 });
             Assert.Contains(page.Rows, r => r.SpoolId == "post-migration");
 
+            // Creating a NEW api key after the migration must work. The copied rows keep their primary
+            // keys, so if the identity counter were not advanced past them the first new key would collide.
+            var migratedKeys = new SqlApiKeyRepository(DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, sqliteCs));
+            var freshKey = await migratedKeys.CreateAsync("post-migration-key", rateLimitPerMinute: 0);
+            Assert.NotEqual(created.Key.Id, freshKey.Key.Id);
+            Assert.NotNull(await migratedKeys.VerifyAsync(freshKey.PlaintextKey));
+
             // Counters came across and still accumulate rather than restarting.
             var totals = await new SqlCounterRepository(DispatchDbContextFactory.Create(DatabaseProvider.Sqlite, sqliteCs), DatabaseProviders.Get(DatabaseProvider.Sqlite)).GetTodayAsync();
             Assert.True(totals.Delivered >= 250, $"expected the 250 migrated deliveries, saw {totals.Delivered}");
