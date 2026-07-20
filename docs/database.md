@@ -62,8 +62,12 @@ When it finishes, update `ConnectionStrings:DispatchLog` to the new target and s
 > diagnose: the service starts, reports healthy and shows all your history, while silently failing to
 > record anything new.
 
-SQL Server is not supported as a migration *target* (inserting explicit identity values needs
-`SET IDENTITY_INSERT` handling that is neither implemented nor tested). It works fine as a backend.
+Migration works in both directions, between any two supported engines. Moving the other way - off the
+bundled default onto a server once you outgrow it - is the same command:
+
+```bash
+Dispatch.Service migrate-database --to "Host=db;Database=DispatchLog;Username=dispatch;Password=..."
+```
 
 ## What differs between engines
 
@@ -76,7 +80,7 @@ differences that remain are declared in each provider's `ProviderCapabilities` a
 | Filtered (partial) indexes | ✅ | ✅ | ✅ | ❌ |
 | Covering indexes (`INCLUDE`) | ❌ | ✅ | ✅ | ❌ |
 | Per-table size reporting | ✅¹ | ✅ | ✅ | ✅ |
-| Explicit identity insert | ✅ | ✅ | ❌² | ✅ |
+| Explicit identity insert | ✅ | ✅ | ✅² | ✅ |
 | Case-sensitive `LIKE` | ✅³ | ✅ | ✅⁴ | ✅⁴ |
 | Sub-second timestamp precision | ❌⁵ | ✅ | ✅ | ✅ |
 
@@ -87,7 +91,8 @@ differences that remain are declared in each provider's `ProviderCapabilities` a
    overhead (indexes, page slack) is inferred, so a heavily-indexed table reads slightly low.
    Note it uses the LOGICAL size, not the sum of files on disk: in WAL mode the `-wal` sidecar holds
    not-yet-checkpointed pages and can dwarf the real data.
-2. Needs `SET IDENTITY_INSERT`; only affects `migrate-database` as a target.
+2. Needs `SET IDENTITY_INSERT` around the write and a `DBCC CHECKIDENT` reseed afterwards, both of which
+   `migrate-database` handles. Only relevant when SQL Server is a migration target.
 3. Via `PRAGMA case_sensitive_like`, set on every connection.
 4. Via the collation, declared on the MODEL (`IDatabaseProvider.DefaultCollation`) so EF applies it to
    every table. Setting it only on the database is not enough - a table created with an explicit character

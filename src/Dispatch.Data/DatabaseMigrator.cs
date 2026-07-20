@@ -41,11 +41,6 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
         DatabaseProvider targetProvider, string targetConnection,
         CancellationToken ct = default)
     {
-        if (targetProvider == DatabaseProvider.SqlServer)
-            throw new NotSupportedException(
-                "SQL Server is not supported as a migration target: inserting explicit identity values " +
-                "requires SET IDENTITY_INSERT handling that is not implemented or tested here.");
-
         var started = DateTime.UtcNow;
         var counts = new Dictionary<string, int>();
 
@@ -90,14 +85,14 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
 
         // FK dependency order: relays and routing_rules must exist before the relay_log rows that point at
         // them, and routing_rules points at relays.
-        counts["config"] = await CopyTableAsync(source, target, c => c.Config, x => x.Key, ct);
-        counts["relays"] = await CopyTableAsync(source, target, c => c.Relays, x => x.Id, ct);
-        counts["routing_rules"] = await CopyTableAsync(source, target, c => c.RoutingRules, x => x.Id, ct);
-        counts["api_keys"] = await CopyTableAsync(source, target, c => c.ApiKeys, x => x.Id, ct);
-        counts["relay_counters"] = await CopyTableAsync(source, target, c => c.RelayCounters, x => x.Id, ct);
-        counts["config_smtp_credentials"] = await CopyTableAsync(source, target, c => c.SmtpCredentials, x => x.Id, ct);
-        counts["audit_log"] = await CopyTableAsync(source, target, c => c.AuditLog, x => x.Id, ct);
-        counts["relay_log"] = await CopyTableAsync(source, target, c => c.RelayLog, x => x.Id, ct);
+        counts["config"] = await CopyTableAsync(source, target, targetProvider, c => c.Config, x => x.Key, ct);
+        counts["relays"] = await CopyTableAsync(source, target, targetProvider, c => c.Relays, x => x.Id, ct);
+        counts["routing_rules"] = await CopyTableAsync(source, target, targetProvider, c => c.RoutingRules, x => x.Id, ct);
+        counts["api_keys"] = await CopyTableAsync(source, target, targetProvider, c => c.ApiKeys, x => x.Id, ct);
+        counts["relay_counters"] = await CopyTableAsync(source, target, targetProvider, c => c.RelayCounters, x => x.Id, ct);
+        counts["config_smtp_credentials"] = await CopyTableAsync(source, target, targetProvider, c => c.SmtpCredentials, x => x.Id, ct);
+        counts["audit_log"] = await CopyTableAsync(source, target, targetProvider, c => c.AuditLog, x => x.Id, ct);
+        counts["relay_log"] = await CopyTableAsync(source, target, targetProvider, c => c.RelayLog, x => x.Id, ct);
 
         await ResetIdentitySequencesAsync(targetProvider, target, ct);
         await VerifyAsync(source, target, counts, ct);
@@ -116,6 +111,7 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
     private async Task<int> CopyTableAsync<TEntity, TKey>(
         IDbContextFactory<DispatchDbContext> source,
         IDbContextFactory<DispatchDbContext> target,
+        DatabaseProvider targetProvider,
         Func<DispatchDbContext, DbSet<TEntity>> set,
         System.Linq.Expressions.Expression<Func<TEntity, TKey>> key,
         CancellationToken ct)
@@ -143,8 +139,33 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
 
             await using (var db = await target.CreateDbContextAsync(ct))
             {
-                set(db).AddRange(batch);
-                await db.SaveChangesAsync(ct);
+                // SQL Server rejects an explicit value for an identity column unless IDENTITY_INSERT is on
+                // for that table. It is per-session and covers ONE table at a time, so the connection has to
+                // stay open across the toggle and the write - which is why the connection is opened here
+                // rather than left to SaveChanges.
+                var identityInsert = targetProvider == DatabaseProvider.SqlServer && HasGeneratedKey<TEntity>(db);
+                var table = db.Model.FindEntityType(typeof(TEntity))?.GetTableName();
+
+                if (identityInsert && table is not null)
+                {
+                    await db.Database.OpenConnectionAsync(ct);
+                    try
+                    {
+                        await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT [{table}] ON;", ct);
+                        set(db).AddRange(batch);
+                        await db.SaveChangesAsync(ct);
+                        await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT [{table}] OFF;", ct);
+                    }
+                    finally
+                    {
+                        await db.Database.CloseConnectionAsync();
+                    }
+                }
+                else
+                {
+                    set(db).AddRange(batch);
+                    await db.SaveChangesAsync(ct);
+                }
             }
 
             copied += batch.Count;
@@ -157,6 +178,23 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
 
         log?.LogInformation("Copied {Count} {Entity} rows", copied, typeof(TEntity).Name);
         return copied;
+    }
+
+    /// <summary>
+    /// Whether this entity's primary key is a database-generated number - i.e. an identity column in the
+    /// target schema. Config is keyed by a string and has no identity, and asking SQL Server to enable
+    /// IDENTITY_INSERT on a table without one is an error rather than a no-op.
+    ///
+    /// Read from the key's CLR type rather than ValueGenerated, because the target context deliberately
+    /// marks these ValueGeneratedNever so explicit keys survive the copy - the very thing that makes
+    /// IDENTITY_INSERT necessary.
+    /// </summary>
+    private static bool HasGeneratedKey<TEntity>(DbContext db) where TEntity : class
+    {
+        var key = db.Model.FindEntityType(typeof(TEntity))?.FindPrimaryKey();
+        if (key is null || key.Properties.Count != 1) return false;
+        var type = key.Properties[0].ClrType;
+        return type == typeof(int) || type == typeof(long);
     }
 
     private static System.Linq.Expressions.Expression<Func<TEntity, bool>> GreaterThan<TEntity, TKey>(
@@ -178,14 +216,36 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
     private async Task ResetIdentitySequencesAsync(
         DatabaseProvider provider, IDbContextFactory<DispatchDbContext> target, CancellationToken ct)
     {
-        if (provider != DatabaseProvider.Postgres) return;
+        // SQLite (AUTOINCREMENT) and MySQL (AUTO_INCREMENT) advance their counters as a side effect of an
+        // explicit insert. PostgreSQL identity sequences and SQL Server identity seeds do not, so both need
+        // telling where the data now ends - otherwise the first row written after the migration reuses a key
+        // that is already taken, and on a foreign-key target that is a constraint violation rather than
+        // anything subtle.
+        if (provider is not (DatabaseProvider.Postgres or DatabaseProvider.SqlServer)) return;
+
+        string[] tables =
+            ["relays", "routing_rules", "api_keys", "relay_counters", "relay_log", "audit_log", "config_smtp_credentials"];
 
         await using var db = await target.CreateDbContextAsync(ct);
-        foreach (var table in new[] { "relays", "routing_rules", "api_keys", "relay_counters", "relay_log", "audit_log", "config_smtp_credentials" })
+        foreach (var table in tables)
         {
-            await db.Database.ExecuteSqlRawAsync(
-                $"SELECT setval(pg_get_serial_sequence('{table}', 'id'), " +
-                $"COALESCE((SELECT MAX(id) FROM {table}), 1), true);", ct);
+            if (provider == DatabaseProvider.Postgres)
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    $"SELECT setval(pg_get_serial_sequence('{table}', 'id'), " +
+                    $"COALESCE((SELECT MAX(id) FROM {table}), 1), true);", ct);
+            }
+            else
+            {
+                // DBCC CHECKIDENT takes a LITERAL reseed value - a subquery there is a syntax error - so the
+                // maximum is read first. Skipped for an empty table: there is nothing to reseed past, and
+                // reseeding to 0 would be a behaviour change rather than a correction.
+                var max = await Providers.ProviderBootstrap.ScalarAsync(
+                    db, $"SELECT COALESCE(MAX(id), 0) FROM [{table}];", ct);
+                if (max > 0)
+                    await db.Database.ExecuteSqlRawAsync(
+                        $"DBCC CHECKIDENT ('{table}', RESEED, {max}) WITH NO_INFOMSGS;", ct);
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Dispatch.Data.Providers;
 
 namespace Dispatch.Data;
@@ -243,6 +244,45 @@ public class DispatchDbContext(DbContextOptions<DispatchDbContext> options) : Db
             e.HasIndex(x => new { x.LoggedAt, x.Id }).HasDatabaseName("IX_audit_log_at").IsDescending(true, true);
             e.HasIndex(x => new { x.Kind, x.LoggedAt }).HasDatabaseName("IX_audit_log_kind").IsDescending(false, true);
         });
+
+        ApplyUtcDateTimeKind(b);
+    }
+
+    /// <summary>
+    /// Marks every DateTime read back from the database as UTC.
+    ///
+    /// Dispatch stores UTC everywhere, but only PostgreSQL round-trips that fact: timestamptz returns
+    /// Kind=Utc, while SQLite (ISO text), SQL Server (datetime2) and MySQL (datetime) all return
+    /// Kind=Unspecified because their column types carry no zone. Two things break as a result.
+    ///
+    /// First, migration INTO PostgreSQL fails outright - Npgsql refuses to write a Kind=Unspecified value to
+    /// timestamptz, so moving off the bundled SQLite default onto PostgreSQL threw before copying a row.
+    ///
+    /// Second, and quieter: an API response serialises Kind=Unspecified without the trailing Z, so the same
+    /// timestamp is emitted as "2026-07-20T08:27:14" on three backends and "2026-07-20T08:27:14Z" on the
+    /// fourth. A client parsing those gets two different instants depending on which database the operator
+    /// happens to run.
+    ///
+    /// Applied to every provider rather than only the three that need it: specifying UTC on a value that is
+    /// already UTC is a no-op, and a conversion that is present everywhere cannot be forgotten for a new
+    /// engine.
+    /// </summary>
+    private static void ApplyUtcDateTimeKind(ModelBuilder b)
+    {
+        var toUtc = new ValueConverter<DateTime, DateTime>(
+            write => write,
+            read => DateTime.SpecifyKind(read, DateTimeKind.Utc));
+
+        var toUtcNullable = new ValueConverter<DateTime?, DateTime?>(
+            write => write,
+            read => read.HasValue ? DateTime.SpecifyKind(read.Value, DateTimeKind.Utc) : null);
+
+        foreach (var entity in b.Model.GetEntityTypes())
+            foreach (var property in entity.GetProperties())
+            {
+                if (property.ClrType == typeof(DateTime)) property.SetValueConverter(toUtc);
+                else if (property.ClrType == typeof(DateTime?)) property.SetValueConverter(toUtcNullable);
+            }
     }
 
     /// <summary>

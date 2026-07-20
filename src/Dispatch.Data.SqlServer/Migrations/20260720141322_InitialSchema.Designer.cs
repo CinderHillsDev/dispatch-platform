@@ -9,10 +9,10 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace Dispatch.Data.MySql.Migrations
+namespace Dispatch.Data.SqlServer.Migrations
 {
     [DbContext(typeof(DispatchDbContext))]
-    [Migration("20260719215817_InitialSchema")]
+    [Migration("20260720141322_InitialSchema")]
     partial class InitialSchema
     {
         /// <inheritdoc />
@@ -20,11 +20,11 @@ namespace Dispatch.Data.MySql.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .UseCollation("utf8mb4_bin")
+                .UseCollation("Latin1_General_BIN2")
                 .HasAnnotation("ProductVersion", "9.0.18")
-                .HasAnnotation("Relational:MaxIdentifierLength", 64);
+                .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
-            MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
+            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
             modelBuilder.Entity("Dispatch.Data.ApiKeyEntity", b =>
                 {
@@ -33,28 +33,28 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnType("int")
                         .HasColumnName("id");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("created_at")
-                        .HasDefaultValueSql("UTC_TIMESTAMP()");
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("KeyHash")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("varchar(512)")
+                        .HasColumnType("nvarchar(512)")
                         .HasColumnName("key_hash");
 
                     b.Property<string>("KeyId")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("varchar(32)")
+                        .HasColumnType("nvarchar(32)")
                         .HasColumnName("key_id");
 
                     b.Property<DateTime?>("LastUsedAt")
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("last_used_at");
 
                     b.Property<long>("MessageCount")
@@ -66,7 +66,7 @@ namespace Dispatch.Data.MySql.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("varchar(256)")
+                        .HasColumnType("nvarchar(256)")
                         .HasColumnName("name");
 
                     b.Property<int>("RateLimitPerMinute")
@@ -77,23 +77,26 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.Property<bool>("Revoked")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
+                        .HasColumnType("bit")
                         .HasDefaultValue(false)
                         .HasColumnName("revoked");
 
                     b.Property<DateTime?>("RevokedAt")
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("revoked_at");
 
                     b.Property<string>("Scope")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)")
+                        .HasColumnType("nvarchar(64)")
                         .HasDefaultValue("send")
                         .HasColumnName("scope");
 
                     b.HasKey("Id");
+
+                    b.HasIndex(new[] { "KeyId" }, "IX_api_keys_key_id")
+                        .HasFilter("[revoked] = 0");
 
                     b.HasIndex(new[] { "KeyId" }, "UQ_api_keys_key_id")
                         .IsUnique();
@@ -108,52 +111,52 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("id");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<string>("Actor")
                         .HasMaxLength(128)
-                        .HasColumnType("varchar(128)")
+                        .HasColumnType("nvarchar(128)")
                         .HasColumnName("actor");
 
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("varchar(32)")
+                        .HasColumnType("nvarchar(32)")
                         .HasColumnName("category");
 
                     b.Property<string>("Detail")
-                        .HasColumnType("longtext")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("detail");
 
                     b.Property<string>("Event")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("varchar(128)")
+                        .HasColumnType("nvarchar(128)")
                         .HasColumnName("event");
 
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)")
+                        .HasColumnType("nvarchar(16)")
                         .HasColumnName("kind");
 
                     b.Property<DateTime>("LoggedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("logged_at")
-                        .HasDefaultValueSql("UTC_TIMESTAMP()");
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("Severity")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)")
+                        .HasColumnType("nvarchar(16)")
                         .HasDefaultValue("Info")
                         .HasColumnName("severity");
 
                     b.Property<string>("SourceIp")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)")
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("source_ip");
 
                     b.HasKey("Id");
@@ -173,24 +176,24 @@ namespace Dispatch.Data.MySql.Migrations
                 {
                     b.Property<string>("Key")
                         .HasMaxLength(128)
-                        .HasColumnType("varchar(128)")
+                        .HasColumnType("nvarchar(128)")
                         .HasColumnName("key");
 
                     b.Property<bool>("Encrypted")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
+                        .HasColumnType("bit")
                         .HasDefaultValue(false)
                         .HasColumnName("encrypted");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("updated_at")
-                        .HasDefaultValueSql("UTC_TIMESTAMP()");
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("Value")
                         .IsRequired()
-                        .HasColumnType("longtext")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("value");
 
                     b.HasKey("Key");
@@ -205,7 +208,7 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnType("int")
                         .HasColumnName("id");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date")
@@ -265,23 +268,23 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnType("int")
                         .HasColumnName("id");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("created_at")
-                        .HasDefaultValueSql("UTC_TIMESTAMP()");
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
+                        .HasColumnType("bit")
                         .HasDefaultValue(true)
                         .HasColumnName("enabled");
 
                     b.Property<bool>("IsDefault")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
+                        .HasColumnType("bit")
                         .HasDefaultValue(false)
                         .HasColumnName("is_default");
 
@@ -300,22 +303,27 @@ namespace Dispatch.Data.MySql.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("varchar(128)")
+                        .HasColumnType("nvarchar(128)")
                         .HasColumnName("name");
 
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)")
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("provider");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("updated_at")
-                        .HasDefaultValueSql("UTC_TIMESTAMP()");
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("IsDefault")
+                        .IsUnique()
+                        .HasDatabaseName("IX_relays_default")
+                        .HasFilter("[is_default] = 1");
 
                     b.HasIndex("Name")
                         .IsUnique();
@@ -330,7 +338,7 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("id");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
                     b.Property<int?>("ApiKeyId")
                         .HasColumnType("int")
@@ -338,7 +346,7 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.Property<string>("ApiKeyName")
                         .HasMaxLength(256)
-                        .HasColumnType("varchar(256)")
+                        .HasColumnType("nvarchar(256)")
                         .HasColumnName("api_key_name");
 
                     b.Property<int>("AttachmentCount")
@@ -352,53 +360,53 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnName("duration_ms");
 
                     b.Property<string>("Error")
-                        .HasColumnType("longtext")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("error");
 
                     b.Property<string>("Event")
                         .IsRequired()
                         .HasMaxLength(32)
-                        .HasColumnType("varchar(32)")
+                        .HasColumnType("nvarchar(32)")
                         .HasColumnName("event");
 
                     b.Property<string>("FromAddress")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("varchar(512)")
+                        .HasColumnType("nvarchar(512)")
                         .HasColumnName("from_address");
 
                     b.Property<string>("FromDomain")
                         .IsRequired()
                         .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
+                        .HasColumnType("nvarchar(255)")
                         .HasColumnName("from_domain");
 
                     b.Property<string>("IngestSource")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)")
+                        .HasColumnType("nvarchar(16)")
                         .HasDefaultValue("SMTP")
                         .HasColumnName("ingest_source");
 
                     b.Property<DateTime>("LoggedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("logged_at")
-                        .HasDefaultValueSql("UTC_TIMESTAMP()");
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("Provider")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)")
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("provider");
 
                     b.Property<string>("ProviderMessageId")
                         .HasMaxLength(256)
-                        .HasColumnType("varchar(256)")
+                        .HasColumnType("nvarchar(256)")
                         .HasColumnName("provider_message_id");
 
                     b.Property<string>("ProviderResponse")
-                        .HasColumnType("longtext")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("provider_response");
 
                     b.Property<int?>("RelayId")
@@ -407,7 +415,7 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.Property<string>("RelayName")
                         .HasMaxLength(128)
-                        .HasColumnType("varchar(128)")
+                        .HasColumnType("nvarchar(128)")
                         .HasColumnName("relay_name");
 
                     b.Property<int>("RetryAttempt")
@@ -418,7 +426,7 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.Property<bool>("RoutingMatched")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
+                        .HasColumnType("bit")
                         .HasDefaultValue(false)
                         .HasColumnName("routing_matched");
 
@@ -428,7 +436,7 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.Property<string>("RoutingRuleName")
                         .HasMaxLength(128)
-                        .HasColumnType("varchar(128)")
+                        .HasColumnType("nvarchar(128)")
                         .HasColumnName("routing_rule_name");
 
                     b.Property<int>("SizeBytes")
@@ -439,45 +447,45 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.Property<string>("SourceIp")
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)")
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("source_ip");
 
                     b.Property<string>("SpoolId")
                         .IsRequired()
                         .HasMaxLength(64)
-                        .HasColumnType("varchar(64)")
+                        .HasColumnType("nvarchar(64)")
                         .HasColumnName("spool_id");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)
-                        .HasColumnType("varchar(16)")
+                        .HasColumnType("nvarchar(16)")
                         .HasColumnName("status");
 
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasMaxLength(998)
-                        .HasColumnType("varchar(998)")
+                        .HasColumnType("nvarchar(998)")
                         .HasColumnName("subject");
 
                     b.Property<string>("Tags")
-                        .HasColumnType("longtext")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("tags");
 
                     b.Property<string>("ToAddresses")
                         .IsRequired()
-                        .HasColumnType("longtext")
+                        .HasColumnType("nvarchar(max)")
                         .HasColumnName("to_addresses");
 
                     b.Property<string>("ToDomain")
                         .IsRequired()
                         .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
+                        .HasColumnType("nvarchar(255)")
                         .HasColumnName("to_domain");
 
                     b.Property<string>("XMailer")
                         .HasMaxLength(256)
-                        .HasColumnType("varchar(256)")
+                        .HasColumnType("nvarchar(256)")
                         .HasColumnName("x_mailer");
 
                     b.HasKey("Id");
@@ -487,7 +495,8 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.HasIndex("ApiKeyId", "LoggedAt")
                         .IsDescending(false, true)
-                        .HasDatabaseName("IX_relay_log_api_key");
+                        .HasDatabaseName("IX_relay_log_api_key")
+                        .HasFilter("[api_key_id] IS NOT NULL");
 
                     b.HasIndex("FromDomain", "LoggedAt")
                         .IsDescending(false, true)
@@ -501,13 +510,19 @@ namespace Dispatch.Data.MySql.Migrations
                         .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_relay");
 
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("RelayId", "LoggedAt"), new[] { "Status", "Event", "SpoolId", "FromAddress", "ToDomain", "Subject", "Provider", "DurationMs" });
+
                     b.HasIndex("RoutingRuleId", "LoggedAt")
                         .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_rule");
 
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("RoutingRuleId", "LoggedAt"), new[] { "Status", "Event", "SpoolId", "FromAddress", "ToDomain", "Subject", "Provider", "DurationMs" });
+
                     b.HasIndex("Status", "LoggedAt")
                         .IsDescending(false, true)
                         .HasDatabaseName("IX_relay_log_status_date");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Status", "LoggedAt"), new[] { "SpoolId", "FromAddress", "FromDomain", "ToDomain", "Subject", "SizeBytes", "RelayName", "RoutingRuleName", "Provider", "DurationMs", "IngestSource", "RetryAttempt" });
 
                     b.HasIndex("ToDomain", "LoggedAt")
                         .IsDescending(false, true)
@@ -526,24 +541,24 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnType("int")
                         .HasColumnName("id");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("created_at")
-                        .HasDefaultValueSql("UTC_TIMESTAMP()");
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<bool>("Enabled")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("tinyint(1)")
+                        .HasColumnType("bit")
                         .HasDefaultValue(true)
                         .HasColumnName("enabled");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
-                        .HasColumnType("varchar(128)")
+                        .HasColumnType("nvarchar(128)")
                         .HasColumnName("name");
 
                     b.Property<int>("Priority")
@@ -552,7 +567,7 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.Property<string>("RecipientPattern")
                         .HasMaxLength(256)
-                        .HasColumnType("varchar(256)")
+                        .HasColumnType("nvarchar(256)")
                         .HasColumnName("recipient_pattern");
 
                     b.Property<int>("RelayId")
@@ -561,7 +576,7 @@ namespace Dispatch.Data.MySql.Migrations
 
                     b.Property<string>("SenderPattern")
                         .HasMaxLength(256)
-                        .HasColumnType("varchar(256)")
+                        .HasColumnType("nvarchar(256)")
                         .HasColumnName("sender_pattern");
 
                     b.HasKey("Id");
@@ -581,28 +596,28 @@ namespace Dispatch.Data.MySql.Migrations
                         .HasColumnType("int")
                         .HasColumnName("id");
 
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("created_at")
-                        .HasDefaultValueSql("UTC_TIMESTAMP()");
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<DateTime?>("LastUsedAt")
-                        .HasColumnType("datetime(6)")
+                        .HasColumnType("datetime2")
                         .HasColumnName("last_used_at");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(512)
-                        .HasColumnType("varchar(512)")
+                        .HasColumnType("nvarchar(512)")
                         .HasColumnName("password_hash");
 
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasMaxLength(256)
-                        .HasColumnType("varchar(256)")
+                        .HasColumnType("nvarchar(256)")
                         .HasColumnName("username");
 
                     b.HasKey("Id");
