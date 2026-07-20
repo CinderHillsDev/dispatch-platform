@@ -14,18 +14,18 @@ and contributions of all kinds are welcome: bug reports, features, providers, do
 
 ## Development setup
 
-You need the **.NET 10 SDK**, **Node.js 20+**, and **Docker** (for a local PostgreSQL). The full build/run
+You need the **.NET 10 SDK** and **Node.js 20+**. Docker is optional - only for testing against a database server rather than the bundled SQLite default. The full build/run
 steps are in the README under [Building from source](README.md#building-from-source). In short:
 
 ```bash
-docker compose up -d                       # PostgreSQL; schema auto-created on first run
+docker compose up -d                       # bundled SQLite; schema auto-created on first run
 cd src/Dispatch.UI && npm install && npm run build && cd ../..
 rm -rf src/Dispatch.Web/wwwroot && mkdir -p src/Dispatch.Web/wwwroot
 cp -r src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
 ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service
 ```
 
-`appsettings.Development.json` (git-ignored) needs at least the PostgreSQL connection string and an
+`appsettings.Development.json` (git-ignored) needs at least a connection string and an
 `AdminPassword`.
 
 ## Running the tests
@@ -34,13 +34,18 @@ ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Dispatch.Service
 dotnet test                                # unit tests always run
 ```
 
-The `Dispatch.Data` integration tests run against a real PostgreSQL only when `DISPATCH_TEST_SQL` is set
-(they auto-skip otherwise). To run them locally:
+The `Dispatch.Data` integration tests run against the bundled SQLite backend by default, so `dotnet test`
+exercises them with no setup. The same tests run unchanged against every supported engine - that
+equivalence is the point, so a query that behaves differently on one backend fails the suite:
 
 ```bash
+dotnet test                                    # SQLite (default, no setup)
+
 docker run -d -e POSTGRES_PASSWORD=devpass -p 5432:5432 postgres:17
-export DISPATCH_TEST_SQL="Host=localhost;Port=5432;Username=postgres;Password=devpass"
-dotnet test
+DISPATCH_TEST_ENGINE=postgres \
+DISPATCH_TEST_SQL="Host=localhost;Port=5432;Username=postgres;Password=devpass" dotnet test
+
+# ...and likewise DISPATCH_TEST_ENGINE=mysql / sqlserver. See docs/database.md.
 ```
 
 Please make sure `dotnet test` is green before opening a PR.

@@ -2,17 +2,19 @@
 <!--
   Dispatch SMTP Relay - Windows bundle (WiX v4 Burn).
 
-  Chains: (1) install PostgreSQL (Windows service DispatchPostgres + DispatchLog database) via the
-  InstallPostgres.exe bootstrap, then (2) the Dispatch MSI, which writes appsettings.json pointing at
-  that local instance and registers/starts the service. The dashboard admin password is set on first run.
+  Chains the Dispatch MSI, which writes appsettings.json and registers/starts the service. The dashboard
+  admin password is set on first run.
+
+  There is no database step. Dispatch defaults to a bundled SQLite file under %ProgramData%\Dispatch, so
+  the installer no longer downloads and installs a PostgreSQL server - which was the slowest and most
+  failure-prone part of a Windows install, and left a database service behind after uninstall. To use a
+  server the site already runs, pass SQLCONN to the MSI; see docs/database.md.
 
   Build (Windows, WiX v6 toolset):
     1) dotnet publish ..\..\..\src\Dispatch.Service -c Release -o ..\publish
     2) wix build ..\Dispatch.wxs -d PublishDir=..\publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
-    3) dotnet build ..\postgres\PostgresLauncher.csproj -c Release   (-> InstallPostgres.exe)
-    4) wix build Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext ^
-         -bindpath "PgLauncher=..\postgres\bin\Release\net472" -bindpath "Msi=." ^
-         -o DispatchSetup.exe
+    3) wix build Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext ^
+         -bindpath "Msi=." -o DispatchSetup.exe
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
@@ -39,29 +41,9 @@
                                               LaunchHidden="yes" />
     </BootstrapperApplication>
 
-    <!-- Skip the PostgreSQL step if the DispatchPostgres service already exists. -->
-    <util:RegistrySearch Id="PostgresInstalled"
-                         Root="HKLM"
-                         Key="SYSTEM\CurrentControlSet\Services\DispatchPostgres"
-                         Value="ImagePath"
-                         Variable="PostgresInstalled"
-                         Result="exists" />
 
     <Chain>
-      <!-- 1) PostgreSQL (before the MSI so msiserver isn't held). Permanent: uninstalling Dispatch leaves
-              PostgreSQL in place. -->
-      <ExePackage Id="InstallPostgres"
-                  DisplayName="Installing PostgreSQL - this can take a few minutes. Please wait..."
-                  SourceFile="!(bindpath.PgLauncher)\InstallPostgres.exe"
-                  InstallArguments="DispatchLog"
-                  PerMachine="yes"
-                  Vital="yes"
-                  Permanent="yes"
-                  DetectCondition="PostgresInstalled">
-        <Payload SourceFile="!(bindpath.PgLauncher)\InstallPostgres.ps1" />
-      </ExePackage>
-
-      <!-- 2) Dispatch MSI. SQLCONN defaults to the local DispatchPostgres instance inside the MSI.
+      <!-- Dispatch MSI. SQLCONN defaults to the bundled SQLite database inside the MSI.
               ARPSYSTEMCOMPONENT=1 hides the MSI so only the bundle shows in Add/Remove Programs. -->
       <MsiPackage Id="DispatchMsi" SourceFile="!(bindpath.Msi)\Dispatch.msi" Vital="yes">
         <MsiProperty Name="ARPSYSTEMCOMPONENT" Value="1" />

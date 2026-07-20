@@ -1,35 +1,38 @@
-using System.Data;
-using System.Text;
-using Dapper;
 using Dispatch.Core.Audit;
+using Dispatch.Core.Maintenance;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Data.Repositories;
 
-/// <summary>Append-only audit/security log (spec §17). Writes are best-effort: a logging failure is
-/// swallowed (and warned) so it never breaks the audited action.</summary>
-public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLog> log) : IAuditLog
+/// <summary>
+/// Append-only audit/security log (spec §17). Writes are best-effort: a logging failure is swallowed (and
+/// warned) so it never breaks the audited action.
+/// </summary>
+public sealed class SqlAuditLog(IDbContextFactory<DispatchDbContext> contexts, ILogger<SqlAuditLog> log) : IAuditLog
 {
+    private const int PurgeBatch = 1000;
+
     public async Task WriteAsync(string kind, string category, string @event, string severity,
         string? actor, string? sourceIp, string? detail, CancellationToken ct = default)
     {
-        const string sql = """
-            INSERT INTO audit_log (kind, category, event, severity, actor, source_ip, detail)
-            VALUES (@Kind, @Category, @Event, @Severity, @Actor, @SourceIp, @Detail);
-            """;
         try
         {
-            await using var cn = await factory.OpenAsync(ct);
-            await cn.ExecuteAsync(new CommandDefinition(sql, new
+            await using var db = await contexts.CreateDbContextAsync(ct);
+            db.AuditLog.Add(new AuditLogEntity
             {
-                Kind = Trunc(kind, 16),
-                Category = Trunc(category, 32),
-                Event = Trunc(@event, 128),
-                Severity = Trunc(severity, 16),
+                // Stamped here rather than by the column default, so every row has the same precision -
+                // see SqlLogRepository for why that matters to ordering on SQLite.
+                LoggedAt = DateTime.UtcNow,
+                Kind = Trunc(kind, 16) ?? "",
+                Category = Trunc(category, 32) ?? "",
+                Event = Trunc(@event, 128) ?? "",
+                Severity = Trunc(severity, 16) ?? "Info",
                 Actor = Trunc(actor, 128),
                 SourceIp = Trunc(sourceIp, 64),
                 Detail = detail,
-            }, cancellationToken: ct));
+            });
+            await db.SaveChangesAsync(ct);
         }
         catch (Exception ex)
         {
@@ -40,38 +43,37 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
     public async Task<AuditPage> QueryAsync(AuditFilter filter, CancellationToken ct = default)
     {
         var limit = Math.Clamp(filter.Limit, 1, 200);
-        var where = new StringBuilder("WHERE 1 = 1");
-        var p = new DynamicParameters();
-        p.Add("Limit", limit);
 
-        if (!string.IsNullOrWhiteSpace(filter.Kind)) { where.Append(" AND kind = @Kind"); p.Add("Kind", filter.Kind); }
-        if (!string.IsNullOrWhiteSpace(filter.Category)) { where.Append(" AND category = @Category"); p.Add("Category", filter.Category); }
-        if (!string.IsNullOrWhiteSpace(filter.Severity)) { where.Append(" AND severity = @Severity"); p.Add("Severity", filter.Severity); }
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var query = db.AuditLog.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(filter.Kind)) query = query.Where(a => a.Kind == filter.Kind);
+        if (!string.IsNullOrWhiteSpace(filter.Category)) query = query.Where(a => a.Category == filter.Category);
+        if (!string.IsNullOrWhiteSpace(filter.Severity)) query = query.Where(a => a.Severity == filter.Severity);
+
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
-            where.Append(" AND (event LIKE @S ESCAPE '\\' OR detail LIKE @S ESCAPE '\\' OR actor LIKE @S ESCAPE '\\' OR category LIKE @S ESCAPE '\\')");
-            var esc = filter.Search.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
-            p.Add("S", "%" + esc + "%");
+            // Contains rather than a hand-built LIKE: EF escapes the user's % and _ itself, per provider,
+            // so a search for "50%" stays a literal search instead of becoming a wildcard.
+            var search = filter.Search;
+            query = query.Where(a =>
+                a.Event.Contains(search)
+                || (a.Detail != null && a.Detail.Contains(search))
+                || (a.Actor != null && a.Actor.Contains(search))
+                || a.Category.Contains(search));
         }
+
+        // Keyset pagination: seek past the last row seen rather than counting rows to skip, so page N costs
+        // the same as page 1. The id tie-break makes the order total when timestamps collide.
         if (filter.Cursor is { } c)
-        {
-            where.Append(" AND (logged_at < @CursorAt OR (logged_at = @CursorAt AND id < @CursorId))");
-            p.Add("CursorAt", c.LoggedAt, DbType.DateTime);
-            p.Add("CursorId", c.Id);
-        }
+            query = query.Where(a => a.LoggedAt < c.LoggedAt || (a.LoggedAt == c.LoggedAt && a.Id < c.Id));
 
-        var sql = $"""
-            SELECT
-                id AS Id, logged_at AS LoggedAt, kind AS Kind, category AS Category, event AS Event,
-                severity AS Severity, actor AS Actor, source_ip AS SourceIp, detail AS Detail
-            FROM audit_log
-            {where}
-            ORDER BY logged_at DESC, id DESC
-            LIMIT @Limit;
-            """;
+        var rows = await query
+            .OrderByDescending(a => a.LoggedAt).ThenByDescending(a => a.Id)
+            .Take(limit)
+            .Select(a => new AuditEntry(a.Id, a.LoggedAt, a.Kind, a.Category, a.Event, a.Severity, a.Actor, a.SourceIp, a.Detail))
+            .ToListAsync(ct);
 
-        await using var cn = await factory.OpenAsync(ct);
-        var rows = (await cn.QueryAsync<AuditEntry>(new CommandDefinition(sql, p, cancellationToken: ct))).ToList();
         var next = rows.Count == limit ? new AuditCursor(rows[^1].LoggedAt, rows[^1].Id) : null;
         return new AuditPage(rows, next);
     }
@@ -80,17 +82,17 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
     {
         try
         {
-            await using var cn = await factory.OpenAsync(ct);
+            await using var db = await contexts.CreateDbContextAsync(ct);
             var total = 0;
-            // Noisy security events (allow-list denials, SMTP auth failures) are kept shorter.
+
+            // Noisy security events (allow-list denials, SMTP auth failures) are kept for less time.
             if (securityRetentionDays > 0)
-                total += await DeleteBatchedAsync(cn,
-                    "DELETE FROM audit_log WHERE ctid IN (SELECT ctid FROM audit_log WHERE category IN ('Access','SmtpAuth') AND logged_at < now() - @Days * interval '1 day' LIMIT @Batch);",
-                    securityRetentionDays, ct);
+                total += await PurgeBatchedAsync(db, securityRetentionDays,
+                    a => a.Category == "Access" || a.Category == "SmtpAuth", ct);
+
             if (generalRetentionDays > 0)
-                total += await DeleteBatchedAsync(cn,
-                    "DELETE FROM audit_log WHERE ctid IN (SELECT ctid FROM audit_log WHERE logged_at < now() - @Days * interval '1 day' LIMIT @Batch);",
-                    generalRetentionDays, ct);
+                total += await PurgeBatchedAsync(db, generalRetentionDays, _ => true, ct);
+
             return total;
         }
         catch (Exception ex)
@@ -100,22 +102,58 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
         }
     }
 
-    public async Task<int> ArchiveAndDeleteOldestAsync(int batch, Dispatch.Core.Maintenance.ArchiveRows archive, CancellationToken ct = default)
+    /// <summary>
+    /// Deletes aged rows in bounded batches, pausing between them.
+    ///
+    /// The cutoff is computed here rather than in SQL, which removes the last need for engine-specific
+    /// interval arithmetic. Batching matters most on SQLite, where a single unbounded DELETE would hold the
+    /// one write lock for its whole duration and stall ingest behind it; the pause is what lets a writer in.
+    /// </summary>
+    private static async Task<int> PurgeBatchedAsync(
+        DispatchDbContext db, int retentionDays,
+        System.Linq.Expressions.Expression<Func<AuditLogEntity, bool>> scope, CancellationToken ct)
+    {
+        var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
+        var total = 0;
+
+        while (!ct.IsCancellationRequested)
+        {
+            // Select then delete by key: ExecuteDelete cannot carry a row limit on every provider, and an
+            // unbounded delete is exactly what the batching exists to avoid.
+            var ids = await db.AuditLog.AsNoTracking()
+                .Where(scope).Where(a => a.LoggedAt < cutoff)
+                .OrderBy(a => a.Id)
+                .Take(PurgeBatch)
+                .Select(a => a.Id)
+                .ToListAsync(ct);
+
+            if (ids.Count == 0) break;
+
+            total += await db.AuditLog.Where(a => ids.Contains(a.Id)).ExecuteDeleteAsync(ct);
+            if (ids.Count < PurgeBatch) break;
+            await Task.Delay(100, ct);
+        }
+
+        return total;
+    }
+
+    public async Task<int> ArchiveAndDeleteOldestAsync(int batch, ArchiveRows archive, CancellationToken ct = default)
     {
         try
         {
-            await using var cn = await factory.OpenAsync(ct);
-            var rows = (await cn.QueryAsync(new CommandDefinition(
-                "SELECT * FROM audit_log ORDER BY logged_at ASC, id ASC LIMIT @batch;",
-                new { batch }, cancellationToken: ct))).ToList();
+            await using var db = await contexts.CreateDbContextAsync(ct);
+            var rows = await db.AuditLog.AsNoTracking()
+                .OrderBy(a => a.LoggedAt).ThenBy(a => a.Id)
+                .Take(batch)
+                .ToListAsync(ct);
+
             if (rows.Count == 0) return 0;
 
-            // Archive before deleting; if archiving throws, keep the rows.
-            await archive(rows.Select(r => SqlLogMaintenance.ToRow((IDictionary<string, object>)r)).ToList(), ct);
+            // Archive BEFORE deleting: if archiving throws, the rows stay. The safety net must not lose data.
+            await archive(rows.Select(ToRow).ToList(), ct);
 
-            var ids = rows.Select(r => Convert.ToInt64(((IDictionary<string, object>)r)["id"])).ToArray();
-            return await cn.ExecuteAsync(new CommandDefinition(
-                "DELETE FROM audit_log WHERE id = ANY(@ids);", new { ids }, cancellationToken: ct));
+            var ids = rows.Select(r => r.Id).ToList();
+            return await db.AuditLog.Where(a => ids.Contains(a.Id)).ExecuteDeleteAsync(ct);
         }
         catch (Exception ex)
         {
@@ -124,19 +162,19 @@ public sealed class SqlAuditLog(SqlConnectionFactory factory, ILogger<SqlAuditLo
         }
     }
 
-    private static async Task<int> DeleteBatchedAsync(System.Data.Common.DbConnection cn, string sql, int days, CancellationToken ct)
+    /// <summary>Column-named dictionary for the archive writer, which serialises whatever it is given.</summary>
+    private static IReadOnlyDictionary<string, object?> ToRow(AuditLogEntity a) => new Dictionary<string, object?>
     {
-        const int batch = 1000;
-        var total = 0;
-        while (!ct.IsCancellationRequested)
-        {
-            var deleted = await cn.ExecuteAsync(new CommandDefinition(sql, new { Batch = batch, Days = days }, cancellationToken: ct));
-            total += deleted;
-            if (deleted < batch) break;
-            await Task.Delay(100, ct);
-        }
-        return total;
-    }
+        ["id"] = a.Id,
+        ["logged_at"] = a.LoggedAt,
+        ["kind"] = a.Kind,
+        ["category"] = a.Category,
+        ["event"] = a.Event,
+        ["severity"] = a.Severity,
+        ["actor"] = a.Actor,
+        ["source_ip"] = a.SourceIp,
+        ["detail"] = a.Detail,
+    };
 
     private static string? Trunc(string? value, int max) =>
         value is { Length: > 0 } && value.Length > max ? value[..max] : value;

@@ -5,17 +5,36 @@ using Dispatch.Core.Logging;
 using Dispatch.Core.Relays;
 using Dispatch.Core.Routing;
 using Dispatch.Core.Smtp;
+using Dispatch.Data.Providers;
 using Dispatch.Data.Repositories;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Data;
 
 public static class ServiceCollectionExtensions
 {
-    /// <summary>Registers the SQL connection factory, migration runner, and all SQL repositories.</summary>
-    public static IServiceCollection AddDispatchData(this IServiceCollection services, string connectionString)
+    /// <summary>
+    /// Registers the SQL connection factory, migration runner, and all SQL repositories. The database
+    /// engine is inferred from the connection string (see <see cref="SqlConnectionFactory.CreateDialect"/>),
+    /// so a Postgres deployment and a SQLite one differ only by that one setting.
+    /// </summary>
+    public static IServiceCollection AddDispatchData(
+        this IServiceCollection services, string connectionString, string? providerName = null)
     {
-        services.AddSingleton(new SqlConnectionFactory(connectionString));
+        var provider = DatabaseProviderResolver.Resolve(connectionString, providerName);
+
+        services.AddSingleton(sp => new DatabaseBootstrap(
+            provider, connectionString, sp.GetService<ILogger<DatabaseBootstrap>>()));
+
+        // A factory rather than a scoped DbContext: the repositories below are singletons called
+        // concurrently from SpoolWorkerPool's worker threads, and a DbContext is not thread-safe.
+        services.AddDbContextFactory<DispatchDbContext>(o =>
+            DispatchDbContextFactory.Configure(o, provider, connectionString));
+
+        // The repositories reach the engine only through this, for the few things EF cannot express.
+        services.AddSingleton(DatabaseProviders.Get(provider));
+
         services.AddSingleton<DatabaseInitializer>();
 
         services.AddSingleton<SqlLogRepository>();

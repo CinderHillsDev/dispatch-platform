@@ -1,4 +1,4 @@
-using Dapper;
+using Microsoft.EntityFrameworkCore;
 using Dispatch.Core.Counters;
 using Dispatch.Core.Logging;
 using Dispatch.Data.Repositories;
@@ -9,13 +9,13 @@ namespace Dispatch.Data.Tests;
 /// Integration tests against a real PostgreSQL server. Auto-skip when DISPATCH_TEST_SQL is unset.
 /// Run with: DISPATCH_TEST_SQL="Host=localhost;Port=5432;Username=postgres;Password=..." dotnet test
 /// </summary>
-public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresFixture>
+public class SqlRepositoriesTests(DatabaseFixture sql) : IClassFixture<DatabaseFixture>
 {
     // No relay is seeded any more (migration 0003 removed the placeholder), and relay_log/relay_counters
     // FK to relays(id), so tests that attribute rows to a relay create one first and use its id.
     private async Task<int> NewRelayAsync(string name = "test")
     {
-        var relays = new SqlRelayRepository(sql.Factory);
+        var relays = new SqlRelayRepository(sql.Contexts);
         var r = await relays.CreateAsync($"{name}-{Guid.NewGuid():N}", Dispatch.Core.Providers.RelayProviderType.Local, 4, 0);
         return r.Id;
     }
@@ -24,24 +24,30 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task Initializer_creates_schema_without_unconfigured_placeholder()
     {
         if (!sql.Available) return;
-        await using var cn = await sql.Factory.OpenAsync();
 
-        // All embedded migrations applied (0001_init, 0002_relay_log_indexes, 0003_drop_unconfigured_default).
-        var version = await cn.ExecuteScalarAsync<int>("SELECT MAX(version) FROM schema_version");
-        Assert.True(version >= 3, $"expected at least migration 3 applied, got {version}");
+        // The schema is current: every migration in this provider's assembly has been applied and none is
+        // pending. (Versions used to be tracked in a hand-rolled schema_version table; EF records them in
+        // __EFMigrationsHistory, so this asks the initializer rather than reading the table directly.)
+        await using (var db = await sql.Contexts.CreateDbContextAsync())
+        {
+            var applied = await db.Database.GetAppliedMigrationsAsync();
+            var pending = await db.Database.GetPendingMigrationsAsync();
+            Assert.NotEmpty(applied);
+            Assert.Empty(pending);
+        }
 
-        // Migration 0003 removed the seeded "Unconfigured" placeholder relay - the first-run wizard creates
-        // the first real relay (which becomes the catch-all). No placeholder should remain.
-        var placeholders = await cn.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM relays WHERE provider = 'Unconfigured' AND is_default");
-        Assert.Equal(0, placeholders);
+        // The old 0001 seeded an "Unconfigured" placeholder relay that 0003 then removed, because an empty
+        // relay you must go and edit confused first-run users. The first-run wizard creates the first real
+        // relay instead, and that becomes the catch-all. No placeholder should exist on a fresh database.
+        await using var probe = await sql.Contexts.CreateDbContextAsync();
+        Assert.Equal(0, await probe.Relays.CountAsync(r => r.Provider == "Unconfigured" && r.IsDefault));
     }
 
     [Fact]
     public async Task Denied_counter_is_recorded_in_totals_but_excluded_from_per_relay()
     {
         if (!sql.Available) return;
-        var counters = new SqlCounterRepository(sql.Factory);
+        var counters = new SqlCounterRepository(sql.Contexts, sql.DbProvider);
 
         // A connection-level denial has no relay (relay_id 0). Before migration 0007 this was dropped by the
         // NOT NULL FK, so denials never reached /stats or Reports even though relay_log recorded them.
@@ -62,7 +68,7 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task Default_relay_is_unconfigured_until_a_provider_is_set()
     {
         if (!sql.Available) return;
-        var settings = new SqlRelaySettingsStore(new SqlConfigRepository(sql.Factory));
+        var settings = new SqlRelaySettingsStore(new SqlConfigRepository(sql.Contexts));
 
         // Fresh DB: the seeded default relay has no provider configured.
         var fresh = await settings.GetAsync(1);
@@ -78,8 +84,8 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task Log_insert_is_read_back_by_message_log_query()
     {
         if (!sql.Available) return;
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
         var spoolId = Guid.NewGuid().ToString("N");
         var relayId = await NewRelayAsync();
 
@@ -99,25 +105,28 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task Log_retention_purge_deletes_aged_rows()
     {
         if (!sql.Available) return;
-        var maintenance = new SqlLogMaintenance(sql.Factory);
+        var maintenance = new SqlLogMaintenance(sql.Contexts, sql.DbProvider);
         var spoolId = Guid.NewGuid().ToString("N");
 
-        // Insert a Delivered row dated 100 days ago (bypassing the now() default).
-        await using (var cn = await sql.Factory.OpenAsync())
+        // Insert a Delivered row dated 100 days ago, overriding the timestamp default. The age is set here
+        // rather than written as engine-specific interval arithmetic.
+        await using (var db = await sql.Contexts.CreateDbContextAsync())
         {
-            await cn.ExecuteAsync("""
-                INSERT INTO relay_log (logged_at, spool_id, event, status, from_address, from_domain, to_addresses, to_domain, subject)
-                VALUES (now() - interval '100 days', @spoolId, 'Delivered', 'OK', 'a@x.com', 'x.com', '[]', 'y.com', 's');
-                """, new { spoolId });
+            db.RelayLog.Add(new RelayLogEntity
+            {
+                LoggedAt = DateTime.UtcNow.AddDays(-100),
+                SpoolId = spoolId, Event = "Delivered", Status = "OK",
+                FromAddress = "a@x.com", FromDomain = "x.com", ToAddresses = "[]", ToDomain = "y.com",
+                Subject = "s",
+            });
+            await db.SaveChangesAsync();
         }
 
         var deleted = await maintenance.PurgeByRetentionAsync("Delivered", retentionDays: 30);
         Assert.True(deleted >= 1);
 
-        await using var verify = await sql.Factory.OpenAsync();
-        var remaining = await verify.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM relay_log WHERE spool_id = @spoolId", new { spoolId });
-        Assert.Equal(0, remaining);
+        await using var verify = await sql.Contexts.CreateDbContextAsync();
+        Assert.Equal(0, await verify.RelayLog.CountAsync(r => r.SpoolId == spoolId));
 
         Assert.True(await maintenance.GetDatabaseSizeBytesAsync() > 0);
     }
@@ -126,7 +135,7 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task Counter_merge_accumulates_today()
     {
         if (!sql.Available) return;
-        var counters = new SqlCounterRepository(sql.Factory);
+        var counters = new SqlCounterRepository(sql.Contexts, sql.DbProvider);
         var relayId = await NewRelayAsync();
 
         var before = (await counters.GetTodayAsync()).Delivered;
@@ -141,7 +150,7 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task Counter_skips_unattributed_denied()
     {
         if (!sql.Available) return;
-        var counters = new SqlCounterRepository(sql.Factory);
+        var counters = new SqlCounterRepository(sql.Contexts, sql.DbProvider);
         // relayId 0/null has no FK target - must be a no-op, not an exception.
         await counters.IncrementAsync(0, CounterField.Denied);
         await counters.IncrementAsync(null, CounterField.Denied);
@@ -151,7 +160,7 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task Smtp_credential_add_verify_delete()
     {
         if (!sql.Available) return;
-        var creds = new SqlSmtpCredentialRepository(sql.Factory);
+        var creds = new SqlSmtpCredentialRepository(sql.Contexts);
 
         await creds.AddAsync("sender1", "s3cret-pass");
         Assert.True(await creds.VerifyAsync("sender1", "s3cret-pass"));
@@ -167,7 +176,7 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task ApiKey_create_verify_revoke_lifecycle()
     {
         if (!sql.Available) return;
-        var keys = new SqlApiKeyRepository(sql.Factory);
+        var keys = new SqlApiKeyRepository(sql.Contexts);
 
         var created = await keys.CreateAsync("Test key", rateLimitPerMinute: 100);
         Assert.StartsWith("dsp_live_", created.PlaintextKey);
@@ -186,8 +195,8 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task Message_log_list_collapses_lifecycle_events_to_one_row_per_message()
     {
         if (!sql.Available) return;
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
 
         var dom = $"grp-{Guid.NewGuid():N}.test";   // unique domain so the query is scoped to this test's rows
         var spool = Guid.NewGuid().ToString("N");
@@ -211,9 +220,9 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task Log_row_with_api_key_is_returned_by_per_key_query()
     {
         if (!sql.Available) return;
-        var keys = new SqlApiKeyRepository(sql.Factory);
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var keys = new SqlApiKeyRepository(sql.Contexts);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
 
         // Two distinct keys so we can assert scoping (api_key_id has an FK to api_keys).
         var keyA = (await keys.CreateAsync("per-key A", rateLimitPerMinute: 0)).Key;
@@ -261,9 +270,9 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task GetBySpoolId_is_scoped_to_the_calling_key()
     {
         if (!sql.Available) return;
-        var keys = new SqlApiKeyRepository(sql.Factory);
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var keys = new SqlApiKeyRepository(sql.Contexts);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
 
         var keyA = (await keys.CreateAsync("spoolid A", rateLimitPerMinute: 0)).Key;
         var keyB = (await keys.CreateAsync("spoolid B", rateLimitPerMinute: 0)).Key;
@@ -289,8 +298,8 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
         // Complements the FromDomain [Theory] above by exercising the other filter fields, including the
         // LIKE-based Subject/Tag matches (the more interesting injection surfaces).
         if (!sql.Available) return;
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
         var spoolId = Guid.NewGuid().ToString("N");
 
         await log.InsertAsync(new RelayLogEntry
@@ -301,7 +310,7 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
             Tags = ["welcome"],
         });
 
-        // Every filter value is a Dapper parameter (spec §17), so these payloads are treated as literal
+        // Filters are composed as LINQ predicates (spec §17), so these payloads are bound as parameters
         // text: they must not error and must not match the real row - and the table must survive.
         const string drop = "x'; DROP TABLE relay_log; --";
         MessageLogFilter[] hostile =
@@ -328,8 +337,8 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task MessageLog_keyset_pagination_walks_all_rows_once()
     {
         if (!sql.Available) return;
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
         var domain = "page-" + Guid.NewGuid().ToString("N")[..8] + ".test";
 
         for (var i = 0; i < 3; i++)
@@ -357,8 +366,8 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task MessageLog_filters_are_injection_safe(string payload)
     {
         if (!sql.Available) return;
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
 
         await log.InsertAsync(new RelayLogEntry
         {
@@ -371,16 +380,16 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
         Assert.Empty(page.Rows);
 
         // Table still exists and is queryable.
-        await using var cn = await sql.Factory.OpenAsync();
-        Assert.True(await cn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM relay_log") >= 1);
+        await using var db = await sql.Contexts.CreateDbContextAsync();
+        Assert.True(await db.RelayLog.CountAsync() >= 1);
     }
 
     [Fact]
     public async Task MessageLog_relay_and_tag_filters_match_only_intended_rows()
     {
         if (!sql.Available) return;
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
         var domain = "ftag-" + Guid.NewGuid().ToString("N")[..8] + ".test";
 
         var taggedSpool = Guid.NewGuid().ToString("N");
@@ -414,8 +423,8 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task MessageLog_GetByIdAsync_returns_full_detail_with_parsed_arrays()
     {
         if (!sql.Available) return;
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
         var spoolId = Guid.NewGuid().ToString("N");
         var relayId = await NewRelayAsync();
 
@@ -430,9 +439,8 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
         });
 
         // Find the row id we just inserted.
-        await using var cn = await sql.Factory.OpenAsync();
-        var id = await cn.ExecuteScalarAsync<long>(
-            "SELECT id FROM relay_log WHERE spool_id = @spoolId", new { spoolId });
+        await using var db = await sql.Contexts.CreateDbContextAsync();
+        var id = await db.RelayLog.Where(r => r.SpoolId == spoolId).Select(r => r.Id).SingleAsync();
 
         var detail = await query.GetByIdAsync(id);
         Assert.NotNull(detail);
@@ -452,8 +460,8 @@ public class SqlRepositoriesTests(PostgresFixture sql) : IClassFixture<PostgresF
     public async Task MessageLog_routing_rule_filter_and_retry_history()
     {
         if (!sql.Available) return;
-        var log = new SqlLogRepository(sql.Factory);
-        var query = new SqlMessageLogQuery(sql.Factory);
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
         var domain = "rule-" + Guid.NewGuid().ToString("N")[..8] + ".test";
         var ruleName = "rule-" + Guid.NewGuid().ToString("N")[..8];
         var spoolId = Guid.NewGuid().ToString("N");

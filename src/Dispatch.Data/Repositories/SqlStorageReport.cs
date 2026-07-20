@@ -1,53 +1,45 @@
-using Dapper;
 using Dispatch.Core.Maintenance;
+using Dispatch.Data.Providers;
+using Microsoft.EntityFrameworkCore;
 
 namespace Dispatch.Data.Repositories;
 
 /// <summary>
 /// Computes database-side storage usage (spec §6.10): per-event relay_log row counts, the relay_log and
-/// audit_log table sizes, and the audit row counts. Table sizes come from <c>pg_total_relation_size</c>
-/// (data + indexes + TOAST). Best-effort: if the database is unreachable, returns a not-connected snapshot
-/// rather than throwing, so the dashboard storage view degrades gracefully.
+/// audit_log table sizes, and the audit row counts.
+///
+/// Sizes come from the provider, since every engine introspects them differently and SQLite often cannot
+/// do it per table at all. Best-effort throughout: if the database is unreachable this returns a
+/// not-connected snapshot rather than throwing, so the dashboard storage view degrades instead of erroring.
 /// </summary>
-public sealed class SqlStorageReport(SqlConnectionFactory factory) : IStorageReport
+public sealed class SqlStorageReport(
+    IDbContextFactory<DispatchDbContext> contexts, IDatabaseProvider provider) : IStorageReport
 {
     public async Task<DbStorage> GetAsync(CancellationToken ct = default)
     {
         try
         {
-            await using var cn = await factory.OpenAsync(ct);
+            await using var db = await contexts.CreateDbContextAsync(ct);
 
-            var dbBytes = await cn.ExecuteScalarAsync<long>(new CommandDefinition(
-                "SELECT pg_database_size(current_database());",
-                cancellationToken: ct));
+            var dbBytes = await provider.GetDatabaseSizeBytesAsync(db, ct);
 
-            var byEvent = (await cn.QueryAsync<LogEventCount>(new CommandDefinition(
-                "SELECT event AS \"Event\", count(*) AS \"Rows\" FROM relay_log GROUP BY event;",
-                cancellationToken: ct))).ToList();
+            var byEvent = await db.RelayLog.AsNoTracking()
+                .GroupBy(r => r.Event)
+                .Select(g => new LogEventCount(g.Key, g.LongCount()))
+                .ToListAsync(ct);
 
-            var relayLogBytes = await TableBytesAsync(cn, "relay_log", ct);
-            var auditBytes = await TableBytesAsync(cn, "audit_log", ct);
+            var relayLogBytes = await provider.GetTableSizeBytesAsync(db, "relay_log", ct);
+            var auditBytes = await provider.GetTableSizeBytesAsync(db, "audit_log", ct);
 
-            var audit = await cn.QuerySingleAsync<(long Total, long Security)>(new CommandDefinition(
-                """
-                SELECT count(*) AS Total,
-                       COALESCE(SUM(CASE WHEN category IN ('Access','SmtpAuth') THEN 1 ELSE 0 END), 0) AS Security
-                FROM audit_log;
-                """,
-                cancellationToken: ct));
+            var auditTotal = await db.AuditLog.AsNoTracking().LongCountAsync(ct);
+            var auditSecurity = await db.AuditLog.AsNoTracking()
+                .LongCountAsync(a => a.Category == "Access" || a.Category == "SmtpAuth", ct);
 
-            return new DbStorage(true, dbBytes, relayLogBytes, byEvent, auditBytes, audit.Total, audit.Security);
+            return new DbStorage(true, dbBytes, relayLogBytes, byEvent, auditBytes, auditTotal, auditSecurity);
         }
         catch
         {
             return new DbStorage(false, 0, 0, [], 0, 0, 0);
         }
     }
-
-    // Total on-disk bytes for a table (data + indexes + TOAST). Passing the name through to_regclass keeps
-    // the lookup safe and returns NULL (→ 0) if the table doesn't exist yet.
-    private static async Task<long> TableBytesAsync(System.Data.Common.DbConnection cn, string table, CancellationToken ct) =>
-        await cn.ExecuteScalarAsync<long>(new CommandDefinition(
-            "SELECT COALESCE(pg_total_relation_size(to_regclass(@table)), 0)::bigint;",
-            new { table }, cancellationToken: ct));
 }

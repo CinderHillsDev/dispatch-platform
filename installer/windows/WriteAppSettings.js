@@ -1,15 +1,23 @@
 // Deferred custom action (adapted from the FluxDeploy installer pattern): writes appsettings.json into
-// the Dispatch data directory. Per spec §12.1, appsettings holds ONLY the PostgreSQL connection string and
-// the Web UI TLS cert path - everything else lives in the config table. The admin password is set on first
-// run via the dashboard, so it is NOT written here.
-// CustomActionData format: "sqlConn|dataDir"
+// the Dispatch data directory. Per spec §12.1, appsettings holds ONLY the database connection string, the
+// optional provider name, and the Web UI TLS cert path - everything else lives in the config table. The
+// admin password is set on first run via the dashboard, so it is NOT written here.
+// CustomActionData format: "sqlConn|dataDir|dbProvider"  (dbProvider may be empty)
 var data = Session.Property("CustomActionData");
 var parts = data.split("|");
 if (parts.length >= 2) {
     var sqlConn = parts[0].replace(/^\s+|\s+$/g, "");
     var dataDir = parts[1].replace(/^\s+|\s+$/g, "").replace(/\\+$/, "");
+    // Only set when the connection string is ambiguous between SQL Server and MySQL; omitted otherwise so
+    // the engine is inferred.
+    var dbProvider = parts.length >= 3 ? parts[2].replace(/^\s+|\s+$/g, "") : "";
 
     var fso = new ActiveXObject("Scripting.FileSystemObject");
+
+    // No SQLCONN given: use the bundled SQLite database inside the data directory. Computed here rather
+    // than as the property's default value because an MSI Property cannot reference another property
+    // (WIX1077), and dataDir is only resolved at execute time.
+    if (sqlConn.length === 0) { sqlConn = "Data Source=" + fso.BuildPath(dataDir, "dispatch.db"); }
     if (!fso.FolderExists(dataDir)) { fso.CreateFolder(dataDir); }
 
     // Mark this install self-managed so the dashboard exposes the "upload upgrade package" flow.
@@ -23,10 +31,16 @@ if (parts.length >= 2) {
     if (!fso.FileExists(targetPath)) {
         // JSON-escape the connection string (backslashes and quotes) so any value is written safely.
         var conn = sqlConn.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        var providerBlock = "";
+        if (dbProvider.length > 0) {
+            var prov = dbProvider.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+            providerBlock = '  "Database": { "Provider": "' + prov + '" },\r\n';
+        }
         var json = "{\r\n"
             + '  "ConnectionStrings": {\r\n'
             + '    "DispatchLog": "' + conn + '"\r\n'
             + "  },\r\n"
+            + providerBlock
             + '  "WebUi": {\r\n'
             + '    "TlsCertPath": "",\r\n'
             + '    "TlsCertPassword": ""\r\n'

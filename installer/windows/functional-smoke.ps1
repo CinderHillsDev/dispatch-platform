@@ -370,10 +370,16 @@ $st = DGet '/api/storage'
 if (-not $st.database.connected) { throw "storage: database should report connected" }
 $deliveredUse = $st.database.relayLog.byEvent | Where-Object { $_.event -eq 'Delivered' } | Select-Object -First 1
 if (-not $deliveredUse -or [int]$deliveredUse.rows -lt 1) { throw "storage: expected Delivered rows in the message-log breakdown" }
+if ([long]$st.database.totalBytes -le 0) { throw "storage: database total size should be > 0" }
+# Every backend must report a real per-table size, including the bundled SQLite default - a storage page
+# that shows 0 KB for the message log is telling the operator something false about their own system.
 if ([long]$st.database.relayLog.tableBytes -le 0) { throw "storage: relay_log table size should be > 0" }
+if ([long]$st.database.relayLog.tableBytes -gt [long]$st.database.totalBytes) {
+    throw "storage: relay_log cannot be larger than the database containing it"
+}
 if ($null -eq $st.spool.captured.files) { throw "storage: spool.captured.files missing" }
 if ($null -eq $st.spool.failed.bytes)   { throw "storage: spool.failed.bytes missing" }
-Write-Host "OK: storage usage - Delivered rows=$($deliveredUse.rows), relay_log=$([math]::Round($st.database.relayLog.tableBytes/1KB))KB, captured files=$($st.spool.captured.files)"
+Write-Host "OK: storage usage - Delivered rows=$($deliveredUse.rows), relay_log=$([math]::Round($st.database.relayLog.tableBytes/1KB))KB of $([math]::Round($st.database.totalBytes/1KB))KB, captured files=$($st.spool.captured.files)"
 
 # === 15. Read-only / observability endpoints all answer =========================================
 foreach ($p in '/api/stats', '/api/stats/relays', '/api/stats/throughput', '/api/system', '/api/spool', '/health') {
@@ -391,7 +397,20 @@ if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
     $archiveDir = Join-Path $spoolDir 'archive'
     Get-ChildItem -LiteralPath $archiveDir -Filter *.jsonl -EA SilentlyContinue | Remove-Item -Force -EA SilentlyContinue
     $rowsBefore = [int](DGet '/api/messages?event=Delivered&pageSize=1').total
-    Invoke-PurgeAfter '{"retention":{"sizeTriggerGb":0.001,"sizeTargetGb":0.0005}}'   # ~1 MB trigger -> always over
+
+    # Derive the trigger from what the database ACTUALLY reports, rather than hardcoding a value assumed to
+    # be "always over". A fixed ~1 MB trigger only exceeded usage on a backend whose reported size was
+    # inflated or large to begin with; the bundled SQLite default reports its real logical size, which for a
+    # fresh install is well under a megabyte, so the trigger never fired and nothing was archived.
+    $dbBytes = [long](DGet '/api/storage').database.totalBytes
+    if ($dbBytes -le 0) { throw "size-pressure: database size came back as $dbBytes" }
+    # Fixed-point with InvariantCulture: these are small fractions of a GB, and the default double
+    # formatting would emit exponent notation and a culture-dependent decimal separator into JSON.
+    $inv = [System.Globalization.CultureInfo]::InvariantCulture
+    $triggerGb = ($dbBytes / 2 / 1GB).ToString('F12', $inv)   # half of current usage - over on any backend
+    $targetGb  = ($dbBytes / 4 / 1GB).ToString('F12', $inv)
+    Write-Host ("size-pressure: db={0}KB -> trigger={1}KB" -f [math]::Round($dbBytes/1KB), [math]::Round($dbBytes/2/1KB))
+    Invoke-PurgeAfter "{`"retention`":{`"sizeTriggerGb`":$triggerGb,`"sizeTargetGb`":$targetGb}}"
     Start-Sleep -Seconds 2
     $archives = @(Get-ChildItem -LiteralPath $archiveDir -Filter 'relay_log-*.jsonl' -EA SilentlyContinue)
     if ($archives.Count -lt 1) { throw "size-pressure should have written a relay_log JSONL archive before deleting" }

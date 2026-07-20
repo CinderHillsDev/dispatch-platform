@@ -1,39 +1,23 @@
-# Dispatch SMTP Relay - full local stack (Dispatch + PostgreSQL), arm64-native on Apple Silicon.
+# Dispatch SMTP Relay - the default single-container stack, backed by bundled SQLite.
 #
-#   docker compose up --build        # build + run everything
-#   open https://localhost:8420      # dashboard (self-signed cert; log in with ADMIN password below)
+#   docker compose up --build        # build + run
+#   open https://localhost:8420      # dashboard (self-signed cert; log in with the ADMIN password below)
 #
-# PostgreSQL backs the relay log, counters, and config. postgres:17 is multi-arch, so it runs natively on
-# Apple Silicon and x86 with no emulation.
+# There is no database service here on purpose. SQLite lives in the dispatch-data volume, which means one
+# container, one volume to back up, and no database credentials to manage. Every writer is a thread inside
+# this one process, which is the shape SQLite's single-writer model handles well - see docs/database.md.
+#
+# To run against a database server you already have instead, layer the override file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build
+#
 services:
-  db:
-    image: postgres:17
-    container_name: dispatch-db
-    environment:
-      POSTGRES_PASSWORD: "Dispatch_Dev_Pass123"
-      POSTGRES_DB: "DispatchLog"
-    ports:
-      - "5432:5432"
-    volumes:
-      - dispatch-db-data:/var/lib/postgresql/data
-    healthcheck:
-      # pg_isready ships in the postgres image; gate Dispatch's start until the server accepts connections.
-      test: ["CMD-SHELL", "pg_isready -U postgres -d DispatchLog"]
-      interval: 10s
-      timeout: 5s
-      retries: 18
-      start_period: 10s
-    restart: unless-stopped
-
   dispatch:
     build: .
     container_name: dispatch
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      # The only two bootstrap settings (spec §12.1); everything else is managed in the dashboard.
-      ConnectionStrings__DispatchLog: "Host=db;Port=5432;Database=DispatchLog;Username=postgres;Password=Dispatch_Dev_Pass123"
+      # The only two bootstrap settings (spec 12.1); everything else is managed in the dashboard.
+      ConnectionStrings__DispatchLog: "Data Source=/app/.dispatch-data/dispatch.db"
       AdminPassword: "Dev_Admin_Passw0rd!"
     ports:
       - "8420:8420"   # dashboard
@@ -41,11 +25,12 @@ services:
       - "25:25"       # SMTP  (if host port 25 is busy, remap e.g. "2525:25")
       - "587:587"     # SMTP submission
     volumes:
+      - dispatch-data:/app/.dispatch-data     # the SQLite database - this is what to back up
       - dispatch-spool:/app/.dispatch-spool
       - dispatch-logs:/var/log/dispatch
     restart: unless-stopped
 
 volumes:
-  dispatch-db-data:
+  dispatch-data:
   dispatch-spool:
   dispatch-logs:

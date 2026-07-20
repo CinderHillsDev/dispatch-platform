@@ -1,7 +1,7 @@
 # Deploy Dispatch to Azure
 
 One-click deploy of Dispatch (the open-source SMTP relay) onto a single Ubuntu 24.04 VM. The template
-provisions the VM + networking and, on first boot, runs the official `install.sh --install-postgres`, which
+provisions the VM + networking and, on first boot, runs the official `install.sh`, which
 installs **PostgreSQL** and Dispatch as a systemd service with a self-signed dashboard certificate.
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FCinderHillsDev%2Fdispatch-platform%2Fmain%2Fdeploy%2Fazure%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FCinderHillsDev%2Fdispatch-platform%2Fmain%2Fdeploy%2Fazure%2FcreateUiDefinition.json)

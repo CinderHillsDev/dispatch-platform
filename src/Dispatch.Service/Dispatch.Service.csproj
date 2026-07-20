@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -19,6 +19,12 @@
     <ProjectReference Include="..\Dispatch.Core\Dispatch.Core.csproj" />
     <ProjectReference Include="..\Dispatch.Providers\Dispatch.Providers.csproj" />
     <ProjectReference Include="..\Dispatch.Data\Dispatch.Data.csproj" />
+    <!-- Migrations are provider-specific assemblies resolved at runtime by name, so every one Dispatch
+         supports must ship with the service even though nothing references its types. -->
+    <ProjectReference Include="..\Dispatch.Data.MySql\Dispatch.Data.MySql.csproj" />
+    <ProjectReference Include="..\Dispatch.Data.Postgres\Dispatch.Data.Postgres.csproj" />
+    <ProjectReference Include="..\Dispatch.Data.Sqlite\Dispatch.Data.Sqlite.csproj" />
+    <ProjectReference Include="..\Dispatch.Data.SqlServer\Dispatch.Data.SqlServer.csproj" />
     <ProjectReference Include="..\Dispatch.Web\Dispatch.Web.csproj" />
   </ItemGroup>
 </Project>

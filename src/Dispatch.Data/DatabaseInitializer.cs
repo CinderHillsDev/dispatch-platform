@@ -1,128 +1,128 @@
-using Dapper;
-using Npgsql;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging;
 
 namespace Dispatch.Data;
 
 /// <summary>
-/// Ensures the target database exists and applies ordered, embedded SQL migrations once each,
-/// tracking applied versions in <c>schema_version</c> (spec §6.11, §12). Idempotent and safe to
-/// run on every startup.
+/// Brings the database up to the current schema on every startup. Idempotent, and safe against a brand-new
+/// database, an already-current one, or one created before 0.7 moved the schema to EF Core.
+///
+/// Three cases, in the order they are checked:
+///
+///  1. <b>Already on EF migrations</b> - apply whatever is pending. The normal path.
+///
+///  2. <b>Pre-0.7 database</b> - a `schema_version` table and no `__EFMigrationsHistory`. These were built
+///     by the hand-written PostgreSQL scripts and hold live mail history, so re-creating their tables would
+///     fail on "relation already exists" and, if it somehow succeeded, would be catastrophic. The baseline
+///     migration is recorded as already-applied instead, and later migrations then run normally.
+///
+///     This is only sound because the EF model was verified to produce the same schema those scripts do:
+///     83/83 columns and defaults identical, 27/28 indexes, the difference being an index EF adds on a
+///     foreign key by convention.
+///
+///  3. <b>Empty database</b> - apply everything from scratch.
 /// </summary>
-public sealed class DatabaseInitializer(SqlConnectionFactory factory, ILogger<DatabaseInitializer> log)
+public sealed class DatabaseInitializer(
+    IDbContextFactory<DispatchDbContext> contexts,
+    DatabaseBootstrap bootstrap,
+    ILogger<DatabaseInitializer> log)
 {
-    private const string MigrationPrefix = ".Migrations.";
-
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        var builder = new NpgsqlConnectionStringBuilder(factory.ConnectionString);
-        var database = builder.Database;
-        if (string.IsNullOrWhiteSpace(database))
-            throw new InvalidOperationException("Connection string must specify a Database.");
+        // Create the database/file and wait for the server to accept connections. EF's MigrateAsync can
+        // create a database, but it will not wait for one that is still starting - which is exactly what a
+        // compose stack or a freshly-provisioned VM does on first boot.
+        await bootstrap.EnsureDatabaseAsync(ct);
 
-        await EnsureDatabaseAsync(builder, database, ct);
-        await EnsureSchemaVersionTableAsync(ct);
-        await ApplyMigrationsAsync(database, ct);
-    }
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var provider = db.Database.ProviderName;
 
-    private async Task EnsureDatabaseAsync(NpgsqlConnectionStringBuilder builder, string database, CancellationToken ct)
-    {
-        // Connect to the "postgres" maintenance database to check for / create the target database.
-        var maintenanceBuilder = new NpgsqlConnectionStringBuilder(builder.ConnectionString) { Database = "postgres" };
-        await using var cn = new NpgsqlConnection(maintenanceBuilder.ConnectionString);
-        await OpenWithRetryAsync(cn, ct);
-
-        var exists = await cn.ExecuteScalarAsync<int?>(
-            "SELECT 1 FROM pg_database WHERE datname = @database", new { database });
-        if (exists is null)
+        var applied = (await db.Database.GetAppliedMigrationsAsync(ct)).ToList();
+        if (applied.Count == 0 && await HasPreEfSchemaAsync(db, ct))
         {
-            // CREATE DATABASE cannot be parameterised or run inside a transaction; the database name comes
-            // from our own config, not user input. Double-quote to allow mixed case / reserved words.
-            await cn.ExecuteAsync($"CREATE DATABASE \"{database.Replace("\"", "\"\"")}\"");
-            log.LogInformation("Created database {Database}", database);
-        }
-    }
-
-    private async Task EnsureSchemaVersionTableAsync(CancellationToken ct)
-    {
-        await using var cn = await factory.OpenAsync(ct);
-        await cn.ExecuteAsync("""
-            CREATE TABLE IF NOT EXISTS schema_version (
-                version     int          NOT NULL PRIMARY KEY,
-                script_name varchar(256) NOT NULL,
-                applied_at  timestamptz  NOT NULL DEFAULT now()
-            );
-            """);
-    }
-
-    private async Task ApplyMigrationsAsync(string database, CancellationToken ct)
-    {
-        await using var cn = await factory.OpenAsync(ct);
-        var applied = (await cn.QueryAsync<int>("SELECT version FROM schema_version")).ToHashSet();
-
-        foreach (var (version, name, sql) in LoadMigrations())
-        {
-            if (applied.Contains(version))
-                continue;
-
-            await using var tx = await cn.BeginTransactionAsync(ct);
-            try
-            {
-                await cn.ExecuteAsync(sql, transaction: tx);
-                await cn.ExecuteAsync(
-                    "INSERT INTO schema_version (version, script_name) VALUES (@version, @name)",
-                    new { version, name }, tx);
-                await tx.CommitAsync(ct);
-                log.LogInformation("Applied migration {Version} ({Name})", version, name);
-            }
-            catch
-            {
-                await tx.RollbackAsync(ct);
-                throw;
-            }
-        }
-    }
-
-    /// <summary>Opens a connection, retrying for up to ~60s so a just-started Postgres container (CI/docker) is tolerated.</summary>
-    private async Task OpenWithRetryAsync(NpgsqlConnection cn, CancellationToken ct)
-    {
-        const int maxAttempts = 30;
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                await cn.OpenAsync(ct);
-                return;
-            }
-            catch (NpgsqlException) when (attempt < maxAttempts)
-            {
-                if (attempt == 1) log.LogInformation("Waiting for PostgreSQL to accept connections…");
-                await Task.Delay(TimeSpan.FromSeconds(2), ct);
-            }
-        }
-    }
-
-    private static IEnumerable<(int Version, string Name, string Sql)> LoadMigrations()
-    {
-        var asm = typeof(DatabaseInitializer).Assembly;
-        var migrations = new List<(int, string, string)>();
-
-        foreach (var resource in asm.GetManifestResourceNames())
-        {
-            var idx = resource.IndexOf(MigrationPrefix, StringComparison.Ordinal);
-            if (idx < 0 || !resource.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var name = resource[(idx + MigrationPrefix.Length)..];          // e.g. "0001_init.sql"
-            var versionText = name.Split('_', 2)[0];
-            if (!int.TryParse(versionText, out var version))
-                continue;
-
-            using var stream = asm.GetManifestResourceStream(resource)!;
-            using var reader = new StreamReader(stream);
-            migrations.Add((version, name, reader.ReadToEnd()));
+            await AdoptPreEfSchemaAsync(db, ct);
+            log.LogInformation(
+                "Adopted an existing pre-0.7 schema: recorded the baseline migration as applied without " +
+                "re-creating tables that already hold data. [{Provider}]", provider);
         }
 
-        return migrations.OrderBy(m => m.Item1);
+        var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
+        if (pending.Count == 0)
+        {
+            log.LogInformation("Database schema is current. [{Provider}]", provider);
+            return;
+        }
+
+        log.LogInformation("Applying {Count} migration(s): {Migrations} [{Provider}]",
+            pending.Count, string.Join(", ", pending), provider);
+        await db.Database.MigrateAsync(ct);
+    }
+
+    /// <summary>
+    /// True when this database was built by the pre-0.7 migration runner: a schema_version table AND a real
+    /// table alongside it, so an orphaned schema_version from a failed run is not mistaken for a populated
+    /// schema and used to skip creating everything.
+    /// </summary>
+    public static async Task<bool> HasPreEfSchemaAsync(DispatchDbContext db, CancellationToken ct = default)
+    {
+        var tables = await ExistingTablesAsync(db, ct);
+        return tables.Contains("schema_version") && tables.Contains("relay_log");
+    }
+
+    private static async Task AdoptPreEfSchemaAsync(DispatchDbContext db, CancellationToken ct)
+    {
+        var baseline = db.Database.GetMigrations().FirstOrDefault()
+            ?? throw new InvalidOperationException("No migrations found in the provider's migrations assembly.");
+
+        // EF's own history repository, so the table is created with the shape and quoting this provider
+        // expects rather than hand-written DDL that would differ per engine.
+        var history = db.GetService<IHistoryRepository>();
+        await db.Database.ExecuteSqlRawAsync(history.GetCreateIfNotExistsScript(), ct);
+        await db.Database.ExecuteSqlRawAsync(
+            history.GetInsertScript(new HistoryRow(baseline, ProductInfo.GetVersion())), ct);
+    }
+
+    private static async Task<HashSet<string>> ExistingTablesAsync(DispatchDbContext db, CancellationToken ct)
+    {
+        // Every engine names its catalog differently, and each needs a way to say "the tables of THIS
+        // database" - without that restriction MySQL lists every table on the server, so an unrelated
+        // database could make this claim a pre-0.7 schema exists.
+        var sql = db.Database.ProviderName switch
+        {
+            "Microsoft.EntityFrameworkCore.Sqlite" =>
+                "SELECT name FROM sqlite_master WHERE type = 'table'",
+            "Npgsql.EntityFrameworkCore.PostgreSQL" =>
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
+            "Pomelo.EntityFrameworkCore.MySql" =>
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()",
+            // sys.tables, not INFORMATION_SCHEMA. Dispatch creates SQL Server databases with a
+            // case-sensitive collation (Latin1_General_BIN2, so LIKE matches the other engines), which makes
+            // identifier resolution case-sensitive too - and the view is really named
+            // INFORMATION_SCHEMA.TABLES, so the lowercase spelling that works everywhere else fails here.
+            // sys.tables is canonically lowercase and immune to that.
+            "Microsoft.EntityFrameworkCore.SqlServer" =>
+                "SELECT name FROM sys.tables",
+            var other => throw new InvalidOperationException($"Unsupported EF provider '{other}'."),
+        };
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var connection = db.Database.GetDbConnection();
+        var opened = connection.State != System.Data.ConnectionState.Open;
+        if (opened) await connection.OpenAsync(ct);
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandText = sql;
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                names.Add(reader.GetString(0));
+        }
+        finally
+        {
+            if (opened) await connection.CloseAsync();
+        }
+        return names;
     }
 }

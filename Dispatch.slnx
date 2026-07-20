@@ -2,6 +2,10 @@
   <Folder Name="/src/">
     <Project Path="src/Dispatch.Core/Dispatch.Core.csproj" />
     <Project Path="src/Dispatch.Data/Dispatch.Data.csproj" />
+    <Project Path="src/Dispatch.Data.MySql/Dispatch.Data.MySql.csproj" />
+    <Project Path="src/Dispatch.Data.Postgres/Dispatch.Data.Postgres.csproj" />
+    <Project Path="src/Dispatch.Data.Sqlite/Dispatch.Data.Sqlite.csproj" />
+    <Project Path="src/Dispatch.Data.SqlServer/Dispatch.Data.SqlServer.csproj" />
     <Project Path="src/Dispatch.Providers/Dispatch.Providers.csproj" />
     <Project Path="src/Dispatch.Service/Dispatch.Service.csproj" />
     <Project Path="src/Dispatch.Web/Dispatch.Web.csproj" />

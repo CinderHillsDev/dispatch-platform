@@ -5,9 +5,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Dispatch.Data.Tests;
 
 /// <summary>Integration tests for the audit log (System Logs). Auto-skip when DISPATCH_TEST_SQL is unset.</summary>
-public class SqlAuditLogTests(PostgresFixture sql) : IClassFixture<PostgresFixture>
+public class SqlAuditLogTests(DatabaseFixture sql) : IClassFixture<DatabaseFixture>
 {
-    private SqlAuditLog NewLog() => new(sql.Factory, NullLogger<SqlAuditLog>.Instance);
+    private SqlAuditLog NewLog() => new(sql.Contexts, NullLogger<SqlAuditLog>.Instance);
 
     [Fact]
     public async Task Writes_and_queries_by_kind_and_search()
@@ -35,14 +35,20 @@ public class SqlAuditLogTests(PostgresFixture sql) : IClassFixture<PostgresFixtu
     {
         if (!sql.Available) return;
         var audit = NewLog();
-        await using var cn = await sql.Factory.OpenAsync();
+        await using var db = await sql.Contexts.CreateDbContextAsync();
 
         // Seed rows with explicit ages: an old security event (10d), an old general event (100d), and a
-        // fresh one. Dapper-parameterised inserts mirroring the table shape.
-        async Task Seed(string kind, string category, int daysOld) =>
-            await Dapper.SqlMapper.ExecuteAsync(cn,
-                "INSERT INTO audit_log (logged_at, kind, category, event, severity) VALUES (now() - @d * interval '1 day', @k, @c, 'x', 'Info');",
-                new { d = daysOld, k = kind, c = category });
+        // fresh one. The age is set here rather than written as engine-specific interval arithmetic, so
+        // this seeds identically on every backend.
+        async Task Seed(string kind, string category, int daysOld)
+        {
+            db.AuditLog.Add(new AuditLogEntity
+            {
+                LoggedAt = DateTime.UtcNow.AddDays(-daysOld),
+                Kind = kind, Category = category, Event = "x", Severity = "Info",
+            });
+            await db.SaveChangesAsync();
+        }
 
         await Seed("audit", "SmtpAuth", 10);   // security, older than 7d → purged
         await Seed("audit", "Config", 100);    // general, older than 90d → purged

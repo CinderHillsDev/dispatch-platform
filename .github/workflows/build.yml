@@ -76,6 +76,51 @@ jobs:
       - name: Test
         run: dotnet test Dispatch.slnx --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
 
+      # The job-level DISPATCH_TEST_SQL above pins every run to Postgres, so without this step the SQLite
+      # backend would never be exercised in CI. Clearing both variables sends DatabaseFixture down its
+      # SQLite path (temp file per run); DISPATCH_REQUIRE_SQL must be cleared too or the fixture throws by
+      # design rather than falling back.
+      #
+      # This is what covers ConcurrentWriteTests on SQLite - the test that asserts concurrent writers
+      # serialise on the write lock instead of failing with SQLITE_BUSY. That property depends on WAL and
+      # busy_timeout being set correctly, so it needs to be verified on every change, not assumed.
+      - name: Test (SQLite backend)
+        env:
+          DISPATCH_TEST_SQL: ""
+          DISPATCH_REQUIRE_SQL: ""
+        run: dotnet test tests/Dispatch.Data.Tests --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results-sqlite.trx" --results-directory TestResults
+
+      # MariaDB and SQL Server, the two backends with no CI service container above. Started as containers
+      # here so the same 64 repository tests run against all four engines - that equivalence is the whole
+      # point of the provider framework, and it only holds if it is checked.
+      - name: Test (MariaDB backend)
+        env:
+          DISPATCH_TEST_ENGINE: mysql
+          DISPATCH_TEST_SQL: "Server=127.0.0.1;Port=53306;Uid=root;Pwd=Dispatch_Ci_Pass1"
+          DISPATCH_REQUIRE_SQL: ""
+        run: |
+          docker run -d --rm --name maria-ci -e MARIADB_ROOT_PASSWORD=Dispatch_Ci_Pass1 -p 53306:3306 mariadb:11
+          for _ in $(seq 1 40); do docker exec maria-ci mariadb -uroot -pDispatch_Ci_Pass1 -e "SELECT 1" >/dev/null 2>&1 && break; sleep 3; done
+          dotnet test tests/Dispatch.Data.Tests --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results-mysql.trx" --results-directory TestResults
+          docker rm -f maria-ci
+
+      - name: Test (SQL Server backend)
+        env:
+          DISPATCH_TEST_ENGINE: sqlserver
+          DISPATCH_TEST_SQL: "Server=127.0.0.1,51433;User Id=sa;Password=Dispatch_Ci_Pass1;TrustServerCertificate=True"
+          DISPATCH_REQUIRE_SQL: ""
+        run: |
+          docker run -d --rm --name mssql-ci -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=Dispatch_Ci_Pass1 -p 51433:1433 mcr.microsoft.com/mssql/server:2022-latest
+          for _ in $(seq 1 40); do docker exec mssql-ci /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Dispatch_Ci_Pass1 -C -Q "SELECT 1" >/dev/null 2>&1 && break; sleep 3; done
+          dotnet test tests/Dispatch.Data.Tests --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results-sqlserver.trx" --results-directory TestResults
+          docker rm -f mssql-ci
+
+      # The 0.7 upgrade path, end to end against the real service: run on PostgreSQL, put mail through it,
+      # migrate to bundled SQLite, restart, and confirm history, encrypted config and new delivery all
+      # survive. The unit-level migrator tests cover the copy; this covers what an operator actually does.
+      - name: Smoke test - PostgreSQL to SQLite upgrade
+        run: tests/smoke/upgrade-postgres-to-sqlite.sh
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v6

@@ -1,9 +1,10 @@
 name: Installers
 
 # Validates the installer artifacts on GitHub-hosted runners (free for this public repo). Non-destructive
-# by default: the Windows job builds the MSI + Burn bundle (proving the WiX sources + net472 launcher
-# compile) and the Linux job lints install.sh. The actual PostgreSQL install + service smoke test is
-# destructive (it installs PostgreSQL on the runner), so it only runs when dispatched with full_install=true.
+# by default: the Windows job builds the MSI + Burn bundle (proving the WiX sources compile) and the Linux
+# job lints install.sh. The full install and upgrade smokes are destructive - they install and reinstall
+# Dispatch on the runner, and the upgrade one installs PostgreSQL via the OLD released installer - so on a
+# manual dispatch they run only with full_install=true.
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +15,10 @@ on:
   push:
     paths:
       - "installer/**"
+      # The smoke scripts this workflow runs. Without them here, editing a smoke test does not re-run the
+      # workflow that executes it, so a fix to one sits unverified until something else happens to touch
+      # installer/.
+      - "tests/smoke/**"
       - ".github/workflows/installers.yml"
 
 env:
@@ -83,15 +88,12 @@ jobs:
         working-directory: installer/windows
         run: wix build Dispatch.wxs -arch x64 -d PublishDir=publish -ext WixToolset.Firewall.wixext -o Dispatch.msi
 
-      - name: Build the PostgreSQL launcher
-        run: dotnet build installer/windows/postgres/PostgresLauncher.csproj -c Release
-
       - name: Build the bundle
         working-directory: installer/windows
         shell: pwsh
         run: |
           wix build bundle/Bundle.wxs -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext `
-            -bindpath "PgLauncher=postgres/bin/Release/net472" -bindpath "Msi=." -o DispatchSetup.exe
+            -bindpath "Msi=." -o DispatchSetup.exe
 
       # CI installer builds are intentionally unsigned (signing happens only on tagged releases via
       # release.yml + Azure Artifact Signing). This artifact proves the WiX sources + launcher compile.
@@ -310,20 +312,18 @@ jobs:
           retention-days: 3
 
       # Real end-to-end check (mirrors the Windows full-install smoke): install the just-built self-contained
-      # tarball exactly as a user would - install.sh --prebuilt --install-postgres, which installs PostgreSQL
-      # locally and provisions the DispatchLog DB - then confirm the systemd service starts and serves
-      # /health. Runs on installer-path pushes and manual dispatch so a service that won't start (or a broken
-      # PostgreSQL bootstrap) fails CI instead of the customer.
+      # tarball exactly as a user would - a default install, which now means the bundled SQLite database and
+      # no database server at all - then confirm the systemd service starts and serves /health. Runs on
+      # installer-path pushes and manual dispatch so a service that will not start fails CI, not a customer.
       - name: Full install + smoke
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
         env:
-          DB_PW: "Ci-Smoke-Passw0rd!"
+          ADMIN_PW: "Ci-Smoke-Passw0rd!"
         run: |
           set -euo pipefail
           mkdir -p /tmp/extract && tar -xzf dispatch-ci-linux-x64.tar.gz -C /tmp/extract
           dir=/tmp/extract/dispatch-ci-linux-x64
-          sudo "$dir/install.sh" --prebuilt "$dir/bin" --install-postgres \
-            --db-password "$DB_PW" --admin-password "$DB_PW"
+          sudo "$dir/install.sh" --prebuilt "$dir/bin" --admin-password "$ADMIN_PW"
 
           ok=0
           for _ in $(seq 1 36); do
@@ -334,7 +334,7 @@ jobs:
             echo "=== dispatch service ==="; sudo systemctl status dispatch --no-pager || true
             echo "=== journal ==="; sudo journalctl -u dispatch --no-pager -n 80 || true
             echo "=== app logs ==="; sudo tail -n 60 /var/log/dispatch/*.log 2>/dev/null || true
-            echo "=== postgresql ==="; sudo systemctl status postgresql --no-pager 2>/dev/null || true
+            echo "=== database file ==="; sudo ls -l /var/lib/dispatch/dispatch.db* 2>/dev/null || echo "  (no sqlite database created)"
             echo "health check failed"; exit 1
           fi
           curl -fsSk https://localhost:8420/health; echo "  <- /health OK"
@@ -351,6 +351,17 @@ jobs:
           done
           [ "$tls_ok" = 1 ] || { echo "STARTTLS negotiation failed on all SMTP ports"; exit 1; }
 
+      # The real binary upgrade, and LAST because it rewrites the machine's install: take the last
+      # PUBLISHED release, run mail through it, then upgrade to this build in place and migrate onto
+      # bundled SQLite. Everything else tests this build against a database shaped like an old one; this
+      # uses the actual shipped artifact, old installer and old binaries included. It is what catches an
+      # upgrade that repoints a customer's database or refuses their schema, neither of which a test built
+      # from current source can see.
+      - name: Upgrade from the published release
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: tests/smoke/upgrade-from-released-version.sh dispatch-ci-linux-x64.tar.gz
   linux-installer:
     runs-on: ubuntu-latest
     steps:

@@ -1,23 +1,19 @@
-using Dapper;
 using Dispatch.Core.Routing;
+using Microsoft.EntityFrameworkCore;
 
 namespace Dispatch.Data.Repositories;
 
 /// <summary>Reads/writes the ordered <c>routing_rules</c> table (spec §10.3, §10.5, §10.10).</summary>
-public sealed class SqlRoutingRuleRepository(SqlConnectionFactory factory) : IRoutingRuleRepository
+public sealed class SqlRoutingRuleRepository(IDbContextFactory<DispatchDbContext> contexts) : IRoutingRuleRepository
 {
-    private const string SelectColumns =
-        "id, priority, name, recipient_pattern AS RecipientPattern, sender_pattern AS SenderPattern, relay_id AS RelayId, enabled";
-    private const string InsertedColumns =
-        "id, priority, name, recipient_pattern AS \"RecipientPattern\", sender_pattern AS \"SenderPattern\", relay_id AS \"RelayId\", enabled";
-
     public async Task<IReadOnlyList<RoutingRule>> GetEnabledOrderedAsync(CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        var rows = await cn.QueryAsync<Row>(new CommandDefinition(
-            $"SELECT {SelectColumns} FROM routing_rules WHERE enabled", cancellationToken: ct));
-        // Specificity is computed in code (spec §10.5: priority ASC, then specificity DESC).
-        return rows.Select(r => r.ToRule())
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var rows = await db.RoutingRules.AsNoTracking().Where(r => r.Enabled).ToListAsync(ct);
+
+        // Specificity is computed in code (spec §10.5: priority ASC, then specificity DESC), so the final
+        // ordering is applied after materialising rather than in SQL.
+        return rows.Select(ToRule)
             .OrderBy(r => r.Priority)
             .ThenByDescending(r => r.Specificity)
             .ToList();
@@ -25,102 +21,95 @@ public sealed class SqlRoutingRuleRepository(SqlConnectionFactory factory) : IRo
 
     public async Task<IReadOnlyList<RoutingRule>> GetAllAsync(CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        var rows = await cn.QueryAsync<Row>(new CommandDefinition(
-            $"SELECT {SelectColumns} FROM routing_rules ORDER BY priority", cancellationToken: ct));
-        return rows.Select(r => r.ToRule()).ToList();
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var rows = await db.RoutingRules.AsNoTracking().OrderBy(r => r.Priority).ToListAsync(ct);
+        return rows.Select(ToRule).ToList();
     }
 
     public async Task<RoutingRule> CreateAsync(RoutingRule rule, CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        // An unspecified priority goes to the end of the list. Reading the max and inserting share a
+        // transaction because priority is UNIQUE - two concurrent creates would otherwise pick the same one.
         var priority = rule.Priority > 0
             ? rule.Priority
-            : (await cn.ExecuteScalarAsync<int?>(new CommandDefinition(
-                "SELECT MAX(priority) FROM routing_rules", cancellationToken: ct)) ?? 0) + 10;
+            : (await db.RoutingRules.MaxAsync(r => (int?)r.Priority, ct) ?? 0) + 10;
 
-        const string sql = $"""
-            INSERT INTO routing_rules (priority, name, recipient_pattern, sender_pattern, relay_id, enabled)
-            VALUES (@priority, @Name, @RecipientPattern, @SenderPattern, @RelayId, @Enabled)
-            RETURNING {InsertedColumns};
-            """;
-        var row = await cn.QuerySingleAsync<Row>(new CommandDefinition(sql, new
+        var entity = new RoutingRuleEntity
         {
-            priority, rule.Name, rule.RecipientPattern, rule.SenderPattern, rule.RelayId, rule.Enabled,
-        }, cancellationToken: ct));
-        return row.ToRule();
+            Priority = priority,
+            Name = rule.Name,
+            RecipientPattern = rule.RecipientPattern,
+            SenderPattern = rule.SenderPattern,
+            RelayId = rule.RelayId,
+            Enabled = rule.Enabled,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        db.RoutingRules.Add(entity);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        return ToRule(entity);
     }
 
     public async Task<bool> UpdateAsync(RoutingRule rule, CancellationToken ct = default)
     {
-        const string sql = """
-            UPDATE routing_rules SET name = @Name, recipient_pattern = @RecipientPattern,
-                                     sender_pattern = @SenderPattern, relay_id = @RelayId, enabled = @Enabled
-            WHERE id = @Id;
-            """;
-        await using var cn = await factory.OpenAsync(ct);
-        var n = await cn.ExecuteAsync(new CommandDefinition(sql, new
-        {
-            rule.Id, rule.Name, rule.RecipientPattern, rule.SenderPattern, rule.RelayId, rule.Enabled,
-        }, cancellationToken: ct));
-        return n > 0;
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await db.RoutingRules
+            .Where(r => r.Id == rule.Id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.Name, rule.Name)
+                .SetProperty(r => r.RecipientPattern, rule.RecipientPattern)
+                .SetProperty(r => r.SenderPattern, rule.SenderPattern)
+                .SetProperty(r => r.RelayId, rule.RelayId)
+                .SetProperty(r => r.Enabled, rule.Enabled), ct) > 0;
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        var n = await cn.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM routing_rules WHERE id = @id", new { id }, cancellationToken: ct));
-        return n > 0;
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await db.RoutingRules.Where(r => r.Id == id).ExecuteDeleteAsync(ct) > 0;
     }
 
     public async Task ReorderAsync(IReadOnlyList<int> idsInPriorityOrder, CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        await using var tx = await cn.BeginTransactionAsync(ct);
-        try
-        {
-            // Two-phase to dodge the UNIQUE(priority) constraint: park at negatives, then set final values.
-            for (var i = 0; i < idsInPriorityOrder.Count; i++)
-                await cn.ExecuteAsync(new CommandDefinition(
-                    "UPDATE routing_rules SET priority = @p WHERE id = @id",
-                    new { p = -(i + 1), id = idsInPriorityOrder[i] }, tx, cancellationToken: ct));
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-            for (var i = 0; i < idsInPriorityOrder.Count; i++)
-                await cn.ExecuteAsync(new CommandDefinition(
-                    "UPDATE routing_rules SET priority = @p WHERE id = @id",
-                    new { p = (i + 1) * 10, id = idsInPriorityOrder[i] }, tx, cancellationToken: ct));
-
-            await tx.CommitAsync(ct);
-        }
-        catch
+        // Two-phase, to dodge the UNIQUE(priority) constraint: park every row at a negative priority that
+        // cannot collide with a real one, then assign the final values. Doing it in one pass would fail as
+        // soon as a rule moved onto a priority another rule had not vacated yet.
+        for (var i = 0; i < idsInPriorityOrder.Count; i++)
         {
-            await tx.RollbackAsync(ct);
-            throw;
+            var id = idsInPriorityOrder[i];
+            var parked = -(i + 1);
+            await db.RoutingRules.Where(r => r.Id == id)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.Priority, parked), ct);
         }
+
+        for (var i = 0; i < idsInPriorityOrder.Count; i++)
+        {
+            var id = idsInPriorityOrder[i];
+            var priority = (i + 1) * 10;
+            await db.RoutingRules.Where(r => r.Id == id)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.Priority, priority), ct);
+        }
+
+        await tx.CommitAsync(ct);
     }
 
     public async Task<int> CountReferencingRelayAsync(int relayId, CancellationToken ct = default)
     {
-        await using var cn = await factory.OpenAsync(ct);
-        return await cn.ExecuteScalarAsync<int>(new CommandDefinition(
-            "SELECT COUNT(*) FROM routing_rules WHERE relay_id = @relayId", new { relayId }, cancellationToken: ct));
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await db.RoutingRules.AsNoTracking().CountAsync(r => r.RelayId == relayId, ct);
     }
 
-    private sealed class Row
+    private static RoutingRule ToRule(RoutingRuleEntity e) => new()
     {
-        public int Id { get; init; }
-        public int Priority { get; init; }
-        public string Name { get; init; } = "";
-        public string? RecipientPattern { get; init; }
-        public string? SenderPattern { get; init; }
-        public int RelayId { get; init; }
-        public bool Enabled { get; init; }
-
-        public RoutingRule ToRule() => new()
-        {
-            Id = Id, Priority = Priority, Name = Name, RecipientPattern = RecipientPattern,
-            SenderPattern = SenderPattern, RelayId = RelayId, Enabled = Enabled,
-        };
-    }
+        Id = e.Id, Priority = e.Priority, Name = e.Name, RecipientPattern = e.RecipientPattern,
+        SenderPattern = e.SenderPattern, RelayId = e.RelayId, Enabled = e.Enabled,
+    };
 }

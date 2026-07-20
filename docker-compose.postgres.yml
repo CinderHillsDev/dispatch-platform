@@ -1,0 +1,39 @@
+# Override: run Dispatch against PostgreSQL instead of the bundled SQLite default.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up --build
+#
+# This exists mainly to exercise the PostgreSQL backend locally. A real bring-your-own-server deployment
+# points ConnectionStrings__DispatchLog at a server the site already runs, rather than starting one here -
+# Dispatch does not install or manage a database server.
+#
+# The same shape works for MariaDB/MySQL and SQL Server; those connection strings can be ambiguous, so set
+# Database__Provider alongside. See docs/database.md.
+services:
+  db:
+    image: postgres:17
+    container_name: dispatch-db
+    environment:
+      POSTGRES_PASSWORD: "Dispatch_Dev_Pass123"
+      POSTGRES_DB: "DispatchLog"
+    ports:
+      - "5432:5432"
+    volumes:
+      - dispatch-db-data:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready ships in the postgres image; gate Dispatch's start until the server accepts connections.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d DispatchLog"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+    restart: unless-stopped
+
+  dispatch:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__DispatchLog: "Host=db;Port=5432;Database=DispatchLog;Username=postgres;Password=Dispatch_Dev_Pass123"
+
+volumes:
+  dispatch-db-data:

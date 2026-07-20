@@ -5,16 +5,27 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Migrations/*.sql" />
-  </ItemGroup>
-
-  <ItemGroup>
     <InternalsVisibleTo Include="Dispatch.Data.Tests" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
-    <PackageReference Include="Dapper" Version="2.1.79" />
+    <!--
+      EF Core 9, not 10: Pomelo is the only provider with real MariaDB support (Oracle's connector has
+      dropped MariaDB compatibility) and has no EF Core 10 release. EF 9 runs fine on net10.0, and all
+      four providers exist at 9.x. Revisit when Pomelo ships for EF 10.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.18" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.18" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.18" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
+    <PackageReference Include="MySqlConnector" Version="2.4.0" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+    <!-- Microsoft.Data.Sqlite 10.0.9 pulls SQLitePCLRaw 2.1.11, which carries GHSA-2m69-gcr7-jv3q.
+         Pin the patched 2.1.12 explicitly until the Microsoft.Data.Sqlite dependency moves. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />

@@ -5,13 +5,13 @@ using Dispatch.Data.Repositories;
 namespace Dispatch.Data.Tests;
 
 /// <summary>Integration tests for relay CRUD + routing-rule repositories. Auto-skip without DISPATCH_TEST_SQL.</summary>
-public class SqlRoutingTests(PostgresFixture sql) : IClassFixture<PostgresFixture>
+public class SqlRoutingTests(DatabaseFixture sql) : IClassFixture<DatabaseFixture>
 {
     [Fact]
     public async Task Relay_create_set_default_and_delete()
     {
         if (!sql.Available) return;
-        var relays = new SqlRelayRepository(sql.Factory);
+        var relays = new SqlRelayRepository(sql.Contexts);
 
         var mg = await relays.CreateAsync("Mailgun-EU", RelayProviderType.Mailgun, 4, 0);
         Assert.Contains(await relays.GetAllAsync(), r => r.Id == mg.Id && r.Name == "Mailgun-EU");
@@ -31,8 +31,8 @@ public class SqlRoutingTests(PostgresFixture sql) : IClassFixture<PostgresFixtur
     public async Task Rules_create_order_reorder_and_reference_count()
     {
         if (!sql.Available) return;
-        var relays = new SqlRelayRepository(sql.Factory);
-        var rules = new SqlRoutingRuleRepository(sql.Factory);
+        var relays = new SqlRelayRepository(sql.Contexts);
+        var rules = new SqlRoutingRuleRepository(sql.Contexts);
         var relay = await relays.CreateAsync("Target", RelayProviderType.Local, 4, 0);
 
         var a = await rules.CreateAsync(new RoutingRule { Name = "A", RecipientPattern = "*.acme.com", RelayId = relay.Id, Enabled = true });

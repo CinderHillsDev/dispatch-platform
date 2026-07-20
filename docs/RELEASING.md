@@ -41,7 +41,7 @@ and publishes a **draft** release you can inspect and delete - nothing goes publ
 |----------|-------|-------|
 | Windows  | **`DispatchSetup-<ver>-x64.exe`** | The single file. Installs PostgreSQL → the MSI → the service. |
 | Windows  | `Dispatch-<ver>-x64.msi` | Advanced: install against an existing PostgreSQL (`msiexec /i Dispatch-<ver>-x64.msi SQLCONN="Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=..."`). |
-| Linux    | `dispatch-<ver>-linux.tar.gz` | Universal (x64 + arm64). Extract, then `sudo ./install.sh --install-postgres ...` (auto-detects arch). |
+| Linux    | `dispatch-<ver>-linux.tar.gz` | Universal (x64 + arm64). Extract, then `sudo ./install.sh --admin-password ...` (auto-detects arch). |
 | Upgrade  | `dispatch-upgrade-<ver>.tar.gz` | One cross-platform package for the **dashboard self-update** (Updates page). Upload it on any appliance/Linux/Windows install. |
 | Any      | `ghcr.io/cinderhillsdev/dispatch-platform:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |
 | All      | `SHA256SUMS` | Verify downloads: `sha256sum -c SHA256SUMS`. |

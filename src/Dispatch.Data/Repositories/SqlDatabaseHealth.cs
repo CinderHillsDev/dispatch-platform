@@ -1,27 +1,31 @@
-using Dapper;
 using Dispatch.Core.Logging;
-using Npgsql;
+using Microsoft.EntityFrameworkCore;
 
 namespace Dispatch.Data.Repositories;
 
-/// <summary>Probes the database with a short-budget <c>SELECT 1</c>; reports unreachable instead of hanging /health.</summary>
-public sealed class SqlDatabaseHealth(SqlConnectionFactory factory) : IDatabaseHealth
+/// <summary>
+/// Probes the database so /health reports "unreachable" rather than hanging.
+///
+/// The budget is enforced with a linked cancellation token rather than a connection-string timeout: each
+/// engine spells that keyword differently (Timeout, Connect Timeout, Connection Timeout), and a health
+/// check that has to know which engine it is talking to defeats the point of the provider abstraction.
+/// </summary>
+public sealed class SqlDatabaseHealth(IDbContextFactory<DispatchDbContext> contexts) : IDatabaseHealth
 {
+    private static readonly TimeSpan Budget = TimeSpan.FromSeconds(3);
+
     public async Task<bool> IsReachableAsync(CancellationToken ct = default)
     {
-        // Cap the connect string's connect timeout so a down database fails fast.
-        var cs = new NpgsqlConnectionStringBuilder(factory.ConnectionString) { Timeout = 2 }.ConnectionString;
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(3));
+        cts.CancelAfter(Budget);
         try
         {
-            await using var cn = new NpgsqlConnection(cs);
-            await cn.OpenAsync(cts.Token);
-            await cn.ExecuteScalarAsync<int>(new CommandDefinition("SELECT 1", cancellationToken: cts.Token));
-            return true;
+            await using var db = await contexts.CreateDbContextAsync(cts.Token);
+            return await db.Database.CanConnectAsync(cts.Token);
         }
         catch
         {
+            // Includes the timeout: an unreachable database is a health result, never an exception.
             return false;
         }
     }

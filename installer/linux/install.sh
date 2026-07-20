@@ -11,21 +11,23 @@
 # Recommendation: install on a host with no other SMTP software (Postfix, Sendmail, Exim, …) so 25/587 are free.
 #
 # Usage:
-#   # Use an existing PostgreSQL server:
-#   sudo ./install.sh --sql-connection "Host=...;Port=5432;Database=DispatchLog;Username=...;Password=..." --admin-password "<pw>"
+#   # Default: bundled SQLite. No database server to install, configure, back up or patch.
+#   sudo ./install.sh --admin-password "<pw>" [--generate-cert]
 #
-#   # Or have the installer set up PostgreSQL locally (Ubuntu/Debian or RHEL/Fedora):
-#   sudo ./install.sh --install-postgres --db-password "<StrongDbPassw0rd!>" --admin-password "<pw>" [--generate-cert]
+#   # Or point at a database server you already run (PostgreSQL, MariaDB/MySQL, SQL Server):
+#   sudo ./install.sh --sql-connection "Host=...;Database=DispatchLog;Username=...;Password=..." --admin-password "<pw>"
 #
 #   # From a release tarball (self-contained binaries; no .NET SDK / Node required on the box):
-#   sudo ./install.sh --prebuilt ./bin --install-postgres --db-password "<pw>" --admin-password "<pw>"
+#   sudo ./install.sh --prebuilt ./bin --admin-password "<pw>"
+#
+# Dispatch does NOT install a database server. Either it uses the bundled SQLite file, or you point it at
+# a server you already run and support.
 #
 # Flags:
-#   --sql-connection <s>   Connection string for an existing server (omit when using --install-postgres).
-#   --install-postgres     Install PostgreSQL locally + create the 'dispatch' role and DispatchLog DB.
-#                          (multi-arch: works on both amd64 and arm64). Alias: --install-sql.
-#   --db-password <s>      Password for the created 'dispatch' role (with --install-postgres; a strong
-#                          random one is generated if omitted).
+#   --sql-connection <s>   Connection string for a database server you already run. Omit for bundled SQLite.
+#   --db-provider <name>   Sqlite | Postgres | SqlServer | MySql. Only needed when the connection string is
+#                          ambiguous - "Server=...;Database=...;User Id=..." is valid for both SQL Server
+#                          and MySQL/MariaDB, and Dispatch refuses to guess.
 #   --admin-password <s>   Dashboard admin password seed (prompted if omitted).
 #   --generate-cert        Generate a self-signed PFX and serve the dashboard over HTTPS (spec §17.2).
 #   --http-port <n>        Firewall/URL dashboard port (default 8420; change in the dashboard to differ).
@@ -35,7 +37,7 @@
 #   --prebuilt <dir>       Install pre-published self-contained binaries from <dir> instead of building from
 #                          source. Used by the release tarball; needs neither the .NET SDK nor Node.
 #   --no-start             Stage the install but don't start the service (the unit is enabled, not started).
-#                          Used when baking the appliance image; first boot configures PostgreSQL and starts it.
+#                          Used when baking the appliance image; first boot starts it.
 #
 set -euo pipefail
 
@@ -49,11 +51,10 @@ HTTP_PORT="8420"
 API_PORT="8025"
 SMTP_PORTS="25,587"
 SQL_CONNECTION=""
+DB_PROVIDER=""
 ADMIN_PASSWORD=""
 SOURCE_DIR=""
 PREBUILT_DIR=""
-INSTALL_POSTGRES="0"
-DB_PASSWORD=""
 GENERATE_CERT="0"
 TLS_CERT_PATH=""
 TLS_CERT_PASSWORD=""
@@ -62,10 +63,8 @@ NO_START="0"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sql-connection) SQL_CONNECTION="$2"; shift 2;;
+    --db-provider) DB_PROVIDER="$2"; shift 2;;
     --admin-password) ADMIN_PASSWORD="$2"; shift 2;;
-    # --install-sql is a hidden backward-compatible alias for --install-postgres.
-    --install-postgres|--install-sql) INSTALL_POSTGRES="1"; shift;;
-    --db-password) DB_PASSWORD="$2"; shift 2;;
     --generate-cert) GENERATE_CERT="1"; shift;;
     --http-port) HTTP_PORT="$2"; shift 2;;
     --api-port) API_PORT="$2"; shift 2;;
@@ -73,69 +72,13 @@ while [[ $# -gt 0 ]]; do
     --source) SOURCE_DIR="$2"; shift 2;;
     --prebuilt) PREBUILT_DIR="$2"; shift 2;;
     # Stage the install without starting the service (the unit is enabled, not started). Used when building
-    # the prebuilt appliance image, where PostgreSQL is configured and the service is started on first boot.
+    # the prebuilt appliance image, where the service is started on first boot.
     --no-start) NO_START="1"; shift;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done
 
 [[ $EUID -eq 0 ]] || { echo "Please run as root (sudo)." >&2; exit 1; }
-
-# ---- Optional: install PostgreSQL locally -------------------------------------------------------
-# Installs the distro's PostgreSQL packages, ensures the cluster is running, then creates a 'dispatch'
-# login role and a DispatchLog database owned by it. Best-effort across Debian/Ubuntu (apt) and
-# RHEL/Fedora (dnf/yum); validate on your target distro. PostgreSQL is multi-arch (amd64 + arm64), so no
-# architecture-specific fallback is needed. Sets SQL_CONNECTION to the local Npgsql connection.
-install_postgres() {
-  # If no password was supplied, generate a strong random one for the 'dispatch' role.
-  if [[ -z "$DB_PASSWORD" ]]; then
-    DB_PASSWORD="$(openssl rand -base64 24 2>/dev/null || head -c 18 /dev/urandom | base64)"
-    echo "==> No --db-password given; generated a random password for the 'dispatch' role."
-  fi
-  . /etc/os-release
-
-  local arch; arch="$(uname -m)"
-  echo "==> Installing PostgreSQL for $ID $VERSION_ID ($arch)"
-  if command -v apt-get >/dev/null 2>&1; then
-    apt-get update -y || true
-    apt-get install -y postgresql postgresql-contrib
-  elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
-    local PM; PM="$(command -v dnf || command -v yum)"
-    "$PM" install -y postgresql-server postgresql-contrib
-    # RHEL/Fedora ship an uninitialized cluster; initdb it once before starting (idempotent guard).
-    if [[ ! -s /var/lib/pgsql/data/PG_VERSION ]]; then
-      /usr/bin/postgresql-setup --initdb >/dev/null 2>&1 || postgresql-setup initdb >/dev/null 2>&1 || true
-    fi
-  else
-    echo "Unsupported package manager - install PostgreSQL manually and pass --sql-connection." >&2; exit 1
-  fi
-
-  echo "==> Ensuring the PostgreSQL cluster is started"
-  systemctl enable --now postgresql
-
-  echo "==> Waiting for PostgreSQL and creating the 'dispatch' role + DispatchLog database"
-  for _ in $(seq 1 30); do
-    if sudo -u postgres psql -tAc "SELECT 1" >/dev/null 2>&1; then break; fi
-    sleep 2
-  done
-  # Idempotent role creation, guarded by a pg_roles check: create the login role only when absent, otherwise
-  # refresh its password so re-runs stay in sync with --db-password. The password is passed as a psql
-  # variable and quoted through format(%L), so it is safe even if it contains punctuation. \gexec runs the
-  # generated statement (CREATE/ALTER ROLE cannot be templated inline).
-  sudo -u postgres psql -v ON_ERROR_STOP=1 -v pw="$DB_PASSWORD" <<'PSQL'
-SELECT format('CREATE ROLE dispatch LOGIN PASSWORD %L', :'pw')
-WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dispatch')\gexec
-SELECT format('ALTER ROLE dispatch LOGIN PASSWORD %L', :'pw')
-WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dispatch')\gexec
-PSQL
-  # Idempotent database creation, guarded by a pg_database check: CREATE DATABASE cannot run inside a
-  # transaction/DO block, so gate it with a \gexec that only fires when the database is absent.
-  sudo -u postgres psql -v ON_ERROR_STOP=1 <<'PSQL'
-SELECT 'CREATE DATABASE "DispatchLog" OWNER dispatch'
-WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'DispatchLog')\gexec
-PSQL
-  SQL_CONNECTION="Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=${DB_PASSWORD}"
-}
 
 # ---- Optional: generate a self-signed TLS cert for the dashboard --------------------------------
 generate_cert() {
@@ -152,8 +95,33 @@ generate_cert() {
   chmod 600 "$TLS_CERT_PATH"
 }
 
-[[ "$INSTALL_POSTGRES" == "1" ]] && install_postgres
-[[ -n "$SQL_CONNECTION" ]] || { echo "Provide --sql-connection, or use --install-postgres." >&2; exit 1; }
+# An upgrade must never repoint the database.
+#
+# This script rewrites appsettings.json wholesale, and appsettings holds exactly two things: the database
+# connection string and the Web UI TLS certificate. So on an existing install with no --sql-connection, the
+# file is left completely alone rather than parsed and rebuilt. Without that, an operator upgrading in
+# place - the normal way, with no flags - would silently be moved onto a brand-new empty SQLite file: the
+# service would start, look healthy, show no mail history and ask for first-run setup, while every message
+# they had ever relayed sat untouched in the database they were using. Nothing would report an error.
+#
+# Not parsing the old file is deliberate. Reading a connection string back out of JSON with shell tools
+# means getting quote escaping right in a password, and getting it subtly wrong is the same silent failure
+# by another route. Preserving the file byte for byte cannot be subtly wrong.
+PRESERVE_CONFIG="0"
+if [[ -z "$SQL_CONNECTION" && -f "$CONFIG_DIR/appsettings.json" ]]; then
+  PRESERVE_CONFIG="1"
+  echo "==> Existing install detected; keeping its configuration and database unchanged"
+  if [[ "$GENERATE_CERT" == "1" ]]; then
+    echo "    NOTE: --generate-cert was ignored because the existing configuration was preserved."
+    echo "          Set the dashboard certificate under Settings -> Connections -> TLS certificate."
+    GENERATE_CERT="0"
+  fi
+elif [[ -z "$SQL_CONNECTION" ]]; then
+  SQL_CONNECTION="Data Source=${DATA_DIR}/dispatch.db"
+  echo "==> Using the bundled SQLite database at ${DATA_DIR}/dispatch.db"
+else
+  echo "==> Using the database server from --sql-connection"
+fi
 
 # Prompt for the admin password only when omitted AND running interactively. In a non-interactive run
 # (e.g. baking the appliance image) leave it unset - the dashboard requires the admin password to be set on
@@ -257,6 +225,12 @@ json_escape() {
   printf '%s' "$s"
 }
 SQL_CONNECTION_J="$(json_escape "$SQL_CONNECTION")"
+# Database:Provider is only emitted when explicitly given. Most connection strings identify their engine,
+# but "Server=...;Database=...;User Id=..." is valid for both SQL Server and MySQL/MariaDB - Dispatch
+# refuses to guess there, so --db-provider is how an operator says which.
+DB_PROVIDER_J=""
+[[ -n "$DB_PROVIDER" ]] && DB_PROVIDER_J=",
+  \"Database\": { \"Provider\": \"$(json_escape "$DB_PROVIDER")\" }"
 ADMIN_PASSWORD_J="$(json_escape "$ADMIN_PASSWORD")"
 WEBUI_TLS=""
 if [[ -n "$TLS_CERT_PATH" ]]; then
@@ -265,13 +239,17 @@ if [[ -n "$TLS_CERT_PATH" ]]; then
   WEBUI_TLS=",
   \"WebUi\": { \"TlsCertPath\": \"${TLS_CERT_PATH_J}\", \"TlsCertPassword\": \"${TLS_CERT_PASSWORD_J}\" }"
 fi
+if [[ "$PRESERVE_CONFIG" == "1" ]]; then
+  echo "==> Preserved $CONFIG_DIR/appsettings.json (connection string and TLS settings unchanged)"
+else
 cat > "$CONFIG_DIR/appsettings.json" <<JSON
 {
-  "ConnectionStrings": { "DispatchLog": "${SQL_CONNECTION_J}" },
+  "ConnectionStrings": { "DispatchLog": "${SQL_CONNECTION_J}" }${DB_PROVIDER_J},
   "AdminPassword": "${ADMIN_PASSWORD_J}",
   "Logging": { "LogLevel": { "Default": "Information", "Microsoft.AspNetCore": "Warning" } }${WEBUI_TLS}
 }
 JSON
+fi
 
 # The admin password is consumed once on first start: hashed into the database, then the plaintext seed is wiped
 # from appsettings.json by the service so the password lives only in the database. File is root/dispatch-only.
