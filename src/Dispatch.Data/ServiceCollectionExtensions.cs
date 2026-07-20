@@ -31,8 +31,14 @@ public static class ServiceCollectionExtensions
         // concurrently from SpoolWorkerPool's worker threads, and a DbContext is not thread-safe, so each
         // operation takes its own context. On the ingest path that is several contexts per message from
         // many threads at once; pooling resets and reuses instances instead of re-allocating the change
-        // tracker and internal scope every time. Measured, this is the difference between roughly 1,000 and
-        // several thousand concurrent writes per second on SQLite.
+        // tracker and internal scope every time.
+        //
+        // The measured gain on SQLite is modest - roughly 1.1x-1.5x on the 16-writer benchmark
+        // (ProductionPoolingBenchmarkTests). Do NOT confuse this with the ~3.5x jump from the WAL
+        // synchronous=NORMAL pragma (ProviderConnectionInterceptor): that is I/O-bound and dominates,
+        // because SQLite serialises writers on a single lock regardless of how the context is allocated.
+        // Pooling still matters - it is free once the factory is registered, and it is what makes the test
+        // and production paths measure the same thing - but it is not the headline.
         //
         // This must stay in sync with DispatchDbContextFactory.Create, which the migrator and tests use and
         // which is also pooled - otherwise a benchmark run through the test path would report a throughput
