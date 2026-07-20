@@ -474,9 +474,17 @@ static async Task<int> MigrateDatabaseAsync(IConfiguration cfg, string[] args)
             if (!File.Exists(file)) continue;
             try
             {
+                // Absolute path, not "chown" resolved via PATH. This runs as root; a PATH-relative lookup
+                // would let a chown planted earlier in PATH run as root instead. ArgumentList already keeps
+                // the file path out of any shell, so the value cannot inject arguments. /usr/bin then /bin
+                // covers the common layouts (coreutils lives in one or the other).
+                var chownBin = File.Exists("/usr/bin/chown") ? "/usr/bin/chown"
+                             : File.Exists("/bin/chown") ? "/bin/chown" : null;
+                if (chownBin is null) break;
+
                 using var chown = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "chown",
+                    FileName = chownBin,
                     ArgumentList = { $"--reference={directory}", file },
                     RedirectStandardError = true,
                     RedirectStandardOutput = true,

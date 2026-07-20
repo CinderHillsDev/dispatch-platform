@@ -160,18 +160,39 @@ public sealed class SqliteDatabaseProvider : IDatabaseProvider
     /// </summary>
     public async Task<long> GetTableSizeBytesAsync(DbContext db, string table, CancellationToken ct = default)
     {
-        var name = ProviderBootstrap.SafeIdentifier(table);
+        ProviderBootstrap.SafeIdentifier(table);
+        var sizes = await GetTableSizesBytesAsync(db, [table], ct);
+        return sizes.TryGetValue(table, out var bytes) ? bytes : 0;
+    }
+
+    /// <summary>
+    /// Both sizes from a SINGLE sampling pass. GetTableSizeBytesAsync delegates here, and the storage page
+    /// asks for relay_log and audit_log together - so the whole-file payload sampling (and its linear
+    /// COUNT) runs once for the page rather than once per table.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, long>> GetTableSizesBytesAsync(
+        DbContext db, IReadOnlyList<string> tables, CancellationToken ct = default)
+    {
+        foreach (var table in tables) ProviderBootstrap.SafeIdentifier(table);
+
+        var result = new Dictionary<string, long>(tables.Count, StringComparer.OrdinalIgnoreCase);
 
         var totalBytes = await GetDatabaseSizeBytesAsync(db, ct);
-        if (totalBytes == 0) return 0;
+        if (totalBytes == 0)
+        {
+            foreach (var table in tables) result[table] = 0;
+            return result;
+        }
 
         var payloads = await PayloadByTableAsync(db, ct);
-        if (!payloads.TryGetValue(name, out var mine) || mine == 0) return 0;
-
         var allPayload = payloads.Values.Sum();
-        if (allPayload == 0) return 0;
 
-        return (long)(totalBytes * ((double)mine / allPayload));
+        foreach (var table in tables)
+            result[table] = allPayload > 0 && payloads.TryGetValue(table, out var mine) && mine > 0
+                ? (long)(totalBytes * ((double)mine / allPayload))
+                : 0;
+
+        return result;
     }
 
     /// <summary>

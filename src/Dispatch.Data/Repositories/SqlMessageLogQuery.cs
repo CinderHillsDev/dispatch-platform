@@ -115,18 +115,29 @@ public sealed class SqlMessageLogQuery(IDbContextFactory<DispatchDbContext> cont
     ///
     /// The list shows ONE row per message, but relay_log holds a row per lifecycle event: a Retrying row
     /// per failed attempt, then a terminal Delivered/Failed. Connection-level rows (denials, pre-DATA
-    /// failures) have no spool id and must each stay their own entry, hence the composite grouping key -
-    /// (spool_id, 0) collapses a message's events together, while ("", id) keeps every anonymous row apart.
+    /// failures) have no spool id and must each stay their own entry.
     ///
-    /// This replaces a ROW_NUMBER() OVER (PARTITION BY ... ORDER BY logged_at DESC, id DESC) window query.
-    /// MAX(id) selects the same row: ids are monotonically increasing, so within one spool id the highest
-    /// id is always the most recent event. It also translates cleanly on all four engines, where LINQ's
-    /// group-then-take-first does not.
+    /// Split into two arms, UNIONed, rather than one GROUP BY with a conditional key:
+    ///   * messages (non-empty spool_id) - GROUP BY spool_id, taking MAX(id). ids increase monotonically,
+    ///     so within one spool id the highest is the latest event (this replaces a ROW_NUMBER() window).
+    ///   * anonymous rows (empty spool_id) - each id as-is; they are never grouped together.
+    ///
+    /// The reason for the split is performance, and it is exact, not approximate. The obvious single query,
+    /// GROUP BY (spool_id, CASE WHEN spool_id='' THEN id ELSE 0), produces identical results - but the CASE
+    /// makes the group key non-sargable, so IX_relay_log_spool_id (spool_id, logged_at, id) cannot serve it
+    /// and the engine scans relay_log into a temp B-tree. On the default (broad) Message Log filter over a
+    /// multi-million-row table that is seconds per page. Grouping by spool_id alone uses the index.
     /// </summary>
-    private static IQueryable<long> LatestPerMessage(IQueryable<RelayLogEntity> filtered) =>
-        filtered
-            .GroupBy(r => new { r.SpoolId, Anonymous = r.SpoolId == "" ? r.Id : 0L })
+    private static IQueryable<long> LatestPerMessage(IQueryable<RelayLogEntity> filtered)
+    {
+        var messages = filtered.Where(r => r.SpoolId != "")
+            .GroupBy(r => r.SpoolId)
             .Select(g => g.Max(r => r.Id));
+
+        var anonymous = filtered.Where(r => r.SpoolId == "").Select(r => r.Id);
+
+        return messages.Concat(anonymous);
+    }
 
     /// <summary>
     /// Shared filter clauses. Composed rather than concatenated, so values cannot be interpolated even by

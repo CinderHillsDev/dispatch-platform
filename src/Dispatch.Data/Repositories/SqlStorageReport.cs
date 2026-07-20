@@ -28,8 +28,11 @@ public sealed class SqlStorageReport(
                 .Select(g => new LogEventCount(g.Key, g.LongCount()))
                 .ToListAsync(ct);
 
-            var relayLogBytes = await provider.GetTableSizeBytesAsync(db, "relay_log", ct);
-            var auditBytes = await provider.GetTableSizeBytesAsync(db, "audit_log", ct);
+            // Both sizes in one call: on SQLite that is one whole-file sampling pass for the page rather
+            // than one per table (see IDatabaseProvider.GetTableSizesBytesAsync).
+            var sizes = await provider.GetTableSizesBytesAsync(db, ["relay_log", "audit_log"], ct);
+            var relayLogBytes = sizes.GetValueOrDefault("relay_log");
+            var auditBytes = sizes.GetValueOrDefault("audit_log");
 
             var auditTotal = await db.AuditLog.AsNoTracking().LongCountAsync(ct);
             var auditSecurity = await db.AuditLog.AsNoTracking()

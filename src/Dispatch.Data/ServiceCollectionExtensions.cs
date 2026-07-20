@@ -27,9 +27,18 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(sp => new DatabaseBootstrap(
             provider, connectionString, sp.GetService<ILogger<DatabaseBootstrap>>()));
 
-        // A factory rather than a scoped DbContext: the repositories below are singletons called
-        // concurrently from SpoolWorkerPool's worker threads, and a DbContext is not thread-safe.
-        services.AddDbContextFactory<DispatchDbContext>(o =>
+        // A POOLED factory, not a scoped DbContext. The repositories below are singletons called
+        // concurrently from SpoolWorkerPool's worker threads, and a DbContext is not thread-safe, so each
+        // operation takes its own context. On the ingest path that is several contexts per message from
+        // many threads at once; pooling resets and reuses instances instead of re-allocating the change
+        // tracker and internal scope every time. Measured, this is the difference between roughly 1,000 and
+        // several thousand concurrent writes per second on SQLite.
+        //
+        // This must stay in sync with DispatchDbContextFactory.Create, which the migrator and tests use and
+        // which is also pooled - otherwise a benchmark run through the test path would report a throughput
+        // production never sees. That is precisely the gap this once had: DI registered the non-pooled
+        // AddDbContextFactory while the tests ran pooled.
+        services.AddPooledDbContextFactory<DispatchDbContext>(o =>
             DispatchDbContextFactory.Configure(o, provider, connectionString));
 
         // The repositories reach the engine only through this, for the few things EF cannot express.

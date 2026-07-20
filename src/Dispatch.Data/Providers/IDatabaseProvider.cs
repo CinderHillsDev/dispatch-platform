@@ -129,6 +129,21 @@ public interface IDatabaseProvider
     Task<long> GetTableSizeBytesAsync(DbContext db, string table, CancellationToken ct = default);
 
     /// <summary>
+    /// Sizes for several tables at once. On the server engines each table's size is an independent query,
+    /// so the default just loops. SQLite overrides this: it derives every table's size from ONE whole-file
+    /// sampling pass (including a linear COUNT), so asking for the sizes one at a time re-runs that pass -
+    /// and the storage page needs both relay_log and audit_log, which doubled the work.
+    /// </summary>
+    async Task<IReadOnlyDictionary<string, long>> GetTableSizesBytesAsync(
+        DbContext db, IReadOnlyList<string> tables, CancellationToken ct = default)
+    {
+        var result = new Dictionary<string, long>(tables.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var table in tables)
+            result[table] = await GetTableSizeBytesAsync(db, table, ct);
+        return result;
+    }
+
+    /// <summary>
     /// Reclaims space left by deleted rows so on-disk size actually shrinks and the size-pressure trigger
     /// in PurgeWorker can clear. No engine shrinks on DELETE alone. This holds heavy locks on every engine
     /// and is a maintenance action, never a hot-path call.
