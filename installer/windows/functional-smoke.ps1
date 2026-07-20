@@ -397,7 +397,20 @@ if ($spoolDir -and (Test-Path -LiteralPath $spoolDir)) {
     $archiveDir = Join-Path $spoolDir 'archive'
     Get-ChildItem -LiteralPath $archiveDir -Filter *.jsonl -EA SilentlyContinue | Remove-Item -Force -EA SilentlyContinue
     $rowsBefore = [int](DGet '/api/messages?event=Delivered&pageSize=1').total
-    Invoke-PurgeAfter '{"retention":{"sizeTriggerGb":0.001,"sizeTargetGb":0.0005}}'   # ~1 MB trigger -> always over
+
+    # Derive the trigger from what the database ACTUALLY reports, rather than hardcoding a value assumed to
+    # be "always over". A fixed ~1 MB trigger only exceeded usage on a backend whose reported size was
+    # inflated or large to begin with; the bundled SQLite default reports its real logical size, which for a
+    # fresh install is well under a megabyte, so the trigger never fired and nothing was archived.
+    $dbBytes = [long](DGet '/api/storage').database.totalBytes
+    if ($dbBytes -le 0) { throw "size-pressure: database size came back as $dbBytes" }
+    # Fixed-point with InvariantCulture: these are small fractions of a GB, and the default double
+    # formatting would emit exponent notation and a culture-dependent decimal separator into JSON.
+    $inv = [System.Globalization.CultureInfo]::InvariantCulture
+    $triggerGb = ($dbBytes / 2 / 1GB).ToString('F12', $inv)   # half of current usage - over on any backend
+    $targetGb  = ($dbBytes / 4 / 1GB).ToString('F12', $inv)
+    Write-Host ("size-pressure: db={0}KB -> trigger={1}KB" -f [math]::Round($dbBytes/1KB), [math]::Round($dbBytes/2/1KB))
+    Invoke-PurgeAfter "{`"retention`":{`"sizeTriggerGb`":$triggerGb,`"sizeTargetGb`":$targetGb}}"
     Start-Sleep -Seconds 2
     $archives = @(Get-ChildItem -LiteralPath $archiveDir -Filter 'relay_log-*.jsonl' -EA SilentlyContinue)
     if ($archives.Count -lt 1) { throw "size-pressure should have written a relay_log JSONL archive before deleting" }
