@@ -370,10 +370,15 @@ $st = DGet '/api/storage'
 if (-not $st.database.connected) { throw "storage: database should report connected" }
 $deliveredUse = $st.database.relayLog.byEvent | Where-Object { $_.event -eq 'Delivered' } | Select-Object -First 1
 if (-not $deliveredUse -or [int]$deliveredUse.rows -lt 1) { throw "storage: expected Delivered rows in the message-log breakdown" }
-if ([long]$st.database.relayLog.tableBytes -le 0) { throw "storage: relay_log table size should be > 0" }
+# Whole-database size is the number the storage page actually needs, and every engine can report it.
+if ([long]$st.database.totalBytes -le 0) { throw "storage: database total size should be > 0" }
+# Per-TABLE size is capability-gated, not universal: SQLite can only attribute size per table when the
+# dbstat module is compiled in, which it usually is not, and Dispatch reports 0 there rather than inventing
+# a number (see docs/database.md). Asserting > 0 here would be asserting "the backend is PostgreSQL".
+if ([long]$st.database.relayLog.tableBytes -lt 0) { throw "storage: relay_log table size should not be negative" }
 if ($null -eq $st.spool.captured.files) { throw "storage: spool.captured.files missing" }
 if ($null -eq $st.spool.failed.bytes)   { throw "storage: spool.failed.bytes missing" }
-Write-Host "OK: storage usage - Delivered rows=$($deliveredUse.rows), relay_log=$([math]::Round($st.database.relayLog.tableBytes/1KB))KB, captured files=$($st.spool.captured.files)"
+Write-Host "OK: storage usage - Delivered rows=$($deliveredUse.rows), database=$([math]::Round($st.database.totalBytes/1KB))KB, captured files=$($st.spool.captured.files)"
 
 # === 15. Read-only / observability endpoints all answer =========================================
 foreach ($p in '/api/stats', '/api/stats/relays', '/api/stats/throughput', '/api/system', '/api/spool', '/health') {
