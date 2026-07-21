@@ -34,6 +34,8 @@ public sealed class WebTestHost : IAsyncLifetime
     public const string OtherKey = "dsp_live_other00000000000000000000000000";
 
     private WebApplication _app = null!;
+    /// <summary>The running app's services, for tests that need to inspect a registered fake.</summary>
+    public IServiceProvider Services => _app.Services;
     public string SpoolDir { get; } = Path.Combine(Path.GetTempPath(), "dispatch-web-tests", Guid.NewGuid().ToString("N"));
     public HttpClient Web { get; private set; } = null!;
     public HttpClient Api { get; private set; } = null!;
@@ -199,11 +201,20 @@ internal sealed class FakeApiKeyRepository : IApiKeyRepository
 
 internal sealed class FakeMessageLogQuery : IMessageLogQuery
 {
+    // The last filter/offset the dashboard endpoint built, so a test can assert query params mapped
+    // correctly. Safe to keep as simple fields: the "web" collection runs its tests sequentially.
+    public MessageLogFilter? LastPageFilter { get; private set; }
+    public int LastPageOffset { get; private set; }
+
     public Task<MessageLogPage> QueryAsync(MessageLogFilter filter, CancellationToken ct = default) =>
         Task.FromResult(new MessageLogPage([], null));
 
-    public Task<MessageLogPaged> PageAsync(MessageLogFilter filter, int offset, CancellationToken ct = default) =>
-        Task.FromResult(new MessageLogPaged([], 0));
+    public Task<MessageLogPaged> PageAsync(MessageLogFilter filter, int offset, CancellationToken ct = default)
+    {
+        LastPageFilter = filter;
+        LastPageOffset = offset;
+        return Task.FromResult(new MessageLogPaged([], 0));
+    }
     public Task<MessageLogRow?> GetBySpoolIdAsync(string spoolId, int? apiKeyId, CancellationToken ct = default) =>
         Task.FromResult<MessageLogRow?>(null);
     public Task<IReadOnlyList<MessageLogRow>> RecentByApiKeyAsync(int apiKeyId, int limit, string[]? statuses, CancellationToken ct = default) =>

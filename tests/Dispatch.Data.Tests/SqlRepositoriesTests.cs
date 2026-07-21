@@ -255,6 +255,99 @@ public class SqlRepositoriesTests(DatabaseFixture sql) : IClassFixture<DatabaseF
         Assert.Equal(walked.Count, walked.Distinct().Count());          // no row served twice
     }
 
+    // A relay_log row with every filterable column set explicitly. Inserted through the DbContext (not
+    // InsertAsync, which stamps logged_at to now) so the time-range clauses can be exercised.
+    private static RelayLogEntity FilterRow(
+        string spool, DateTime at, int apiKeyId, string ev, string status,
+        string fromDomain, string toDomain, string relay, string rule, string source, string subject, string tag) =>
+        new()
+        {
+            LoggedAt = at, SpoolId = spool, Event = ev, Status = status,
+            FromAddress = $"s@{fromDomain}", FromDomain = fromDomain,
+            ToAddresses = "[]", ToDomain = toDomain, Subject = subject,
+            RelayName = relay, RoutingRuleName = rule, IngestSource = source,
+            ApiKeyId = apiKeyId, Tags = $"[\"{tag}\"]", SizeBytes = 1,
+        };
+
+    [Fact]
+    public async Task Message_log_filters_each_include_matches_and_exclude_non_matches()
+    {
+        if (!sql.Available) return;
+        var query = new SqlMessageLogQuery(sql.Contexts);
+        var keys = new SqlApiKeyRepository(sql.Contexts);
+
+        // A dedicated key scopes every assertion to this test's rows, whatever else the shared database holds.
+        var keyId = (await keys.CreateAsync($"filter-{Guid.NewGuid():N}", rateLimitPerMinute: 0)).Key.Id;
+        var otherKeyId = (await keys.CreateAsync($"filter-other-{Guid.NewGuid():N}", rateLimitPerMinute: 0)).Key.Id;
+
+        var now = DateTime.UtcNow;
+        string anchor = $"anchor-{Guid.NewGuid():N}", decoy = $"decoy-{Guid.NewGuid():N}",
+               otherKey = $"otherkey-{Guid.NewGuid():N}", tagPrefix = $"tagpre-{Guid.NewGuid():N}",
+               pctLiteral = $"pct-{Guid.NewGuid():N}", pctDecoy = $"pctd-{Guid.NewGuid():N}";
+
+        await using (var db = await sql.Contexts.CreateDbContextAsync())
+        {
+            // ANCHOR: recent; every column holds its "match" value.
+            db.RelayLog.Add(FilterRow(anchor, now, keyId, "Delivered", "OK",
+                "from.match", "to.match", "relay.match", "rule.match", "MATCH", "alpha NEEDLE omega", "mtag"));
+            // DECOY: 30 days older; every column a different value. Same key, so it shares this test's scope
+            // and each clause has something to exclude.
+            db.RelayLog.Add(FilterRow(decoy, now.AddDays(-30), keyId, "Failed", "Error",
+                "from.other", "to.other", "relay.other", "rule.other", "OTHER", "nothing to see", "otag"));
+            // Different key: proves the ApiKeyId filter excludes it even though its columns all "match".
+            db.RelayLog.Add(FilterRow(otherKey, now, otherKeyId, "Delivered", "OK",
+                "from.match", "to.match", "relay.match", "rule.match", "MATCH", "alpha NEEDLE omega", "mtag"));
+            // Same key, tag "mtaglong": proves tag matching is whole-value, not a prefix - Tag="mtag" must
+            // NOT match it (the query wraps the value in quotes for exactly this reason).
+            db.RelayLog.Add(FilterRow(tagPrefix, now, keyId, "Delivered", "OK",
+                "from.match", "to.match", "relay.match", "rule.match", "MATCH", "alpha NEEDLE omega", "mtaglong"));
+            // Subject wildcard escaping: "save 50% now" contains the literal "50%"; "save 5000 now" does not.
+            // If % were passed through to LIKE, "50%" would match "5000" too. It must not.
+            db.RelayLog.Add(FilterRow(pctLiteral, now, keyId, "Delivered", "OK",
+                "from.match", "to.match", "relay.match", "rule.match", "MATCH", "save 50% now", "mtag"));
+            db.RelayLog.Add(FilterRow(pctDecoy, now, keyId, "Delivered", "OK",
+                "from.match", "to.match", "relay.match", "rule.match", "MATCH", "save 5000 now", "mtag"));
+            await db.SaveChangesAsync();
+        }
+
+        // Each clause must INCLUDE the matching spool and EXCLUDE the non-matching one - through BOTH read
+        // paths, since the keyset list (QueryAsync) and the dashboard list (PageAsync, the JOIN/dedup path)
+        // share ApplyFilters and a divergence in either would be a real bug.
+        async Task CheckBoth(string clause, MessageLogFilter f, string present, string absent)
+        {
+            var paged = await query.PageAsync(f, 0);
+            Assert.True(paged.Rows.Any(r => r.SpoolId == present), $"{clause}: PageAsync dropped the matching row");
+            Assert.DoesNotContain(paged.Rows, r => r.SpoolId == absent);
+            var keyset = await query.QueryAsync(f);
+            Assert.True(keyset.Rows.Any(r => r.SpoolId == present), $"{clause}: QueryAsync dropped the matching row");
+            Assert.DoesNotContain(keyset.Rows, r => r.SpoolId == absent);
+        }
+
+        await CheckBoth("FromDomain", new() { ApiKeyId = keyId, FromDomain = "from.match", Limit = 200 }, anchor, decoy);
+        await CheckBoth("ToDomain", new() { ApiKeyId = keyId, ToDomain = "to.match", Limit = 200 }, anchor, decoy);
+        await CheckBoth("RelayName", new() { ApiKeyId = keyId, RelayName = "relay.match", Limit = 200 }, anchor, decoy);
+        await CheckBoth("RoutingRuleName", new() { ApiKeyId = keyId, RoutingRuleName = "rule.match", Limit = 200 }, anchor, decoy);
+        await CheckBoth("IngestSource", new() { ApiKeyId = keyId, IngestSource = "MATCH", Limit = 200 }, anchor, decoy);
+        await CheckBoth("Statuses", new() { ApiKeyId = keyId, Statuses = ["OK"], Limit = 200 }, anchor, decoy);
+        await CheckBoth("Events", new() { ApiKeyId = keyId, Events = ["Delivered"], Limit = 200 }, anchor, decoy);
+        await CheckBoth("Subject", new() { ApiKeyId = keyId, Subject = "NEEDLE", Limit = 200 }, anchor, decoy);
+
+        // Time range, both bounds. FromUtc keeps the recent anchor and drops the 30-day-old decoy; ToUtc is
+        // the mirror - it keeps the old decoy and drops the anchor.
+        await CheckBoth("FromUtc", new() { ApiKeyId = keyId, FromUtc = now.AddDays(-1), Limit = 200 }, anchor, decoy);
+        await CheckBoth("ToUtc", new() { ApiKeyId = keyId, ToUtc = now.AddDays(-1), Limit = 200 }, decoy, anchor);
+
+        // ApiKeyId in both directions: each key's rows, never the other's.
+        await CheckBoth("ApiKeyId(mine)", new() { ApiKeyId = keyId, Limit = 200 }, anchor, otherKey);
+        await CheckBoth("ApiKeyId(other)", new() { ApiKeyId = otherKeyId, Limit = 200 }, otherKey, anchor);
+
+        // Tag is a whole-value match, not a prefix: "mtag" excludes the "mtaglong" row.
+        await CheckBoth("Tag(whole-value)", new() { ApiKeyId = keyId, Tag = "mtag", Limit = 200 }, anchor, tagPrefix);
+
+        // Subject "50%" is a literal search: it finds "save 50% now" and NOT "save 5000 now".
+        await CheckBoth("Subject(%-escaped)", new() { ApiKeyId = keyId, Subject = "50%", Limit = 200 }, pctLiteral, pctDecoy);
+    }
+
     [Fact]
     public async Task Log_row_with_api_key_is_returned_by_per_key_query()
     {
