@@ -36,7 +36,7 @@
     },
     "dispatchVersion": {
       "type": "string",
-      "defaultValue": "0.5.0",
+      "defaultValue": "0.7.0",
       "metadata": { "description": "Dispatch release version to install (matches a GitHub release tag without the leading 'v')." }
     },
     "submissionSource": {

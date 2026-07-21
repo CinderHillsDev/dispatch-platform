@@ -20,7 +20,7 @@ That triggers the **Release** workflow, which:
    `install.sh` auto-detects the arch; no .NET SDK needed on the box.
 4. Builds the **upgrade package** (`dispatch-upgrade-<ver>.tar.gz`) - one cross-platform file with every
    platform's payload (linux-x64, linux-arm64, win-x64) and a signed manifest - for the dashboard's
-   "upload an upgrade package" self-update flow (see [Upgrading](https://chrismuench.github.io/Dispatch-SMTP-Relay/deployment/upgrading/)).
+   "upload an upgrade package" self-update flow (see [Upgrading](https://docs.dispatchrelay.app/deployment/upgrading/)).
    It is signed if `DISPATCH_UPDATE_SIGNING_KEY` is set (see below).
 5. Generates `SHA256SUMS` and publishes a **GitHub Release** with all assets and auto-generated notes.
 
@@ -39,8 +39,7 @@ and publishes a **draft** release you can inspect and delete - nothing goes publ
 
 | Platform | Asset | Notes |
 |----------|-------|-------|
-| Windows  | **`DispatchSetup-<ver>-x64.exe`** | The single file. Installs PostgreSQL → the MSI → the service. |
-| Windows  | `Dispatch-<ver>-x64.msi` | Advanced: install against an existing PostgreSQL (`msiexec /i Dispatch-<ver>-x64.msi SQLCONN="Host=localhost;Port=5432;Database=DispatchLog;Username=dispatch;Password=..."`). |
+| Windows  | **`DispatchSetup-<ver>-x64.exe`** | The single file. Installs the self-contained service, which defaults to bundled SQLite - no database server required. To use an existing PostgreSQL/MariaDB/SQL Server, pass its connection string at install time (see [database.md](database.md)). The MSI is embedded in this bundle, not published separately. |
 | Linux    | `dispatch-<ver>-linux.tar.gz` | Universal (x64 + arm64). Extract, then `sudo ./install.sh --admin-password ...` (auto-detects arch). |
 | Upgrade  | `dispatch-upgrade-<ver>.tar.gz` | One cross-platform package for the **dashboard self-update** (Updates page). Upload it on any appliance/Linux/Windows install. |
 | Any      | `ghcr.io/cinderhillsdev/dispatch-platform:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |

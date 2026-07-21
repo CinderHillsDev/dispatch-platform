@@ -40,3 +40,6 @@ Thumbs.db
 
 # EF design-time scratch database (created by `dotnet ef` when scaffolding against the Sqlite project)
 design-time.db
+
+# Runtime self-update state (written at runtime; must never be committed)
+src/Dispatch.Service/updates/

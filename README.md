@@ -79,7 +79,8 @@ Spins up an Ubuntu VM and installs Dispatch via cloud-init - no Marketplace acco
 
 ## Documentation
 
-Everything lives on the docs site: **https://docs.dispatchrelay.app/**
+Everything lives on the docs site: **https://docs.dispatchrelay.app/** · release history is in the
+**[changelog](CHANGELOG.md)**.
 
 | | |
 |---|---|

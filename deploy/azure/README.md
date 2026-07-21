@@ -33,7 +33,7 @@ if your apps send from outside the VNet and you accept the risk.
 | `adminPasswordOrKey` | - | Your SSH **public key** (or the admin password if you chose `password`). |
 | `dispatchAdminPassword` | - | Dashboard admin password - you log in with this at `https://<host>:8420`. |
 | `vmSize` | `Standard_B2s` | 2 vCPU / 4 GB is a fine starting point. |
-| `dispatchVersion` | `0.5.0` | The [release](https://github.com/CinderHillsDev/dispatch-platform/releases) to install. |
+| `dispatchVersion` | `0.7.0` | The [release](https://github.com/CinderHillsDev/dispatch-platform/releases) to install. |
 | `submissionSource` | `VirtualNetwork` | Who may reach the SMTP/API submission ports. VNet-only by default (not internet-exposed); set to a CIDR or `Internet` to widen. |
 | `vnetNewOrExisting` | `new` | `new` creates a VNet; `existing` deploys the VM into a VNet you already have. |
 | `vnetName` | `<vmName>-vnet` | New VNet's name, or the name of your existing VNet. |
