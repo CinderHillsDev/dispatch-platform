@@ -412,17 +412,22 @@ jobs:
           done
           [ "$tls_ok" = 1 ] || { echo "STARTTLS negotiation failed on all SMTP ports"; exit 1; }
 
-      # The real binary upgrade, and LAST because it rewrites the machine's install: take the last
-      # PUBLISHED release, run mail through it, then upgrade to this build in place and migrate onto
-      # bundled SQLite. Everything else tests this build against a database shaped like an old one; this
-      # uses the actual shipped artifact, old installer and old binaries included. It is what catches an
-      # upgrade that repoints a customer's database or refuses their schema, neither of which a test built
-      # from current source can see.
-      - name: Upgrade from the published release
+      # The real binary upgrade, and LAST because it rewrites the machine's install: take a PUBLISHED
+      # release, run mail through it, then upgrade to this build in place and migrate onto bundled SQLite.
+      # Everything else tests this build against a database shaped like an old one; this uses the actual
+      # shipped artifact, old installer and old binaries included. It is what catches an upgrade that
+      # repoints a customer's database or refuses their schema, neither of which a test built from current
+      # source can see.
+      #
+      # Pinned to v0.5.0 on purpose: this smoke exercises the pre-0.7 -> current path (a schema_version
+      # database adopted into EF migrations), so the baseline must be a pre-0.7 release. Left unpinned it
+      # would grab "latest", which is now 0.7.x (already EF/SQLite) and would not exercise the adoption the
+      # test exists to prove. Bump this to the newest pre-0.7 release, never to a 0.7+ one.
+      - name: Upgrade from the published release (pre-0.7 baseline)
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: tests/smoke/upgrade-from-released-version.sh dispatch-ci-linux-x64.tar.gz
+        run: tests/smoke/upgrade-from-released-version.sh dispatch-ci-linux-x64.tar.gz v0.5.0
   linux-installer:
     runs-on: ubuntu-latest
     steps:

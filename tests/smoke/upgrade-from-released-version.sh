@@ -20,6 +20,11 @@
 #
 # Usage:  tests/smoke/upgrade-from-released-version.sh <path-to-new-tarball.tar.gz> [release-tag]
 #
+# The [release-tag] baseline must be a PRE-0.7 release (e.g. v0.5.0): this smoke proves the pre-0.7 ->
+# current adoption path (a schema_version database migrated into EF), and it asserts the old install
+# produced a pre-EF schema. Omitting the tag falls back to "latest", which is now a 0.7+ release and would
+# not exercise that path - so CI pins the tag explicitly.
+#
 set -euo pipefail
 
 readonly NEW_TARBALL="${1:?usage: upgrade-from-released-version.sh <new-tarball.tar.gz> [release-tag]}"
