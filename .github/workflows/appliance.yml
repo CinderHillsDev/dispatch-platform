@@ -39,13 +39,13 @@ jobs:
       # The release tag to attach to: the published release's tag, or a manually-supplied one. Blank = none.
       RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -121,15 +121,15 @@ jobs:
       # images from a non-release build, dispatch this workflow with upload_artifacts: true.
       - name: Upload Hyper-V appliance
         if: ${{ inputs.upload_artifacts }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with: { name: dispatch-appliance-hyperv, path: out/hyperv/*, if-no-files-found: error, retention-days: 1 }
       - name: Upload VMware appliance
         if: ${{ inputs.upload_artifacts }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with: { name: dispatch-appliance-vmware, path: out/vmware/*, if-no-files-found: error, retention-days: 1 }
       - name: Upload KVM/Proxmox appliance
         if: ${{ inputs.upload_artifacts }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with: { name: dispatch-appliance-kvm, path: out/kvm/*, if-no-files-found: error, retention-days: 1 }
 
       # When linked to a release (release: published, or a manual release_tag), attach the images to it.
@@ -216,7 +216,7 @@ jobs:
 
       - name: Upload boot diagnostics
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: appliance-boot-diagnostics
           path: |

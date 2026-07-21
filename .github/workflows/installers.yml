@@ -31,15 +31,15 @@ jobs:
   windows-installer:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -100,7 +100,7 @@ jobs:
       # DispatchSetup.exe is the single distributable file - it embeds Dispatch.msi and chains PostgreSQL.
       # (The MSI is still built above to prove the WiX sources compile and to embed in the bundle.)
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dispatch-windows-installer
           path: installer/windows/DispatchSetup.exe
@@ -254,15 +254,15 @@ jobs:
     if: ${{ github.event_name == 'push' || inputs.full_install == true }}
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -312,15 +312,15 @@ jobs:
   linux-tarball:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -365,7 +365,7 @@ jobs:
           ls -lh "${stage}.tar.gz"
 
       - name: Upload tarball artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dispatch-linux-tarball
           path: dispatch-ci-linux-x64.tar.gz
@@ -431,7 +431,7 @@ jobs:
   linux-installer:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Lint install.sh
         run: |
