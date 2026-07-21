@@ -127,22 +127,27 @@ Measured by `CrossEngineVolumeTests` (opt-in: `DISPATCH_VOLUME_TEST=1`, `DISPATC
 | Bytes/row | 768 | 1,329 | 340 | 3,523 |
 | Message Log page 1 (keyset) | 193 ms | 137 ms | 124 ms | 155 ms |
 | Message Log page 20 (keyset) | 0 ms | 0 ms | 0 ms | 1 ms |
-| Dashboard list (dedup + total) | 518 ms | 436 ms | 906 ms | 1,739 ms |
+| Dashboard list (dedup + total) | 75 ms | 93 ms | 188 ms | 1,800 ms¹ |
 | `count(*)` | 18 ms | 11 ms | 13 ms | 17 ms |
 | Purge 63k rows | 7.5 s | 7.5 s | 7.9 s | 14.7 s |
 
-1. SQL Server ran under x86 emulation on an arm64 host; its load and purge times are inflated by that, not
-   by the engine. The read latencies are less affected.
+1. SQL Server ran under x86 emulation on an arm64 host; its load, purge and first-execution (cold-plan)
+   times are inflated by that, not by the engine. The read latencies are less affected.
 
 What the shape says:
 
 - **Keyset pagination is flat on every engine** - page 20 costs the same as page 1 (~0-1 ms), because it
   is an index seek, not a scan. This is the property the Message Log depends on, and it holds everywhere.
-- **The dashboard list (`PageAsync`) is the heaviest read on every engine**, and it grows with total row
-  count because it deduplicates lifecycle rows to one per message AND returns an exact total across the
-  whole filtered set. Sub-2 s at 100k; seconds at tens of millions. It runs its grouping twice per page
-  (once for the total, once for the rows) - a known, deferred optimisation, and this is the number that
-  says when it starts to matter.
+- **The dashboard list (`PageAsync`) is the heaviest read**, because it does the most: it deduplicates
+  lifecycle rows to one per message AND returns an exact total across the whole filtered set. It is two
+  queries - a cheap count (single-digit to low-tens of ms, an index-only aggregate) and the page itself.
+  The page **joins** relay_log to the deduped id set rather than filtering it with `id IN (subquery)`; the
+  two return identical rows, but the JOIN is materialised once and stays flat across the page offset, while
+  the IN-subquery form plans as a per-row dependent subquery on MySQL/MariaDB and explodes with the offset
+  (measured at 100k: ~700 ms at offset 0, ~8 s at offset 500, and a 30 s timeout at offset 5000). The JOIN
+  is a flat ~55 ms per page on every engine and every offset, and roughly halves PostgreSQL's time as well.
+  `CrossEngineVolumeTests` measures a deep-offset page and asserts it tracks offset 0, so a regression to
+  the subquery form fails there first.
 - **Purge time is dominated by its own inter-batch pause** (100 ms between 1,000-row batches), not the
   delete: ~63 batches ≈ 6.3 s of the ~7.5 s. That pause is deliberate - it lets ingest take the write lock
   between batches - so a large backlog clears in minutes, by design, on every engine.
