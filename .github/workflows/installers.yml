@@ -245,6 +245,67 @@ jobs:
         shell: pwsh
         run: ./installer/windows/functional-smoke.ps1
 
+  # Windows in-place UPGRADE smoke: build two versioned installers (0.7.0 then 0.7.1) and prove that a user
+  # who just runs the newer DispatchSetup.exe over the older one gets an in-place upgrade that keeps their
+  # data and config and leaves ONE working service - the MSI/bundle MajorUpgrade path, which the fresh-install
+  # job above does not exercise. Destructive to the runner (ephemeral). Linux's equivalent is the
+  # upgrade-from-released-version.sh step in the linux-tarball job.
+  windows-upgrade-smoke:
+    if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        shell: pwsh
+        run: |
+          Push-Location src/Dispatch.UI; npm ci; npm run build; Pop-Location
+          Remove-Item -Recurse -Force src/Dispatch.Web/wwwroot -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force src/Dispatch.Web/wwwroot | Out-Null
+          Copy-Item -Recurse -Force src/Dispatch.UI/dist/* src/Dispatch.Web/wwwroot/
+          if (-not (Test-Path src/Dispatch.Web/wwwroot/index.html)) { throw "embedded UI missing index.html" }
+
+      - name: Install the WiX toolset
+        shell: pwsh
+        env:
+          WIX_VERSION: "6.0.2"
+        run: |
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          wix extension add -g "WixToolset.Firewall.wixext/$env:WIX_VERSION"
+          wix extension add -g "WixToolset.BootstrapperApplications.wixext/$env:WIX_VERSION"
+          wix extension add -g "WixToolset.Util.wixext/$env:WIX_VERSION"
+
+      # Two real installers from the same tree, differing only in version. A different ProductVersion (and
+      # bundle version) is what makes MajorUpgrade treat the second run as an upgrade rather than a repair;
+      # a different assembly version makes /health report the change, so the smoke can see the new binaries.
+      - name: Build base (0.7.0) and next (0.7.1) installers
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          foreach ($v in '0.7.0', '0.7.1') {
+            dotnet publish ../../src/Dispatch.Service -c Release -r win-x64 --self-contained true -p:Version=$v -o publish
+            wix build Dispatch.wxs -arch x64 -d PublishDir=publish -d Version=$v -ext WixToolset.Firewall.wixext -o Dispatch.msi
+            wix build bundle/Bundle.wxs -d Version=$v -ext WixToolset.BootstrapperApplications.wixext -ext WixToolset.Util.wixext -bindpath "Msi=." -o "DispatchSetup-$v.exe"
+            Remove-Item -Recurse -Force publish
+          }
+          if (-not (Test-Path DispatchSetup-0.7.0.exe) -or -not (Test-Path DispatchSetup-0.7.1.exe)) { throw "both installers were not built" }
+
+      - name: In-place upgrade smoke (0.7.0 -> 0.7.1; data + config preserved)
+        shell: pwsh
+        run: ./installer/windows/upgrade-smoke.ps1 -BaseExe installer/windows/DispatchSetup-0.7.0.exe -NextExe installer/windows/DispatchSetup-0.7.1.exe
+
   # Builds the self-contained Linux tarball and uploads it as a workflow artifact (downloadable from
   # the Actions run page). This needs NO tag and creates NO release - releases are only for permanent
   # public download links. Grab "dispatch-linux-tarball" from the run to test install.sh --prebuilt.
