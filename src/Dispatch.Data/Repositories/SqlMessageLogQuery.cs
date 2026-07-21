@@ -45,12 +45,12 @@ public sealed class SqlMessageLogQuery(IDbContextFactory<DispatchDbContext> cont
 
         await using var db = await contexts.CreateDbContextAsync(ct);
         var filtered = ApplyFilters(db.RelayLog.AsNoTracking(), filter);
-        var latestIds = LatestPerMessage(filtered);
 
-        var total = await latestIds.CountAsync(ct);
+        // Count is a separate round trip, but a cheap one: counting the deduped id set is an index-only
+        // aggregate (single-digit to low-tens of ms even at 100k messages, flat across the page offset).
+        var total = await LatestPerMessage(filtered).CountAsync(ct);
 
-        var rows = await filtered
-            .Where(r => latestIds.Contains(r.Id))
+        var rows = await LatestRows(filtered)
             .OrderByDescending(r => r.LoggedAt).ThenByDescending(r => r.Id)
             .Skip(offset).Take(limit)
             .Select(RowProjection)
@@ -68,10 +68,7 @@ public sealed class SqlMessageLogQuery(IDbContextFactory<DispatchDbContext> cont
         var filtered = db.RelayLog.AsNoTracking().Where(r => r.ApiKeyId == apiKeyId);
         if (statuses is { Length: > 0 }) filtered = filtered.Where(r => statuses.Contains(r.Status));
 
-        var latestIds = LatestPerMessage(filtered);
-
-        return await filtered
-            .Where(r => latestIds.Contains(r.Id))
+        return await LatestRows(filtered)
             .OrderByDescending(r => r.LoggedAt).ThenByDescending(r => r.Id)
             .Take(limit)
             .Select(RowProjection)
@@ -127,6 +124,9 @@ public sealed class SqlMessageLogQuery(IDbContextFactory<DispatchDbContext> cont
     /// makes the group key non-sargable, so IX_relay_log_spool_id (spool_id, logged_at, id) cannot serve it
     /// and the engine scans relay_log into a temp B-tree. On the default (broad) Message Log filter over a
     /// multi-million-row table that is seconds per page. Grouping by spool_id alone uses the index.
+    ///
+    /// The two arms produce disjoint ids (an id is anonymous XOR it belongs to one spool group), so the set
+    /// has no duplicates - which is what lets <see cref="LatestRows"/> consume it with an inner JOIN.
     /// </summary>
     private static IQueryable<long> LatestPerMessage(IQueryable<RelayLogEntity> filtered)
     {
@@ -138,6 +138,21 @@ public sealed class SqlMessageLogQuery(IDbContextFactory<DispatchDbContext> cont
 
         return messages.Concat(anonymous);
     }
+
+    /// <summary>
+    /// The full relay_log rows for the deduped set - the message-list projection source.
+    ///
+    /// This is a JOIN to <see cref="LatestPerMessage"/>, not <c>Where(id => latestIds.Contains(id))</c>.
+    /// They return identical rows (the id set is duplicate-free, so the inner join is a one-to-one match),
+    /// but the SQL the engines produce is not equivalent. The IN-subquery form paginates fine on SQLite,
+    /// PostgreSQL and SQL Server, yet MySQL/MariaDB plans it as a DEPENDENT subquery re-evaluated per
+    /// candidate row: measured at 100k messages it ran ~700 ms at offset 0, ~8 s at offset 500, and did not
+    /// finish (30 s timeout) at offset 5000. Rendered as a JOIN, the dedup derived table is materialised
+    /// once and the same query is a flat ~55 ms across every offset on all four engines - and roughly
+    /// halves PostgreSQL's time as a bonus. See CrossEngineVolumeTests for the standing numbers.
+    /// </summary>
+    private static IQueryable<RelayLogEntity> LatestRows(IQueryable<RelayLogEntity> filtered) =>
+        filtered.Join(LatestPerMessage(filtered), r => r.Id, id => id, (r, _) => r);
 
     /// <summary>
     /// Shared filter clauses. Composed rather than concatenated, so values cannot be interpolated even by

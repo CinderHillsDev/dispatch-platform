@@ -88,6 +88,17 @@ public class CrossEngineVolumeTests(DatabaseFixture sql) : IClassFixture<Databas
         Console.WriteLine($"VOLUME [{engine}] pageAsync  {paged.Rows.Count} rows, total {paged.Total:N0} in {pageAsyncMs}ms");
         Assert.NotEmpty(paged.Rows);
 
+        // ---- Deep-offset PageAsync: must track offset 0, not the offset. The list joins to the deduped id
+        // set rather than filtering with IN(subquery); the latter plans as a per-row dependent subquery on
+        // MySQL/MariaDB and explodes with the offset (measured: ~700ms at 0, ~8s at 500, timeout at 5000).
+        // This guards that the JOIN form stayed - a regression to IN(subquery) surfaces here first.
+        var deepOffset = Math.Min(5000, Math.Max(0, paged.Total - 50));
+        sw.Restart();
+        var deepPaged = await query.PageAsync(new MessageLogFilter { Limit = 50 }, offset: deepOffset);
+        sw.Stop();
+        var deepPageAsyncMs = sw.ElapsedMilliseconds;
+        Console.WriteLine($"VOLUME [{engine}] pageAsync-deep offset {deepOffset:N0} -> {deepPaged.Rows.Count} rows in {deepPageAsyncMs}ms");
+
         // ---- Indexed filter --------------------------------------------------------------------------
         sw.Restart();
         var byDomain = await query.QueryAsync(new MessageLogFilter { ToDomain = "bulk-7.example.net", Limit = 50 });
@@ -112,6 +123,12 @@ public class CrossEngineVolumeTests(DatabaseFixture sql) : IClassFixture<Databas
         // sub-second-ish regardless of row count; if either balloons, an index is not being used.
         Assert.True(page1Ms < 3000, $"[{engine}] keyset page 1 took {page1Ms}ms at {rows:N0} rows - the newest-first index is not serving it.");
         Assert.True(deepMs < page1Ms + 3000, $"[{engine}] deep page took {deepMs}ms vs page 1 {page1Ms}ms - keyset pagination degraded to a scan.");
+
+        // The dashboard list must not fall off a cliff with the offset. Generous headroom (the offset does
+        // cost more than the seek), but a return to the IN(subquery) plan is seconds-to-timeout on MySQL and
+        // trips this long before it is that bad.
+        Assert.True(deepPageAsyncMs < pageAsyncMs + 5000,
+            $"[{engine}] deep-offset dashboard page took {deepPageAsyncMs}ms vs offset-0 {pageAsyncMs}ms - the dedup list is scanning per row, not joining the id set once.");
     }
 
     private static async Task BulkLoadAsync(IDbContextFactory<DispatchDbContext> contexts, int rows)

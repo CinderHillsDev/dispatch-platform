@@ -220,6 +220,42 @@ public class SqlRepositoriesTests(DatabaseFixture sql) : IClassFixture<DatabaseF
     }
 
     [Fact]
+    public async Task Message_log_offset_paging_walks_the_deduped_set_without_gaps_or_repeats()
+    {
+        if (!sql.Available) return;
+        var log = new SqlLogRepository(sql.Contexts);
+        var query = new SqlMessageLogQuery(sql.Contexts);
+
+        // Five messages under one scope: three simple, one that retried (two rows, one message), and one
+        // anonymous denial. Deduped that is five list entries - enough to page through with a small limit.
+        var dom = $"pg-{Guid.NewGuid():N}.test";
+        for (var i = 0; i < 3; i++)
+            await log.InsertAsync(new RelayLogEntry { Event = "Delivered", Status = "OK", SpoolId = Guid.NewGuid().ToString("N"), FromAddress = $"s{i}@{dom}", FromDomain = dom, ToAddresses = ["b@y.com"], ToDomain = "y.com" });
+        var retried = Guid.NewGuid().ToString("N");
+        await log.InsertAsync(new RelayLogEntry { Event = "Retrying", Status = "Error", SpoolId = retried, FromAddress = $"r@{dom}", FromDomain = dom, ToAddresses = ["b@y.com"], ToDomain = "y.com", Provider = "None", Error = "temp" });
+        await log.InsertAsync(new RelayLogEntry { Event = "Delivered", Status = "OK", SpoolId = retried, FromAddress = $"r@{dom}", FromDomain = dom, ToAddresses = ["b@y.com"], ToDomain = "y.com", Provider = "None" });
+        await log.InsertAsync(new RelayLogEntry { Event = "Denied", Status = "Denied", SpoolId = "", FromAddress = $"d@{dom}", FromDomain = dom, ToAddresses = [], ToDomain = "", IngestSource = "SMTP", Error = "blocked" });
+
+        var filter = new MessageLogFilter { FromDomain = dom, Limit = 50 };
+        var whole = await query.PageAsync(filter, offset: 0);
+        Assert.Equal(5, whole.Total);
+
+        // Walking the list two at a time must reproduce the single-page ordering exactly - same ids, same
+        // order, every row once. This is the offset-JOIN path (Skip/Take over the id-set join); a plan that
+        // reordered or double-counted under offset would diverge here.
+        var walked = new List<long>();
+        for (var offset = 0; offset < whole.Total; offset += 2)
+        {
+            var slice = await query.PageAsync(new MessageLogFilter { FromDomain = dom, Limit = 2 }, offset);
+            Assert.Equal(5, slice.Total);   // total is independent of the page window
+            walked.AddRange(slice.Rows.Select(r => r.Id));
+        }
+
+        Assert.Equal(whole.Rows.Select(r => r.Id), walked);            // same sequence, in order
+        Assert.Equal(walked.Count, walked.Distinct().Count());          // no row served twice
+    }
+
+    [Fact]
     public async Task Log_row_with_api_key_is_returned_by_per_key_query()
     {
         if (!sql.Available) return;
