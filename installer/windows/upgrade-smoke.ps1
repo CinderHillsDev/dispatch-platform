@@ -54,7 +54,19 @@ function Install-Bundle ($exe, $tag) {
     }
 }
 
-function Dispatch-InstallCount { @(Get-Package -Name 'Dispatch SMTP Relay' -EA SilentlyContinue).Count }
+# Dispatch's Add/Remove Programs entries, read from the registry. Get-Package does not list a WiX Burn
+# bundle reliably, so we read ARP directly (both 64- and 32-bit views). Returning the version lets us prove
+# the old product was REPLACED, not left beside the new one.
+function Get-DispatchArp {
+    $roots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    @(Get-ItemProperty $roots -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -match 'Dispatch SMTP Relay' } |
+        Select-Object DisplayName, DisplayVersion)
+}
+function Format-Arp ($arp) { ($arp | ForEach-Object { "$($_.DisplayName) $($_.DisplayVersion)" }) -join '; ' }
 
 # --- 1. Install the BASE version -----------------------------------------------------------------
 Write-Host "=== Installing base: $BaseExe ==="
@@ -81,7 +93,9 @@ if (-not (Test-Path $appPath)) { throw "appsettings.json missing at $appPath" }
 if (-not (Test-Path $dbPath))  { throw "the default SQLite database was not created at $dbPath" }
 $appBefore = (Get-FileHash $appPath -Algorithm SHA256).Hash
 $keyBefore = (Test-Path $keyPath) ? (Get-FileHash $keyPath -Algorithm SHA256).Hash : $null
-Write-Host "pre-upgrade  installs=$(Dispatch-InstallCount)  appsettings=$appBefore  keyfile=$keyBefore"
+$arpBefore = Get-DispatchArp
+Write-Host "pre-upgrade  arp=[$(Format-Arp $arpBefore)]  appsettings=$appBefore  keyfile=$keyBefore"
+if ($arpBefore.Count -lt 1) { throw "the base install did not register in Add/Remove Programs" }
 
 # --- 4. UPGRADE: run the new exe exactly as a user would ('just run it') --------------------------
 Write-Host "=== Upgrading in place: $NextExe ==="
@@ -94,9 +108,13 @@ $newVersion = (DGet $s2 '/health').version
 Write-Host "post-upgrade /health version: $newVersion"
 if ($newVersion -eq $baseVersion) { throw "version is still $baseVersion after the upgrade - the new binaries are not running (upgrade did not take)" }
 
-# 4b. In place, not side-by-side.
-$count = Dispatch-InstallCount
-if ($count -ne 1) { throw "expected exactly ONE Dispatch install after the upgrade, found $count - MajorUpgrade did not replace the old product (side-by-side install)" }
+# 4b. In place, not side-by-side: the ARP registration did not multiply, and the old version is gone
+# (replaced), not sitting next to the new one.
+$arpAfter = Get-DispatchArp
+Write-Host "post-upgrade arp=[$(Format-Arp $arpAfter)]"
+if ($arpAfter.Count -lt 1) { throw "no Dispatch install is registered after the upgrade" }
+if ($arpAfter.Count -gt $arpBefore.Count) { throw "Dispatch ARP entries grew from $($arpBefore.Count) to $($arpAfter.Count) - a side-by-side install, not an in-place upgrade" }
+if ($arpAfter | Where-Object { $_.DisplayVersion -like '0.7.0*' }) { throw "the old 0.7.0 registration is still present after the upgrade - the old product was not replaced" }
 
 # --- 5. Data survived: no re-setup, old password still works, api key row still present -----------
 $status2 = DGet $s2 '/api/auth/status'
