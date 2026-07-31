@@ -75,6 +75,12 @@ public static class RelayProviderSchema
             new("WorkspaceId", "bird.workspace_id", Secret: false, Required: true),
             new("ChannelId", "bird.channel_id", Secret: false, Required: true),
         ],
+        // Fixed endpoint, shared by every Workspace domain - nothing to configure.
+        RelayProviderType.GoogleWorkspace => [],
+        RelayProviderType.Microsoft365 =>
+        [
+            new("Host", "m365.host", Secret: false, Required: true),
+        ],
         _ => [],
     };
 }

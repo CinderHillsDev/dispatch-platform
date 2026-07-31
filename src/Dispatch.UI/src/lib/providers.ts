@@ -55,6 +55,18 @@ export const PROVIDER_FIELDS: Record<string, ProviderField[]> = {
     { name: "WorkspaceId", secret: false, required: true },
     { name: "ChannelId", secret: false, required: true, placeholder: "your email channel id" },
   ],
+  // Direct MX delivery - no relay account, no credentials. Google's inbound endpoint is fixed and shared by
+  // every Workspace domain, so there's nothing to fill in.
+  GoogleWorkspace: [],
+  // Microsoft 365's inbound endpoint is tenant-specific, so (unlike Google) the hostname must be typed in.
+  Microsoft365: [
+    {
+      name: "Host", secret: false, required: true,
+      label: "Inbound mail hostname",
+      placeholder: "yourtenant-com.mail.protection.outlook.com",
+      help: "Find this in the Microsoft 365 admin center under Settings → Domains → (your domain) → DNS records - it always ends in .mail.protection.outlook.com.",
+    },
+  ],
 };
 
 // Azure requires the test From to be one of the resource's configured MailFrom addresses (ACS has no
@@ -84,6 +96,8 @@ export const PROVIDER_BRAND: Record<string, { bg: string; fg?: string; mark: str
   Smtp2Go: { bg: "#00A4E4", mark: "S2" },
   Maileroo: { bg: "#4F46E5", mark: "ML" },
   AzureCommunication: { bg: "#0078D4", mark: "AZ" },
+  GoogleWorkspace: { bg: "#4285F4", mark: "GW" },
+  Microsoft365: { bg: "#7719AA", mark: "365" },
   Smtp: { bg: "#64748B", mark: "@" },
   Local: { bg: "#475569", mark: "DEV" },
 };
@@ -102,9 +116,11 @@ export const PROVIDER_DOCS: Record<string, string> = {
   AzureCommunication: "https://learn.microsoft.com/azure/communication-services/quickstarts/email/send-email",
 };
 
-// Display order for provider pickers (real deliverable providers first; Local/SMTP last).
+// Display order for provider pickers (real deliverable providers first; direct-MX options ahead of the
+// generic/manual smart-host fallback; Local last).
 export const PROVIDER_ORDER = [
-  "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Bird", "Smtp2Go", "Maileroo", "AzureCommunication", "Smtp", "Local",
+  "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Bird", "Smtp2Go", "Maileroo", "AzureCommunication",
+  "GoogleWorkspace", "Microsoft365", "Smtp", "Local",
 ];
 
 // Friendly labels for the provider picker (enum name -> display name).
@@ -119,6 +135,10 @@ export const PROVIDER_LABELS: Record<string, string> = {
   Smtp2Go: "SMTP2GO",
   Maileroo: "Maileroo",
   AzureCommunication: "Azure Communication Services",
+  // Deliberately worded to not be confused with the SMTP_PRESETS "Gmail / Google Workspace" / "Microsoft 365"
+  // entries in Relays.tsx, which relay through a real, authenticated mailbox rather than deliver directly.
+  GoogleWorkspace: "Google Workspace (direct delivery, no account needed)",
+  Microsoft365: "Microsoft 365 (direct delivery, no account needed)",
   Smtp: "Generic SMTP host",
   Local: "Local (developer capture - no external delivery)",
 };
