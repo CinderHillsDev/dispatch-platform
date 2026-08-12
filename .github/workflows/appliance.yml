@@ -132,26 +132,46 @@ jobs:
         uses: actions/upload-artifact@v6
         with: { name: dispatch-appliance-kvm, path: out/kvm/*, if-no-files-found: error, retention-days: 1 }
 
-      # When linked to a release (release: published, or a manual release_tag), attach the images to it.
-      # Uploaded before the boot smoke so a smoke failure doesn't withhold the artifacts.
+      # Build the same zips a release would attach, and verify their contents - on EVERY run, not just
+      # releases. This is what release.yml's tag-only trigger got bitten by before (see "Prepare the 0.7.0
+      # release"): a step that only runs on a real tag never gets exercised by normal CI, so it can silently
+      # regress. Splitting the zip build out of the release-only step below closes that gap - a run with no
+      # RELEASE_TAG still builds + checks these zips, it just skips the actual `gh release upload`.
+      - name: Build + verify the release zips
+        run: |
+          VER="${RELEASE_TAG#v}"; VER="${VER:-ci}"
+          ROOT="$PWD"
+          mkdir -p rel
+          # Zip the whole out/<type> dir - image + helper script(s) + README + checksum - so the release
+          # download matches what each README promises ("unzip this file, the .vhdx/README/script land
+          # together"). zip's DEFLATE shrinks the large, sparse Hyper-V VHDX about as well as the gzip it
+          # used to ship as; the OVA/qcow2 are already compressed on their own, so zipping them just bundles
+          # in the extras (GitHub release assets cap at 2 GB per file).
+          ( cd out/hyperv && zip -q "$ROOT/rel/dispatch-appliance-${VER}-hyperv.zip" dispatch-appliance.vhdx Import-DispatchAppliance.ps1 README.txt dispatch-appliance.vhdx.sha256 )
+          ( cd out/vmware && zip -q "$ROOT/rel/dispatch-appliance-${VER}-vmware.zip" dispatch-appliance.ova README.txt dispatch-appliance.ova.sha256 )
+          ( cd out/kvm    && zip -q "$ROOT/rel/dispatch-appliance-${VER}-kvm.zip"    dispatch-appliance.qcow2 import-libvirt.sh import-proxmox.sh README.txt dispatch-appliance.qcow2.sha256 )
+
+          # Fail the build if a zip is missing any file it's supposed to ship - this is the exact bug
+          # (a bare vhdx.gz with no ps1/README on the release) that this check exists to catch.
+          check() {
+            local zip="$1"; shift
+            local listing; listing="$(unzip -Z1 "$zip")"
+            for want in "$@"; do
+              grep -qxF "$want" <<<"$listing" || { echo "::error file=$zip::missing $want (zip has: $(tr '\n' ' ' <<<"$listing"))"; exit 1; }
+            done
+            echo "ok: $(basename "$zip") has $*"
+          }
+          check "rel/dispatch-appliance-${VER}-hyperv.zip" dispatch-appliance.vhdx Import-DispatchAppliance.ps1 README.txt dispatch-appliance.vhdx.sha256
+          check "rel/dispatch-appliance-${VER}-vmware.zip" dispatch-appliance.ova README.txt dispatch-appliance.ova.sha256
+          check "rel/dispatch-appliance-${VER}-kvm.zip"    dispatch-appliance.qcow2 import-libvirt.sh import-proxmox.sh README.txt dispatch-appliance.qcow2.sha256
+
+      # When linked to a release (release: published, or a manual release_tag), attach the already-built,
+      # already-verified zips to it. Uploaded before the boot smoke so a smoke failure doesn't withhold them.
       - name: Attach appliances to the release
         if: ${{ env.RELEASE_TAG != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VER="${RELEASE_TAG#v}"
-          ROOT="$PWD"
-          mkdir -p rel
-          # Zip the whole out/<type> dir - image + helper script(s) + README + checksum - so the release
-          # download matches what each README promises ("unzip this file, the .vhdx/README/script land
-          # together"). Previously this step shipped the bare image only (gzip for the VHDX, a raw copy for
-          # the OVA/qcow2), so the ps1 and READMEs never actually reached the release, only the
-          # workflow_dispatch upload_artifacts path. zip's DEFLATE shrinks the large, sparse Hyper-V VHDX
-          # about as well as the gzip it replaces; the OVA/qcow2 are already compressed on their own, so
-          # zipping them just bundles in the extras (GitHub release assets cap at 2 GB per file).
-          ( cd out/hyperv && zip -q "$ROOT/rel/dispatch-appliance-${VER}-hyperv.zip" dispatch-appliance.vhdx Import-DispatchAppliance.ps1 README.txt dispatch-appliance.vhdx.sha256 )
-          ( cd out/vmware && zip -q "$ROOT/rel/dispatch-appliance-${VER}-vmware.zip" dispatch-appliance.ova README.txt dispatch-appliance.ova.sha256 )
-          ( cd out/kvm    && zip -q "$ROOT/rel/dispatch-appliance-${VER}-kvm.zip"    dispatch-appliance.qcow2 import-libvirt.sh import-proxmox.sh README.txt dispatch-appliance.qcow2.sha256 )
           for f in rel/*; do
             sz=$(stat -c%s "$f"); mb=$((sz / 1024 / 1024))
             echo "$(basename "$f"): ${mb} MB"
