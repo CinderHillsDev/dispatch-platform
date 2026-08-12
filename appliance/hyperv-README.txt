@@ -63,7 +63,8 @@ This zip contains:
 ------------------------------------------------------------------------------
  Notes
 ------------------------------------------------------------------------------
-  * First boot configures PostgreSQL + Dispatch; allow a few minutes.
+  * First boot creates the bundled SQLite database and starts Dispatch - no
+    database server to bootstrap, so it's quick.
   * The appliance is self-contained - no separate .NET runtime needed.
-  * Full docs: https://chrismuench.github.io/Dispatch-SMTP-Relay/
+  * Full docs: https://docs.dispatchrelay.app/
 ==============================================================================
