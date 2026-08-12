@@ -1,10 +1,10 @@
 name: Appliance
 
 # Builds the downloadable virtual appliances for ALL hypervisors in one job: customizes the Ubuntu 24.04
-# cloud image with libguestfs (no Hyper-V host / nested virt needed) into a Gen2/UEFI image with PostgreSQL
-# + Dispatch baked in, emits it as VHDX (Hyper-V), OVA (VMware), and qcow2 (KVM/Proxmox), then boots
-# it under QEMU/UEFI to prove the service comes up on first boot. Artifacts: dispatch-appliance-hyperv,
-# dispatch-appliance-vmware, dispatch-appliance-kvm.
+# cloud image with libguestfs (no Hyper-V host / nested virt needed) into a Gen2/UEFI image with Dispatch
+# baked in (bundled SQLite - no database server), emits it as VHDX (Hyper-V), OVA (VMware), and qcow2
+# (KVM/Proxmox), then boots it under QEMU/UEFI to prove the service comes up on first boot. Artifacts:
+# dispatch-appliance-hyperv, dispatch-appliance-vmware, dispatch-appliance-kvm.
 on:
   # Runs AFTER a release is published - linked to the release, but it never blocks or races it (the release
   # is already out; this attaches the appliance images to it). The Build workflow also kicks this off after
@@ -209,7 +209,7 @@ jobs:
             sudo convert /tmp/screen.ppm "$1" 2>/dev/null && echo "captured $1" || echo "no screenshot"
           }
           ok=0
-          for i in $(seq 1 90); do          # up to ~8 min (KVM boot is fast; this is mostly PostgreSQL first-run)
+          for i in $(seq 1 90); do          # up to ~8 min - generous headroom for slow CI runners' boot + first-run
             if curl -fsSk -m 3 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
             [ "$i" = 18 ] && screenshot boot-90s.png   # ~90s in: capture whatever's on screen
             sleep 5

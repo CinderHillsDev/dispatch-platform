@@ -3,8 +3,8 @@
 # Dispatch SMTP Relay - Hyper-V appliance builder (Ubuntu 24.04 LTS).
 #
 # Customizes the official Ubuntu cloud image offline with libguestfs (no Hyper-V host, no nested virt) and
-# converts it to a Gen2/UEFI dynamic VHDX. PostgreSQL's binaries are baked in; each VM configures the
-# Dispatch starts on first boot against the bundled SQLite database it creates under /var/lib/dispatch.
+# converts it to a Gen2/UEFI dynamic VHDX. Dispatch is baked in and starts on first boot against the
+# bundled SQLite database it creates under /var/lib/dispatch - no database server to install or configure.
 #
 # Requires (host): libguestfs-tools, qemu-utils, curl.
 # Usage:
@@ -79,7 +79,6 @@ docker run --rm -e KVER="$KVER" -v "$STAGE/debs:/debs" ubuntu:24.04 bash -ec '
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq curl ca-certificates >/dev/null
-  # PostgreSQL 16 ships in the default Ubuntu 24.04 repos, so no extra apt source or signing key is needed.
   cd /debs
   # Full recursive runtime dependency closure of the target packages (skip virtual/undownloadable entries).
   deps=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances \
@@ -107,7 +106,7 @@ echo "==> Expanding the root partition into a ${DISK_SIZE} working image"
 qemu-img create -f qcow2 "$WORK/disk.qcow2" "$DISK_SIZE"
 virt-resize --expand /dev/sda1 "$WORK/base.img" "$WORK/disk.qcow2"
 
-echo "==> Customizing the image (PostgreSQL + Dispatch + first-boot)"
+echo "==> Customizing the image (Dispatch + first-boot)"
 # --no-network: provisioning installs pre-downloaded .debs offline, so the appliance needs no in-guest
 # network (and we avoid libguestfs's passt networking, which fails on CI runners).
 virt-customize -a "$WORK/disk.qcow2" \
