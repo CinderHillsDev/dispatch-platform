@@ -140,11 +140,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VER="${RELEASE_TAG#v}"
+          ROOT="$PWD"
           mkdir -p rel
-          # The Hyper-V VHDX is large and sparse; gzip it (GitHub release assets cap at 2 GB per file).
-          gzip -c out/hyperv/dispatch-appliance.vhdx > "rel/dispatch-appliance-${VER}-hyperv.vhdx.gz"
-          cp out/vmware/dispatch-appliance.ova       "rel/dispatch-appliance-${VER}-vmware.ova"
-          cp out/kvm/dispatch-appliance.qcow2        "rel/dispatch-appliance-${VER}-kvm.qcow2"
+          # Zip the whole out/<type> dir - image + helper script(s) + README + checksum - so the release
+          # download matches what each README promises ("unzip this file, the .vhdx/README/script land
+          # together"). Previously this step shipped the bare image only (gzip for the VHDX, a raw copy for
+          # the OVA/qcow2), so the ps1 and READMEs never actually reached the release, only the
+          # workflow_dispatch upload_artifacts path. zip's DEFLATE shrinks the large, sparse Hyper-V VHDX
+          # about as well as the gzip it replaces; the OVA/qcow2 are already compressed on their own, so
+          # zipping them just bundles in the extras (GitHub release assets cap at 2 GB per file).
+          ( cd out/hyperv && zip -q "$ROOT/rel/dispatch-appliance-${VER}-hyperv.zip" dispatch-appliance.vhdx Import-DispatchAppliance.ps1 README.txt dispatch-appliance.vhdx.sha256 )
+          ( cd out/vmware && zip -q "$ROOT/rel/dispatch-appliance-${VER}-vmware.zip" dispatch-appliance.ova README.txt dispatch-appliance.ova.sha256 )
+          ( cd out/kvm    && zip -q "$ROOT/rel/dispatch-appliance-${VER}-kvm.zip"    dispatch-appliance.qcow2 import-libvirt.sh import-proxmox.sh README.txt dispatch-appliance.qcow2.sha256 )
           for f in rel/*; do
             sz=$(stat -c%s "$f"); mb=$((sz / 1024 / 1024))
             echo "$(basename "$f"): ${mb} MB"
