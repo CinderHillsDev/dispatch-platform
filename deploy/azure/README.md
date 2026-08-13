@@ -1,8 +1,9 @@
 # Deploy Dispatch to Azure
 
 One-click deploy of Dispatch (the open-source SMTP relay) onto a single Ubuntu 24.04 VM. The template
-provisions the VM + networking and, on first boot, runs the official `install.sh`, which
-installs **PostgreSQL** and Dispatch as a systemd service with a self-signed dashboard certificate.
+provisions the VM + networking and, on first boot, runs the official `install.sh`, which installs
+Dispatch (using its bundled SQLite database - no database server to install) as a systemd service with a
+self-signed dashboard certificate.
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FCinderHillsDev%2Fdispatch-platform%2Fmain%2Fdeploy%2Fazure%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FCinderHillsDev%2Fdispatch-platform%2Fmain%2Fdeploy%2Fazure%2FcreateUiDefinition.json)
 
@@ -33,7 +34,7 @@ if your apps send from outside the VNet and you accept the risk.
 | `adminPasswordOrKey` | - | Your SSH **public key** (or the admin password if you chose `password`). |
 | `dispatchAdminPassword` | - | Dashboard admin password - you log in with this at `https://<host>:8420`. |
 | `vmSize` | `Standard_B2s` | 2 vCPU / 4 GB is a fine starting point. |
-| `dispatchVersion` | `0.7.0` | The [release](https://github.com/CinderHillsDev/dispatch-platform/releases) to install. |
+| `dispatchVersion` | `0.7.1` | The [release](https://github.com/CinderHillsDev/dispatch-platform/releases) to install. |
 | `submissionSource` | `VirtualNetwork` | Who may reach the SMTP/API submission ports. VNet-only by default (not internet-exposed); set to a CIDR or `Internet` to widen. |
 | `vnetNewOrExisting` | `new` | `new` creates a VNet; `existing` deploys the VM into a VNet you already have. |
 | `vnetName` | `<vmName>-vnet` | New VNet's name, or the name of your existing VNet. |
