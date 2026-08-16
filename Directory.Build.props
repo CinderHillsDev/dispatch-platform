@@ -3,11 +3,11 @@
     Single source of truth for the product version across every project in the solution.
     Pre-1.0: we are at 0.7.x - the release that moved the schema to EF Core and made SQLite the
     default backend. This sets AssemblyVersion / FileVersion / InformationalVersion, so
-    UpdateService.CurrentVersion (which reads Assembly.GetName().Version) reports 0.7.0 instead of
+    UpdateService.CurrentVersion (which reads Assembly.GetName().Version) reports 0.7.2 instead of
     the .NET default 1.0.0.0. A tagged release overrides this on the command line
-    (dotnet publish -p:Version=0.7.1), so the released binaries carry the tag's version.
+    (dotnet publish -p:Version=1.2.3), so the released binaries carry the tag's version.
   -->
   <PropertyGroup>
-    <Version>0.7.0</Version>
+    <Version>0.7.2</Version>
   </PropertyGroup>
 </Project>
