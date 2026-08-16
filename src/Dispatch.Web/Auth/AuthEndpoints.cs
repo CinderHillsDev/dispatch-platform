@@ -71,15 +71,9 @@ public static class AuthEndpoints
             var hasPassword = !string.IsNullOrEmpty(await config.GetAsync(PasswordHashKey, ctx.RequestAborted));
             if (hasPassword && !(ctx.User.Identity?.IsAuthenticated ?? false))
                 return Results.Unauthorized();
-            if (ValidatePassword(req.Password) is { } error)
+            if (await SetPasswordAsync(config, req.Password, ctx.RequestAborted) is { } error)
                 return Results.BadRequest(new { error });
 
-            await config.SetAsync(PasswordHashKey, BCrypt.Net.BCrypt.HashPassword(req.Password, 12), encrypted: false, ctx.RequestAborted);
-            // On a real password CHANGE (not first-run), bump the credential epoch so every OTHER existing
-            // session is invalidated (see OnValidatePrincipal). First-run has no prior sessions to revoke.
-            if (hasPassword)
-                await config.SetAsync(ConfigKeys.WebUiSessionEpoch, (await ReadEpochAsync(config, ctx.RequestAborted) + 1).ToString(),
-                    encrypted: false, ctx.RequestAborted);
             await audit.Audit("Auth", hasPassword ? "Admin password changed" : "Admin password set (first-run)", "Notice",
                 actor: "admin", sourceIp: ctx.Connection.RemoteIpAddress?.ToString());
 
@@ -88,6 +82,23 @@ public static class AuthEndpoints
             await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(await AdminIdentityAsync(config, ctx.RequestAborted)));
             return Results.Ok(new { ok = true });
         });
+    }
+
+    /// <summary>
+    /// Validates and applies a new admin password: hashes it (bcrypt-12) into <see cref="PasswordHashKey"/>.
+    /// When replacing an existing password (as opposed to setting one for the first time), also bumps the
+    /// session epoch so every OTHER existing session is invalidated (see OnValidatePrincipal) - the same
+    /// behavior whether the change comes from the dashboard or the `reset-admin-password` CLI, which calls
+    /// this directly for local/offline recovery. Returns a human-readable validation error, or null on success.
+    /// </summary>
+    public static async Task<string?> SetPasswordAsync(IConfigRepository config, string? password, CancellationToken ct = default)
+    {
+        if (ValidatePassword(password) is { } error) return error;
+        var hasPassword = !string.IsNullOrEmpty(await config.GetAsync(PasswordHashKey, ct));
+        await config.SetAsync(PasswordHashKey, BCrypt.Net.BCrypt.HashPassword(password, 12), encrypted: false, ct);
+        if (hasPassword)
+            await config.SetAsync(ConfigKeys.WebUiSessionEpoch, (await ReadEpochAsync(config, ct) + 1).ToString(), encrypted: false, ct);
+        return null;
     }
 
     public const string SessionEpochClaim = "epoch";
