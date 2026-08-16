@@ -10,6 +10,27 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
 > database layer was rebuilt; it was never tagged or published. The public sequence goes **0.5 → 0.7**. A
 > 0.5 install upgrades directly to 0.7 - see the upgrade notes below.
 
+## [0.7.2] - 2026-08-16
+
+### Added
+
+- **`reset-admin-password` is now documented** (`docs/database.md`'s sibling, `docs/SPEC.md` §17.3, and a
+  new "Forgot the admin password?" section on the docs site). Run locally with root/Administrator (or
+  `sudo -u dispatch`), it resets the dashboard password without needing the old one - the only recovery
+  path, by design, since Dispatch has no outbound email of its own to send a reset link from.
+- The CLI now writes an audit entry (actor `local-cli`) so a local reset shows up in **System Logs**,
+  distinguishable from a password changed in the dashboard.
+
+### Fixed
+
+- **A password change - from the dashboard or the CLI - did not actually invalidate other sessions.**
+  Both paths bumped a session-epoch value meant to sign out every other logged-in session, but the check
+  that enforces it read from an in-memory cache that only refreshes within the process that itself made
+  the change. A `reset-admin-password` run (a separate process from the running service, by definition)
+  could never reach that cache, so an old - possibly compromised - session stayed valid until its normal
+  timeout regardless. The check now reads the session epoch live, so any password change invalidates
+  every other session immediately, no matter which process made it.
+
 ## [0.7.0] - 2026-07-21
 
 The database release. Dispatch now runs on **four database engines behind one data layer**, and the
