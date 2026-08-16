@@ -319,6 +319,9 @@ finally
 // --- CLI: reset-admin-password ----------------------------------------------------------------
 // Minimal local recovery tool: prompts for a new dashboard password and writes its bcrypt hash to the
 // SQL config table. Run on the server, e.g.:  Dispatch.Service reset-admin-password
+// Only reachable by whoever can already read appsettings.json (root/Administrator, or sudo -u dispatch on
+// Linux, where install.sh locks that file to 600) - that file access is the access-control boundary here,
+// the same way it is for `migrate-database` above.
 static async Task<int> ResetAdminPasswordAsync(IConfiguration cfg)
 {
     var cs = cfg.GetConnectionString("DispatchLog");
@@ -333,15 +336,31 @@ static async Task<int> ResetAdminPasswordAsync(IConfiguration cfg)
     Console.Write("Confirm password:   ");
     var confirm = ReadSecret();
     if (pw != confirm) { Console.Error.WriteLine("Passwords do not match."); return 1; }
-    if (Dispatch.Web.Auth.AuthEndpoints.ValidatePassword(pw) is { } error) { Console.Error.WriteLine(error); return 1; }
 
+    var hadPassword = false;
     try
     {
         // Resolve the engine the same way startup does, so this works whichever backend is configured.
         var provider = DatabaseProviderResolver.Resolve(cs, cfg["Database:Provider"]);
-        var repo = new SqlConfigRepository(DispatchDbContextFactory.Create(provider, cs));
-        await repo.SetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey,
-            BCrypt.Net.BCrypt.HashPassword(pw, 12), encrypted: false);
+        var contexts = DispatchDbContextFactory.Create(provider, cs);
+        var repo = new SqlConfigRepository(contexts);
+        // Read this BEFORE SetPasswordAsync (which would otherwise have already written the new hash),
+        // so the audit wording and the final message below distinguish an actual reset from running this
+        // against a fresh install that never went through the web first-run setup.
+        hadPassword = !string.IsNullOrEmpty(await repo.GetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey));
+        // Shared with the dashboard's own POST /auth/password (AuthEndpoints.SetPasswordAsync): same
+        // validation, same bcrypt cost, and it bumps the session epoch to sign out every other existing
+        // session - a forgotten-password reset should not leave a stale (or possibly compromised) session live.
+        if (await Dispatch.Web.Auth.AuthEndpoints.SetPasswordAsync(repo, pw) is { } error)
+        {
+            Console.Error.WriteLine(error);
+            return 1;
+        }
+        // Best-effort: recorded in the same System Logs an admin change made from the dashboard would be,
+        // distinguished by actor so "changed locally on the box" is never mistaken for "changed in the UI".
+        var audit = new SqlAuditLog(contexts, Microsoft.Extensions.Logging.Abstractions.NullLogger<SqlAuditLog>.Instance);
+        await audit.Audit("Auth", hadPassword ? "Admin password reset (local CLI)" : "Admin password set (first-run, local CLI)",
+            "Notice", actor: "local-cli");
     }
     catch (Exception ex)
     {
@@ -349,7 +368,9 @@ static async Task<int> ResetAdminPasswordAsync(IConfiguration cfg)
         return 1;
     }
 
-    Console.WriteLine("Admin password reset. Sign in to the dashboard with the new password.");
+    Console.WriteLine(hadPassword
+        ? "Admin password reset. Every other dashboard session was signed out - sign in with the new password."
+        : "Admin password set. Sign in to the dashboard with it.");
     return 0;
 }
 

@@ -74,6 +74,7 @@ The shipped implementation intentionally diverges from a few details described l
 - **SMTP source-IP denial happens at MAIL FROM, not the greeting.** The CIDR allow-list and intake/back-pressure checks run in the mailbox filter (`CanAcceptFromAsync`); a disallowed source is refused there (and a `Denied` row is logged), rather than with a `554` at the SMTP banner. (Refines §5.3, §17.10.)
 - **SMTP AUTH brute-force lockout** (§17.10) is implemented as `SmtpAuthThrottle`: 5 failed AUTH attempts from a source IP lock it out for 60 seconds, during which AUTH is refused without touching the credential store (mirrors the dashboard's `LoginThrottle`).
 - **API-key revocation is immediate** (§17.4): revoking a key calls `ApiKeyCache.Invalidate`, so it stops working at once rather than lingering until the 30-second cache TTL.
+- **Admin password recovery has no in-app flow** (not described in the original spec at all): `Dispatch.Service reset-admin-password`, run with local/root access to the box, is the only way to recover a forgotten dashboard password - there is no email-based reset, by design (Dispatch sends no email of its own). See §17.3.
 
 ---
 
@@ -3279,6 +3280,21 @@ When `webui.require_auth = true`:
 - Minimum 12 characters
 - At least one uppercase, one lowercase, one digit
 - Common password list check (top 10,000 passwords rejected)
+
+**Password recovery.** There is no email-based "forgot password" flow - the dashboard has no outbound
+email of its own to send one from. Recovery is instead local-access-only: `Dispatch.Service
+reset-admin-password`, run on the host (as the service account / with `sudo`, or elevated on Windows),
+prompts for a new password twice (no echo), applies the same policy above, and writes its bcrypt hash to
+`webui.password_hash` - all via `AuthEndpoints.SetPasswordAsync`, the same method `POST /auth/password`
+calls, so both paths behave identically. Because a forgotten password and a possibly-compromised session
+are both plausible reasons to reset, this also bumps the `webui.session_epoch` config value, stamped into
+every cookie and checked on each request, to invalidate every other existing cookie session - the same
+behavior as a normal in-app password change, not just the first-run case. The reset is recorded in the
+audit log with actor `local-cli` rather than `admin`, so it's distinguishable from an in-dashboard change.
+This command has no access control of its own beyond OS file permissions on `appsettings.json` (the
+connection string it needs to reach the database) - the installers restrict that file to root/Administrator
+or the `dispatch` service account, and that file-permission boundary is the intended access control here,
+not a check inside the command itself.
 
 ---
 

@@ -58,10 +58,15 @@ public static class ServiceCollectionExtensions
                 {
                     var p = c.Principal;
                     var verOk = p?.FindFirst("ver")?.Value == Updates.UpdateService.CurrentVersion;
-                    // Credential epoch: reject cookies issued before the last admin-password change. Read from
-                    // the cache and lag-tolerant - only reject when STRICTLY older, so bumping the epoch can't
-                    // momentarily sign out the just-re-issued acting admin during the cache-refresh window.
-                    var stored = c.HttpContext.RequestServices.GetService<ConfigCache>()?.GetInt(ConfigKeys.WebUiSessionEpoch, 0) ?? 0;
+                    // Credential epoch: reject cookies issued before the last admin-password change. Read LIVE
+                    // from the database, not ConfigCache - ConfigCache is only refreshed within the request
+                    // that itself wrote a change (see the /config/* endpoints), so a change made by ANOTHER
+                    // process never reaches it. That matters here specifically: `reset-admin-password` (a
+                    // locked-out admin's local recovery command) runs as a separate process from the already-
+                    // running service, and its whole point is to kill any session that's still live in that
+                    // process - a cache read would silently never see the bump and leave old sessions valid.
+                    var config = c.HttpContext.RequestServices.GetRequiredService<IConfigRepository>();
+                    var stored = int.TryParse(await config.GetAsync(ConfigKeys.WebUiSessionEpoch, c.HttpContext.RequestAborted), out var s) ? s : 0;
                     var claim = int.TryParse(p?.FindFirst(AuthEndpoints.SessionEpochClaim)?.Value, out var e) ? e : 0;
                     if (!verOk || claim < stored)
                     {
