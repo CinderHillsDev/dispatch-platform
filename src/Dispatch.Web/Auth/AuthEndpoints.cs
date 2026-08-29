@@ -95,7 +95,7 @@ public static class AuthEndpoints
     {
         if (ValidatePassword(password) is { } error) return error;
         var hasPassword = !string.IsNullOrEmpty(await config.GetAsync(PasswordHashKey, ct));
-        await config.SetAsync(PasswordHashKey, BCrypt.Net.BCrypt.HashPassword(password, 12), encrypted: false, ct);
+        await config.SetAsync(PasswordHashKey, BCrypt.Net.BCrypt.HashPassword(password, 12), encrypted: true, ct);
         if (hasPassword)
             await config.SetAsync(ConfigKeys.WebUiSessionEpoch, (await ReadEpochAsync(config, ct) + 1).ToString(), encrypted: false, ct);
         return null;

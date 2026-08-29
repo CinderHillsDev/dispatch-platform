@@ -36,7 +36,7 @@ public sealed class SqlAuditLog(IDbContextFactory<DispatchDbContext> contexts, I
         }
         catch (Exception ex)
         {
-            log.LogWarning(ex, "Audit write failed ({Category}/{Event})", category, @event);
+            log.LogWarning(ex, "Audit write failed ({Category}/{Event})", SanitizeForLog(category), SanitizeForLog(@event));
         }
     }
 
@@ -178,4 +178,7 @@ public sealed class SqlAuditLog(IDbContextFactory<DispatchDbContext> contexts, I
 
     private static string? Trunc(string? value, int max) =>
         value is { Length: > 0 } && value.Length > max ? value[..max] : value;
+
+    // Strips newlines so a caller-supplied category/event can't forge extra log lines (CWE-117).
+    private static string SanitizeForLog(string value) => value.Replace("\r", "").Replace("\n", "");
 }

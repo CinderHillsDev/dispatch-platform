@@ -7,14 +7,17 @@ namespace Dispatch.Providers.Tests;
 
 public class MailgunProviderTests
 {
-    private static RelayMessage TestMessage()
+    private static RelayMessage TestMessage() =>
+        new() { Message = TestMime(), FromAddress = "sender@example.com", ToAddresses = ["rcpt@dest.com"] };
+
+    private static MimeMessage TestMime()
     {
         var mime = new MimeMessage();
         mime.From.Add(MailboxAddress.Parse("sender@example.com"));
         mime.To.Add(MailboxAddress.Parse("rcpt@dest.com"));
         mime.Subject = "Hi";
         mime.Body = new TextPart("plain") { Text = "body" };
-        return new RelayMessage { Message = mime, FromAddress = "sender@example.com", ToAddresses = ["rcpt@dest.com"] };
+        return mime;
     }
 
     private static RelayConfig Config(string region = "US") => new()
@@ -90,6 +93,16 @@ public class MailgunProviderTests
             Settings = new Dictionary<string, string?> { ["ApiKey"] = "k", ["Domain"] = domain },
         };
         await Assert.ThrowsAsync<InvalidOperationException>(() => new MailgunProvider(cfg, http).SendAsync(TestMessage(), default));
+    }
+
+    [Theory]
+    [InlineData("rcpt@dest.com\r\nX-Injected: evil")]
+    [InlineData("rcpt@dest.com\nBcc: attacker@evil.com")]
+    public async Task Recipient_with_control_characters_is_rejected_before_request(string recipient)
+    {
+        var http = new HttpClient(new StubHandler(HttpStatusCode.OK, "{}"));
+        var message = new RelayMessage { Message = TestMime(), FromAddress = "sender@example.com", ToAddresses = [recipient] };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new MailgunProvider(Config(), http).SendAsync(message, default));
     }
 
     private sealed class StubHandler(HttpStatusCode status, string responseBody) : HttpMessageHandler
