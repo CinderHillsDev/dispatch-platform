@@ -22,7 +22,7 @@ jobs:
   build-and-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Build image + start the stack (Dispatch + PostgreSQL)
         run: docker compose up --build -d
