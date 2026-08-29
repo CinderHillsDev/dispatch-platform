@@ -18,6 +18,9 @@ on:
       - "src/Dispatch.UI/**"
       - ".github/workflows/docker.yml"
 
+permissions:
+  contents: read
+
 jobs:
   build-and-smoke:
     runs-on: ubuntu-latest

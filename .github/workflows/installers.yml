@@ -21,6 +21,9 @@ on:
       - "tests/smoke/**"
       - ".github/workflows/installers.yml"
 
+permissions:
+  contents: read
+
 env:
   DOTNET_NOLOGO: "true"
   DOTNET_CLI_TELEMETRY_OPTOUT: "true"
