@@ -1213,6 +1213,26 @@ public interface IRelayProvider
 
 A provider that never delivers externally. It captures each message to `spool/captured/` (viewable in the **Local Inbox** page) and logs it as delivered. Ideal for local development so no real emails are sent. (The out-of-the-box default relay is *Unconfigured* - it refuses to relay until a provider is chosen, so mail is never silently delivered or discarded.)
 
+### 8.6 Google Workspace (Direct)
+
+| Field | Detail |
+|---|---|
+| Mechanism | MailKit SmtpClient, delivering directly to Google Workspace's unified inbound endpoint |
+| Auth | None - unauthenticated MTA-to-MTA delivery, like any internet mail server |
+| Required settings | None - host is fixed at `smtp.google.com`, port 25, STARTTLS |
+| Notes | Google consolidated inbound MX onto one hostname shared by every Workspace domain. Point a routing rule at this relay for a recipient domain actually hosted on Google Workspace instead of paying for a smart-host relay - the message goes straight to the recipient's real mailbox. |
+
+### 8.7 Microsoft 365 (Direct)
+
+| Field | Detail |
+|---|---|
+| Mechanism | MailKit SmtpClient, delivering directly to a Microsoft 365 tenant's inbound endpoint |
+| Auth | None - unauthenticated MTA-to-MTA delivery, like any internet mail server |
+| Required settings | Host (the tenant's `*.mail.protection.outlook.com` MX hostname, found in the M365 admin center under Settings → Domains). Port 25 and STARTTLS are fixed. |
+| Notes | Unlike Google Workspace, Microsoft 365's inbound endpoint is tenant-specific, so it can't be assumed - the admin must supply it. |
+
+Both direct-delivery providers always connect on outbound port 25, which Azure blocks - saving either relay while running in Azure is rejected with the same message shown for a port-25 generic SMTP relay.
+
 ---
 
 ## 9. Embedded Web UI

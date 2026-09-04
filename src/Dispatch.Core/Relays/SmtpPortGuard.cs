@@ -16,6 +16,10 @@ public static class SmtpPortGuard
     /// </summary>
     public static bool UsesOutboundPort25(RelayProviderType provider, IReadOnlyDictionary<string, string?> settings)
     {
+        // Direct MX delivery (Google Workspace / Microsoft 365) always connects on 25 - it isn't
+        // configurable, so there's no port setting to inspect.
+        if (provider is RelayProviderType.GoogleWorkspace or RelayProviderType.Microsoft365) return true;
+
         if (provider != RelayProviderType.Smtp) return false;
         var raw = settings.TryGetValue("Port", out var value) ? value : null;
         var port = int.TryParse(raw, out var p) ? p : 25;   // matches SmtpProvider: blank -> 25
