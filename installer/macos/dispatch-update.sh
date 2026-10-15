@@ -162,12 +162,26 @@ echo "update: restarting service on $VER"
 status "Restarting" "restarting service on $VER (the dashboard will briefly disconnect)"
 launchctl kickstart -k "system/${LABEL}" >/dev/null 2>&1
 
+# Which ports to poll. The one baked into the watcher's plist at install time is only a starting guess: the
+# dashboard port is webui.port, which lives in the database and can be changed in the UI. An applier that
+# polled only the install-time value would roll back a perfectly good update on a host that moved the
+# dashboard, so also try whatever the restarted service is actually listening on. (Ports that are not the
+# dashboard fail the /health request rather than returning 200, so widening the set cannot produce a false
+# pass.)
+health_ports() {
+  printf '%s\n' "$HEALTH_PORT"
+  lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk '/Dispatch/ {print $9}' \
+    | sed 's/.*://' | grep -E '^[0-9]+$' | sort -u
+}
+
 healthy() {
-  local i
+  local i p
   for i in $(seq 1 $((HEALTH_TIMEOUT / 5))); do
-    if [ "$(curl -sk -m 5 -o /dev/null -w '%{http_code}' "https://localhost:${HEALTH_PORT}/health" 2>/dev/null)" = "200" ]; then
-      return 0
-    fi
+    for p in $(health_ports); do
+      if [ "$(curl -sk -m 5 -o /dev/null -w '%{http_code}' "https://localhost:${p}/health" 2>/dev/null)" = "200" ]; then
+        return 0
+      fi
+    done
     sleep 5
   done
   return 1
