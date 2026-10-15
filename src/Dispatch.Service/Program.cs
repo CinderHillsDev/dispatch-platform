@@ -257,9 +257,14 @@ try
         if (Dispatch.Web.Auth.AuthEndpoints.ValidatePassword(adminPassword) is { } weak)
             Log.Warning("Seeded admin password is weak: {Reason} Change it from the dashboard or via 'reset-admin-password'.", weak);
         await configRepo.SetAsync(Dispatch.Web.Auth.AuthEndpoints.PasswordHashKey,
-            BCrypt.Net.BCrypt.HashPassword(adminPassword, 12), encrypted: false);
+            BCrypt.Net.BCrypt.HashPassword(adminPassword, 12), encrypted: true);
         Log.Information("Seeded admin password from install configuration");
     }
+
+    // Installs from 0.7.2 and earlier kept this hash in a plain config row. Rewrite it encrypted at rest so an
+    // upgraded host ends up in the same posture as a fresh install; no-op when the row is already encrypted.
+    if (await Dispatch.Web.Auth.AuthEndpoints.EncryptStoredPasswordHashAsync(configRepo))
+        Log.Information("Rewrote the stored admin password hash with at-rest encryption enabled.");
 
     // Once the password hash exists in SQL, the plaintext AdminPassword seed in appsettings is redundant.
     // Wipe it so the admin password lives ONLY in the database (the file should hold just the connection

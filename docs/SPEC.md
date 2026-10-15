@@ -2066,7 +2066,7 @@ Values marked `encrypted = TRUE` are stored AES-256-GCM encrypted using a random
 | `webui.tls_cert_password` | string | `` | **Yes** |
 | `webui.session_timeout_minutes` | int | `480` | No |
 | `webui.require_auth` | bool | `false` | No |
-| `webui.password_hash` | string | `` | No |
+| `webui.password_hash` | string | `` | **Yes** |
 | `purge.enabled` | bool | `true` | No |
 | `purge.schedule_interval_hours` | int | `6` | No |
 | `purge.spool_failed_retention_days` | int | `30` | No |
@@ -3337,12 +3337,13 @@ public async Task<ApiKey?> VerifyAsync(string rawKey)
 | Provider SMTP passwords | `config` table, `encrypted = 1` | AES-256-GCM, machine-specific key |
 | TLS certificate passphrases | `config` table, `encrypted = 1` | AES-256-GCM, machine-specific key |
 | SMTP sender passwords | `config_smtp_credentials.password_hash` | bcrypt, cost factor 12 |
-| Web UI password | `config.webui.password_hash` | bcrypt, cost factor 12 |
+| Web UI password | `config.webui.password_hash`, `encrypted = 1` | bcrypt, cost factor 12, then AES-256-GCM at rest |
 | API keys | `api_keys.key_hash` | bcrypt, cost factor 12 |
 | SQL connection string | `appsettings.json` | OS file permissions only (see 17.6) |
 
 **Encryption key (all platforms):** a random 256-bit key in a `.dispatch-key` file → AES-256-GCM. The key file is access-restricted (mode 600 on Unix; an inheritance-stripped ACL granting only SYSTEM, Administrators, and the service account on Windows). On Windows it lives in the ProgramData data dir (the content root), whose folder ACL the installer also locks down. Being a portable file (not a machine-bound store), it makes DB backup/restore portable across hosts - restore the key file alongside the database. If no writable key directory is available, it falls back to a PBKDF2-SHA256 key derived from `/etc/machine-id` + a fixed app salt (100,000 iterations) - weaker, surfaced to the operator.
 - **Legacy (older Windows builds):** `System.Security.Cryptography.ProtectedData` (DPAPI, `LocalMachine` scope). Such values are still decrypted on Windows and re-encrypted to AES on the next save.
+- **Legacy (upgrades from 0.7.2 and earlier):** those builds wrote `webui.password_hash` with `encrypted = 0`, so the bcrypt hash sat in the clear. On startup the service rewrites that row encrypted (`AuthEndpoints.EncryptStoredPasswordHashAsync`) without changing the hash, so an upgraded host ends up where a fresh install starts.
 
 **Secrets never appear in:** log files, HTTP responses, error messages, exception stack traces, or the Serilog structured output. `ConfigRepository` redacts encrypted values in `GET /api/config` responses.
 

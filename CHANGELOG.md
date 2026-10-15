@@ -10,6 +10,46 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
 > database layer was rebuilt; it was never tagged or published. The public sequence goes **0.5 → 0.7**. A
 > 0.5 install upgrades directly to 0.7 - see the upgrade notes below.
 
+## [Unreleased]
+
+### Security
+
+- **The dashboard's password hash is now encrypted at rest.** `webui.password_hash` was written to the SQL
+  `config` table with the encryption flag off, unlike every other secret in that table, so anyone who could
+  read the table (a backup, a dump, an arbitrary-read bug) held a bcrypt hash to crack offline. New writes
+  go through `SecureConfig`, and the service rewrites an existing plaintext row on startup - same hash, now
+  sealed - so upgraded hosts end up where fresh installs start. Login is unaffected either way.
+- **A vulnerable transitive .NET dependency was floored.** `System.Security.Cryptography.Pkcs` resolved to
+  10.0.0 through MimeKit and Microsoft.Data.SqlClient (GHSA-846f-f764-76mx, high; GHSA-2fmv-rv2c-59x7,
+  moderate). Dependabot cannot see transitives without a committed lockfile, so it never became an alert;
+  a direct pin to 10.0.13 in `Directory.Build.props` fixes it and makes the floor visible. `SECURITY.md`
+  documents how to audit the whole graph (`dotnet list package --vulnerable --include-transitive`).
+- **Log forging in the audit writer.** When an audit write failed, the caller-supplied `category` and `event`
+  strings were interpolated into the warning verbatim, so a value containing CR/LF could inject extra lines
+  into the log file. They are now stripped first (CWE-117).
+- **Header injection in the Mailgun relay.** Recipients are written into the outbound multipart body as
+  `to` fields. An envelope address containing CR/LF/NUL could therefore append arbitrary form fields to the
+  request Mailgun receives; such addresses are now rejected before the request is built.
+- **Cross-site-scripting alert in the Mailgun relay resolved.** Same code path as the item above - the
+  guard is what CodeQL's `cs/web/xss` data flow wanted; covered by tests.
+- **Workflow tokens are scoped.** `build.yml`, `docker.yml`, `scripts.yml`, and `installers.yml` ran with
+  the repository's default (write) `GITHUB_TOKEN` permissions. They now declare `contents: read`, so a
+  compromised action or script in one of those workflows can't push to the repo (9 CodeQL alerts).
+- **Migration SQL identifiers are validated.** `DatabaseMigrator` interpolated table names straight into
+  `SET IDENTITY_INSERT` / `setval` / `DBCC CHECKIDENT` statements. The values were literals, but they now
+  pass `ProviderBootstrap.SafeIdentifier` like every other interpolated identifier, so a future caller
+  can't widen them.
+- **Dashboard dependencies updated.** `react-router-dom` 7.17 → 7.18.3 (RSC-mode CSRF bypass, open
+  redirect via `\` in `<Link>`/`useNavigate`, arbitrary constructor injection through serialized
+  router state, route-matching DoS), plus transitive floors for `postcss`, `source-map-js`, `browserslist`
+  and `baseline-browser-mapping`. `npm audit` is clean in `src/Dispatch.UI`.
+
+### Changed
+
+- Dependabot no longer proposes EF Core majors (`Microsoft.EntityFrameworkCore*`,
+  `Npgsql.EntityFrameworkCore.PostgreSQL` ≥ 10): the MySQL provider is still built against EF Core 9 and
+  the bump fails at runtime with a `MissingMethodException`, not just in CI.
+
 ## [0.7.2] - 2026-08-16
 
 ### Added

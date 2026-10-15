@@ -301,11 +301,17 @@ internal sealed class FakeSmtpCredentialRepository : Dispatch.Core.Smtp.ISmtpCre
 
 internal sealed class FakeConfigRepository : IConfigRepository
 {
-    private readonly Dictionary<string, string> _values = new();
-    public Task<string?> GetAsync(string key, CancellationToken ct = default) => Task.FromResult(_values.GetValueOrDefault(key));
-    public Task SetAsync(string key, string value, bool encrypted = false, CancellationToken ct = default) { _values[key] = value; return Task.CompletedTask; }
+    private readonly Dictionary<string, (string? Value, bool Encrypted)> _values = new();
+    public Task<string?> GetAsync(string key, CancellationToken ct = default) =>
+        Task.FromResult(_values.GetValueOrDefault(key).Value);
+    public Task SetAsync(string key, string value, bool encrypted = false, CancellationToken ct = default)
+    {
+        _values[key] = (value, encrypted);
+        return Task.CompletedTask;
+    }
     public Task<IReadOnlyList<ConfigEntry>> GetAllAsync(CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<ConfigEntry>>(_values.Select(kv => new ConfigEntry(kv.Key, kv.Value, false, DateTime.UtcNow)).ToList());
+        Task.FromResult<IReadOnlyList<ConfigEntry>>(
+            _values.Select(kv => new ConfigEntry(kv.Key, kv.Value.Value ?? "", kv.Value.Encrypted, DateTime.UtcNow)).ToList());
 }
 
 internal sealed class FakeRoutingRuleRepository : IRoutingRuleRepository

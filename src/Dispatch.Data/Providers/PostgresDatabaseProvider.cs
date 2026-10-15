@@ -92,7 +92,11 @@ public sealed class PostgresDatabaseProvider : IDatabaseProvider
     {
         // VACUUM cannot run inside a transaction block. FULL rewrites the table and returns space to the OS,
         // so pg_database_size drops and the size-pressure trigger clears.
+        // Table names cannot be bound as parameters, so each is interpolated - guarded by SafeIdentifier,
+        // which the analyzer can't see, hence the suppression (see ProviderBootstrap.SafeIdentifier).
+#pragma warning disable EF1002
         foreach (var table in tables)
             await db.Database.ExecuteSqlRawAsync($"VACUUM (FULL) {ProviderBootstrap.SafeIdentifier(table)};", ct);
+#pragma warning restore EF1002
     }
 }

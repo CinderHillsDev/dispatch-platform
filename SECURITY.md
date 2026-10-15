@@ -44,7 +44,29 @@ hardening headers with no demonstrated impact; volumetric DoS; and social-engine
 - Source-IP allow-lists: `WebAuthMiddleware`, `ApiKeyMiddleware`, `CidrMailboxFilter`
 - Auth & throttling: `AuthEndpoints` + `LoginThrottle` (dashboard), `ConfiguredUserAuthenticator` +
   `SmtpAuthThrottle` (SMTP AUTH), `SqlApiKeyRepository` (bcrypt, constant-time verify)
-- Credential encryption at rest: `SecureConfig` (AES-256-GCM on Linux/macOS, DPAPI on Windows)
+- Credential encryption at rest: `SecureConfig` (AES-256-GCM on Linux/macOS, DPAPI on Windows) - including
+  the dashboard's own `webui.password_hash` row, rewritten encrypted on startup for hosts upgrading from
+  builds that stored it in the clear
 - Transport: `WebUi:TlsCertPath` enables dashboard HTTPS
+
+## Dependency monitoring
+
+Three package ecosystems are watched by Dependabot (`.github/dependabot.yml`): `github-actions`, the
+`npm` graph in `src/Dispatch.UI`, and the `nuget` graph. Grouped updates keep one PR per ecosystem per week.
+
+Two gaps are worth knowing about, because they hide real vulnerabilities:
+
+- **Transitive NuGet packages.** Without a committed `packages.lock.json`, Dependabot only sees the
+  `PackageReference` entries in the `.csproj` files, not what they pull in. A vulnerable transitive has to
+  be floored with a direct pin - see `Directory.Build.props` for the current example, and run
+  `dotnet list Dispatch.slnx package --vulnerable --include-transitive` to check the whole graph locally.
+- **Majors held back on purpose.** The EF Core family is pinned to the major the database providers are
+  built against (see the comment in `.github/dependabot.yml`). Holding a major back is a decision with an
+  expiry date, not a permanent state.
+
+For the npm graph, `overrides` in `src/Dispatch.UI/package.json` floor transitive advisories (build-time
+packages such as `postcss`, `source-map-js`, `browserslist` and `baseline-browser-mapping` are reachable
+through `vite`/`rollup` and are not always surfaced as Dependabot alerts). `npm audit` in that directory is
+the check.
 
 See [`docs/SPEC.md` §17](docs/SPEC.md) for the full security model.

@@ -20,11 +20,23 @@ updates:
       ui:
         patterns: ["*"]
 
-  # .NET NuGet dependencies.
+  # .NET NuGet dependencies. Each engine's EF Core provider is migrations-critical, so the EF Core family is
+  # held to the major the providers are built for; see the ignore block.
   - package-ecosystem: nuget
     directory: "/"
     schedule:
       interval: weekly
+    ignore:
+      # Pomelo.EntityFrameworkCore.MySql's newest release (9.0.0) is still built against EF Core 9 internals,
+      # so taking EF Core 10 resolves at runtime as MissingMethodException on
+      # Microsoft.EntityFrameworkCore.Diagnostics.AbstractionsStrings.ArgumentIsEmpty and kills the MySql
+      # backend (ProviderConformanceTests.Migrations_assembly_exists_and_contains_migrations catches it).
+      # Npgsql.EntityFrameworkCore.PostgreSQL must move with it. Patch/minor bumps inside 9.x still arrive;
+      # delete this block once a provider release targets EF Core 10.
+      - dependency-name: "Microsoft.EntityFrameworkCore*"
+        versions: [">= 10.0.0"]
+      - dependency-name: "Npgsql.EntityFrameworkCore.PostgreSQL"
+        versions: [">= 10.0.0"]
     groups:
       nuget:
         patterns: ["*"]
