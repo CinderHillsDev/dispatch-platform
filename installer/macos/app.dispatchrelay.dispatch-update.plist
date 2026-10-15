@@ -8,8 +8,10 @@
   /opt/dispatch/dispatch-update.sh as root, which does the swap, the restart and the rollback. Keeping the
   privilege in a separate job is what lets the service run as a service account and still update.
 
-  installer/macos/install.sh substitutes __HEALTH_PORT__ with the dashboard port so the applier knows where
-  to poll. It has no UserName key: it must write under /opt/dispatch, so it always runs as root.
+  installer/macos/install.sh substitutes the health-port placeholder below with the dashboard port, which
+  is where the applier polls /health. There is deliberately no UserName key: the applier writes under
+  /opt/dispatch, so it runs as root even when the service itself was told to run as a service account.
+  (XML comments may not contain a double hyphen, which is why the flag is not spelled out here.)
 -->
 <plist version="1.0">
 <dict>

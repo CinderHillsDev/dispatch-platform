@@ -467,17 +467,56 @@ jobs:
           set -uo pipefail
           plutil -lint installer/macos/*.plist
           bash -n installer/macos/*.sh
-          # The service plist carries two placeholders. Lint it BOTH ways, because the UserName line is only
-          # well-formed XML once install.sh has substituted it - and an unexpanded __USER__ or a stray "--"
-          # inside a comment is exactly the class of bug that passes review and fails at bootout.
-          for f in installer/macos/app.dispatchrelay.dispatch.plist; do
+
+          # Assert what install.sh's substitutions PRODUCE, read back with plutil -extract (the same call
+          # dispatch-update.sh uses to find the service account). Reading the parsed values instead of the
+          # raw text matters twice over: it proves the substitution landed where launchd will look, and it
+          # avoids tripping on the marker's own name - which these files' header comments mention in prose.
+          check_plist() {
+            local f="$1" sub out want
             for sub in "<key>UserName</key><string>_dispatch</string>" ""; do
+              if [ -n "$sub" ] && ! grep -q '<!-- __USER__ -->' "$f"; then continue; fi
               sed -e "s|<!-- __USER__ -->|$sub|" -e 's|__HEALTH_PORT__|8420|g' "$f" > /tmp/substituted.plist
-              plutil -lint /tmp/substituted.plist
-              grep -q '__USER__\|__HEALTH_PORT__' /tmp/substituted.plist && { echo "placeholder left unexpanded in $f"; exit 1; }
+              plutil -lint /tmp/substituted.plist >/dev/null || { echo "plutil rejected $f"; return 1; }
+
+              out="$(plutil -extract Label raw /tmp/substituted.plist)"
+              [ "$out" = "$(basename "$f" .plist)" ] || { echo "$f: Label is $out"; return 1; }
+
+              # The binary path is the one typo that makes launchd start something else, so pin it.
+              case "$f" in
+                *dispatch-update.plist) want="/opt/dispatch/dispatch-update.sh" ;;
+                *)                      want="/opt/dispatch/current/Dispatch.Service" ;;
+              esac
+              out="$(plutil -extract ProgramArguments.0 raw /tmp/substituted.plist)"
+              [ "$out" = "$want" ] || { echo "$f: ProgramArguments is $out, want $want"; return 1; }
+
+              # Only the watcher carries the health port; the service derives it from its own config.
+              case "$f" in
+                *dispatch-update.plist)
+                  out="$(plutil -extract EnvironmentVariables.DISPATCH_HEALTH_PORT raw /tmp/substituted.plist 2>/dev/null)"
+                  [ "$out" = "8420" ] || { echo "$f: health port is '$out'"; return 1; }
+                  ;;
+              esac
+
+              if [ -n "$sub" ]; then
+                out="$(plutil -extract UserName raw /tmp/substituted.plist 2>/dev/null)"
+                [ "$out" = "_dispatch" ] || { echo "$f: UserName substitution gave '$out'"; return 1; }
+              else
+                plutil -extract UserName raw /tmp/substituted.plist >/dev/null 2>&1 \
+                  && { echo "$f: gained a UserName key with no service account"; return 1; }
+              fi
             done
-          done
-          echo "OK: plists parse with plutil (with and without a UserName key); scripts pass bash -n"
+            echo "OK: $f substitutes and parses correctly"
+          }
+          check_plist installer/macos/app.dispatchrelay.dispatch.plist || exit 1
+          check_plist installer/macos/app.dispatchrelay.dispatch-update.plist || exit 1
+
+          # The applier must stay root no matter what --user says: it writes under /opt/dispatch. Giving it
+          # a marker here would be the bug, so assert its absence rather than relying on the loop skipping.
+          if grep -q '<!-- __USER__ -->' installer/macos/app.dispatchrelay.dispatch-update.plist; then
+            echo "the update watcher must not take a UserName key"; exit 1
+          fi
+          echo "OK: plists parse with plutil; scripts pass bash -n"
 
       - name: Setup .NET 10
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
