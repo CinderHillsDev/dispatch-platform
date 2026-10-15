@@ -95,10 +95,28 @@ public static class AuthEndpoints
     {
         if (ValidatePassword(password) is { } error) return error;
         var hasPassword = !string.IsNullOrEmpty(await config.GetAsync(PasswordHashKey, ct));
-        await config.SetAsync(PasswordHashKey, BCrypt.Net.BCrypt.HashPassword(password, 12), encrypted: false, ct);
+        await config.SetAsync(PasswordHashKey, BCrypt.Net.BCrypt.HashPassword(password, 12), encrypted: true, ct);
         if (hasPassword)
             await config.SetAsync(ConfigKeys.WebUiSessionEpoch, (await ReadEpochAsync(config, ct) + 1).ToString(), encrypted: false, ct);
         return null;
+    }
+
+    /// <summary>
+    /// Re-wraps an already stored admin password hash with at-rest encryption. Releases up to 0.7.2 wrote the
+    /// bcrypt hash into a plain config row (<c>encrypted: false</c>), which left it readable by anyone who can
+    /// dump the <c>config</c> table. <see cref="IConfigRepository.GetAsync"/> honours each row's own flag, so
+    /// rewriting the value through <see cref="SetAsync"/> is safe mid-flight and a no-op on hosts that never
+    /// had a plaintext hash (or whose admin has since changed the password). Returns true when a row was
+    /// rewritten, so the host can log it. Called at startup (Dispatch.Service) - see SECURITY.md.
+    /// </summary>
+    public static async Task<bool> EncryptStoredPasswordHashAsync(IConfigRepository config, CancellationToken ct = default)
+    {
+        var plain = (await config.GetAllAsync(ct))
+            .FirstOrDefault(e => e.Key == PasswordHashKey && !e.Encrypted && e.Value.Length > 0);
+        if (plain is null) return false;
+
+        await config.SetAsync(PasswordHashKey, plain.Value, encrypted: true, ct);
+        return true;
     }
 
     public const string SessionEpochClaim = "epoch";

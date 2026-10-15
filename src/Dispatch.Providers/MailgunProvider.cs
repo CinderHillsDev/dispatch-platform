@@ -41,7 +41,13 @@ public sealed class MailgunProvider(RelayConfig config, HttpClient http) : IRela
 
         using var content = new MultipartFormDataContent();
         foreach (var recipient in message.ToAddresses)
+        {
+            // Recipients come from the relayed message's envelope; reject control characters (CR/LF/NUL)
+            // before they reach the multipart body, so a crafted address can't inject extra form fields.
+            if (recipient.AsSpan().IndexOfAny('\r', '\n', '\0') >= 0)
+                throw new InvalidOperationException("Mailgun relay recipient contains invalid control characters.");
             content.Add(new StringContent(recipient), "to");
+        }
 
         var mimePart = new ByteArrayContent(mime);
         mimePart.Headers.ContentType = new MediaTypeHeaderValue("message/rfc822");

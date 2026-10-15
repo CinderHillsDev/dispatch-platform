@@ -68,4 +68,46 @@ public class AdminPasswordResetTests
         Assert.Null(error);
         Assert.Equal("1", await config.GetAsync(ConfigKeys.WebUiSessionEpoch));
     }
+
+    [Fact]
+    public async Task The_password_hash_is_stored_encrypted_at_rest()
+    {
+        // The bcrypt hash is the credential: with it an attacker who can read the config table (a backup,
+        // a dump, a path traversal) gets an offline brute-force target. It must land in an encrypted row,
+        // like every other secret in the table (see SecureConfig).
+        var config = new FakeConfigRepository();
+
+        Assert.Null(await AuthEndpoints.SetPasswordAsync(config, "Str0ngPassphrase"));
+
+        var row = Assert.Single(await config.GetAllAsync(), e => e.Key == AuthEndpoints.PasswordHashKey);
+        Assert.True(row.Encrypted);
+    }
+
+    [Fact]
+    public async Task A_hash_written_by_an_older_build_is_rewritten_encrypted_and_still_verifies()
+    {
+        // 0.7.2 and earlier wrote this row with encrypted: false, so an upgraded host keeps a plaintext
+        // credential until the startup rewrite runs. The rewrite must preserve the hash (login still works)
+        // and must be idempotent.
+        var config = new FakeConfigRepository();
+        var hash = BCrypt.Net.BCrypt.HashPassword("LegacyPassphrase99", 12);
+        await config.SetAsync(AuthEndpoints.PasswordHashKey, hash, encrypted: false);
+
+        Assert.True(await AuthEndpoints.EncryptStoredPasswordHashAsync(config));
+
+        var row = Assert.Single(await config.GetAllAsync(), e => e.Key == AuthEndpoints.PasswordHashKey);
+        Assert.True(row.Encrypted);
+        Assert.True(BCrypt.Net.BCrypt.Verify("LegacyPassphrase99", row.Value));
+
+        Assert.False(await AuthEndpoints.EncryptStoredPasswordHashAsync(config));
+    }
+
+    [Fact]
+    public async Task The_hash_rewrite_does_nothing_before_a_password_exists()
+    {
+        var config = new FakeConfigRepository();
+
+        Assert.False(await AuthEndpoints.EncryptStoredPasswordHashAsync(config));
+        Assert.Null(await config.GetAsync(AuthEndpoints.PasswordHashKey));
+    }
 }

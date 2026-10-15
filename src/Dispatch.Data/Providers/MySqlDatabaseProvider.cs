@@ -144,8 +144,10 @@ public sealed class MySqlDatabaseProvider : IDatabaseProvider
     /// </summary>
     public async Task ReclaimSpaceAsync(DbContext db, IReadOnlyList<string> tables, CancellationToken ct = default)
     {
+#pragma warning disable EF1002 // identifier is validated by SafeIdentifier; see ProviderBootstrap
         foreach (var table in tables)
             await db.Database.ExecuteSqlRawAsync(
                 $"ALTER TABLE `{ProviderBootstrap.SafeIdentifier(table)}` ENGINE=InnoDB;", ct);
+#pragma warning restore EF1002
     }
 }

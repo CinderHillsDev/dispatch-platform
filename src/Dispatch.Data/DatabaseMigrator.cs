@@ -148,13 +148,20 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
 
                 if (identityInsert && table is not null)
                 {
+                    // Table names can't be bound as parameters, so they're interpolated - the identifier is
+                    // model-derived, but SafeIdentifier keeps it that way (see ProviderBootstrap).
+                    var ident = Providers.ProviderBootstrap.SafeIdentifier(table);
                     await db.Database.OpenConnectionAsync(ct);
                     try
                     {
-                        await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT [{table}] ON;", ct);
+                        // Identifiers can't be parameters; SafeIdentifier guards the interpolation, and the
+                        // analyzer can't follow it, hence the suppression (see ProviderBootstrap.SafeIdentifier).
+#pragma warning disable EF1002
+                        await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT [{ident}] ON;", ct);
                         set(db).AddRange(batch);
                         await db.SaveChangesAsync(ct);
-                        await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT [{table}] OFF;", ct);
+                        await db.Database.ExecuteSqlRawAsync($"SET IDENTITY_INSERT [{ident}] OFF;", ct);
+#pragma warning restore EF1002
                     }
                     finally
                     {
@@ -229,11 +236,14 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
         await using var db = await target.CreateDbContextAsync(ct);
         foreach (var table in tables)
         {
+            // The list above is ours, but every statement below interpolates the name (setval/DBCC take a
+            // literal, not a parameter), so validate it rather than trusting the call site.
+            var ident = Providers.ProviderBootstrap.SafeIdentifier(table);
             if (provider == DatabaseProvider.Postgres)
             {
                 await db.Database.ExecuteSqlRawAsync(
-                    $"SELECT setval(pg_get_serial_sequence('{table}', 'id'), " +
-                    $"COALESCE((SELECT MAX(id) FROM {table}), 1), true);", ct);
+                    $"SELECT setval(pg_get_serial_sequence('{ident}', 'id'), " +
+                    $"COALESCE((SELECT MAX(id) FROM {ident}), 1), true);", ct);
             }
             else
             {
@@ -241,10 +251,16 @@ public sealed class DatabaseMigrator(ILogger<DatabaseMigrator>? log = null)
                 // maximum is read first. Skipped for an empty table: there is nothing to reseed past, and
                 // reseeding to 0 would be a behaviour change rather than a correction.
                 var max = await Providers.ProviderBootstrap.ScalarAsync(
-                    db, $"SELECT COALESCE(MAX(id), 0) FROM [{table}];", ct);
+                    db, $"SELECT COALESCE(MAX(id), 0) FROM [{ident}];", ct);
                 if (max > 0)
+                {
+                    // Both the identifier and the reseed value are literals (a validated name, a long read
+                    // back from the table) - DBCC CHECKIDENT accepts neither as a parameter.
+#pragma warning disable EF1002
                     await db.Database.ExecuteSqlRawAsync(
-                        $"DBCC CHECKIDENT ('{table}', RESEED, {max}) WITH NO_INFOMSGS;", ct);
+                        $"DBCC CHECKIDENT ('{ident}', RESEED, {max}) WITH NO_INFOMSGS;", ct);
+#pragma warning restore EF1002
+                }
             }
         }
     }

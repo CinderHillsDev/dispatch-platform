@@ -123,9 +123,11 @@ public sealed class SqlServerDatabaseProvider : IDatabaseProvider
     /// </summary>
     public async Task ReclaimSpaceAsync(DbContext db, IReadOnlyList<string> tables, CancellationToken ct = default)
     {
+#pragma warning disable EF1002 // identifier is validated by SafeIdentifier; see ProviderBootstrap
         foreach (var table in tables)
             await db.Database.ExecuteSqlRawAsync(
                 $"ALTER INDEX ALL ON [{ProviderBootstrap.SafeIdentifier(table)}] REBUILD;", ct);
+#pragma warning restore EF1002
 
         await db.Database.ExecuteSqlRawAsync("DBCC SHRINKDATABASE(0) WITH NO_INFOMSGS;", ct);
     }
