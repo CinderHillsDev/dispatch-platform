@@ -449,3 +449,144 @@ jobs:
       # installs the real self-contained tarball (install.sh --prebuilt) against a locally-installed
       # PostgreSQL and checks /health, mirroring the Windows full-install smoke. This job stays a fast lint
       # of install.sh.
+
+  # macOS installer + daemon. These scripts were authored on Linux, so only a macOS runner can prove they
+  # work: plutil parses the LaunchDaemons the way launchd does (one malformed key makes launchd reject the
+  # WHOLE file, which looks like "nothing happened, no error"), and the smoke installs the real tarball and
+  # lets launchd supervise the process. The heavy part publishes a ~150 MB self-contained bundle, so like
+  # the Linux/Windows smokes it runs on installer pushes and manual dispatch, not every PR (macOS minutes
+  # are free on this public repo but still metered).
+  macos-tarball:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Cheap and always on: the syntax gate that catches the mistakes specific to this platform.
+      - name: Lint the LaunchDaemon property lists + the shell scripts
+        run: |
+          set -uo pipefail
+          plutil -lint installer/macos/*.plist
+          bash -n installer/macos/*.sh
+          # The service plist carries two placeholders. Lint it BOTH ways, because the UserName line is only
+          # well-formed XML once install.sh has substituted it - and an unexpanded __USER__ or a stray "--"
+          # inside a comment is exactly the class of bug that passes review and fails at bootout.
+          for f in installer/macos/app.dispatchrelay.dispatch.plist; do
+            for sub in "<key>UserName</key><string>_dispatch</string>" ""; do
+              sed -e "s|<!-- __USER__ -->|$sub|" -e 's|__HEALTH_PORT__|8420|g' "$f" > /tmp/substituted.plist
+              plutil -lint /tmp/substituted.plist
+              grep -q '__USER__\|__HEALTH_PORT__' /tmp/substituted.plist && { echo "placeholder left unexpanded in $f"; exit 1; }
+            done
+          done
+          echo "OK: plists parse with plutil (with and without a UserName key); scripts pass bash -n"
+
+      - name: Setup .NET 10
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Node
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/Dispatch.UI/package-lock.json
+
+      - name: Build + embed the web UI
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        run: ( cd src/Dispatch.UI && npm ci && npm run build ) && rm -rf src/Dispatch.Web/wwwroot && mkdir -p src/Dispatch.Web/wwwroot && cp -R src/Dispatch.UI/dist/. src/Dispatch.Web/wwwroot/
+
+      - name: Publish self-contained (this host's arch)
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        run: |
+          set -uo pipefail
+          case "$(uname -m)" in arm64) RID=osx-arm64;; *) RID=osx-x64;; esac
+          echo "Publishing $RID"
+          dotnet publish src/Dispatch.Service -c Release -r "$RID" --self-contained true -p:Version=0.0.0-ci -o publish
+
+      # Only the arch this runner can execute is populated; the other bin-* dir is deliberately absent, so
+      # install.sh's selection cannot pass on a mis-detection.
+      - name: Assemble the tarball
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        id: bundle
+        run: |
+          set -uo pipefail
+          case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
+          stage="dispatch-ci-macos-$A"
+          mkdir -p "staging/${stage}/bin-${A}"
+          cp -R publish/. "staging/${stage}/bin-${A}/"
+          cp installer/macos/install.sh installer/macos/dispatch-update.sh \
+             installer/macos/app.dispatchrelay.dispatch.plist \
+             installer/macos/app.dispatchrelay.dispatch-update.plist "staging/${stage}/"
+          cp src/Dispatch.Core/Updates/dispatch-update-public.pem "staging/${stage}/"
+          chmod +x "staging/${stage}/install.sh" "staging/${stage}/dispatch-update.sh" "staging/${stage}/bin-${A}/Dispatch.Service"
+          tar -czf "${stage}.tar.gz" -C staging "${stage}"
+          ls -lh "${stage}.tar.gz"
+
+      - name: Upload tarball artifact
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dispatch-macos-tarball
+          path: dispatch-ci-macos-*.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+      # Real end-to-end check: a default install (bundled SQLite, no database server, daemon as root so it
+      # binds SMTP 25), then /health, then the things a Mac-specific failure would break.
+      - name: Full install + smoke
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        env:
+          ADMIN_PW: "Ci-Smoke-Passw0rd!"
+        run: |
+          set -uo pipefail
+          tarball="$(ls dispatch-ci-macos-*.tar.gz)"
+          mkdir -p /tmp/extract && tar -xzf "$tarball" -C /tmp/extract
+          dir="/tmp/extract/${tarball%.tar.gz}"
+          sudo "$dir/install.sh" --admin-password "$ADMIN_PW" || { echo "install.sh FAILED"; exit 1; }
+
+          ok=0
+          for _ in $(seq 1 36); do
+            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 5
+          done
+          if [ "$ok" != 1 ]; then
+            echo "=== launchctl print (service) ==="; sudo launchctl print system/app.dispatchrelay.dispatch 2>&1 | tail -60
+            echo "=== launchctl print (watcher) ==="; sudo launchctl print system/app.dispatchrelay.dispatch-update 2>&1 | tail -30
+            echo "=== syslog ==="; log show --last 3m --style syslog --predicate 'process == "Dispatch.Service"' 2>&1 | tail -60
+            echo "=== app logs ==="; sudo tail -n 60 /var/log/dispatch/dispatch.jsonl 2>/dev/null
+            echo "=== stdout/stderr sinks ==="; sudo tail -n 40 /var/log/dispatch/*.log 2>/dev/null
+            echo "=== codesign ==="; sudo codesign --verify --verbose=2 /opt/dispatch/current/Dispatch.Service 2>&1
+            echo "=== listening sockets ==="; sudo lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | grep -i dispatch
+            echo "health check failed"; exit 1
+          fi
+          curl -fsSk https://localhost:8420/health; echo "  <- /health OK"
+
+          # launchd must be supervising it (a hand-launched process would also pass /health).
+          sudo launchctl print system/app.dispatchrelay.dispatch | grep -q "state = running" || { echo "not launchd-supervised"; exit 1; }
+          sudo launchctl print system/app.dispatchrelay.dispatch-update >/dev/null || { echo "the update watcher is not loaded"; exit 1; }
+          # The secret store: SQLite database + its mode-600 key, created at startup.
+          sudo test -f /var/db/dispatch/dispatch.db || { echo "dispatch.db missing"; exit 1; }
+          sudo test -f /var/db/dispatch/.dispatch-key || { echo ".dispatch-key missing"; exit 1; }
+          [ "$(sudo stat -f '%Lp' /var/db/dispatch/.dispatch-key)" = "600" ] || { echo ".dispatch-key is not mode 600"; exit 1; }
+          sudo sqlite3 /var/db/dispatch/dispatch.db "PRAGMA journal_mode;" | grep -qi wal || { echo "WAL not enabled"; exit 1; }
+          # SMTP must be bound on 25 - the whole point of running the daemon as root by default.
+          (echo >/dev/tcp/127.0.0.1/25) 2>/dev/null || { echo "port 25 is not bound"; exit 1; }
+          # The watcher fires whenever a watched path is touched, so with no request pending the applier must
+            # be a clean no-op rather than a swap attempt.
+          sudo test ! -e /var/db/dispatch/updates/apply.request
+          sudo /opt/dispatch/dispatch-update.sh || { echo "the applier is not a no-op without apply.request"; exit 1; }
+          echo "OK: installed, launchd-supervised, healthy, port 25 bound, secrets at mode 600"
+
+      - name: Uninstall removes the daemon and leaves the data
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        run: |
+          set -uo pipefail
+          tarball="$(ls dispatch-ci-macos-*.tar.gz)"
+          dir="/tmp/extract/${tarball%.tar.gz}"
+          sudo "$dir/install.sh" --uninstall
+          sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 && { echo "daemon still loaded after uninstall"; exit 1; }
+          test ! -e /Library/LaunchDaemons/app.dispatchrelay.dispatch.plist || { echo "plist left behind"; exit 1; }
+          sudo test -d /var/db/dispatch || { echo "uninstall deleted the data dir - it must not"; exit 1; }
+          echo "OK: uninstalled cleanly, data preserved"

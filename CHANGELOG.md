@@ -44,6 +44,19 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
   router state, route-matching DoS), plus transitive floors for `postcss`, `source-map-js`, `browserslist`
   and `baseline-browser-mapping`. `npm audit` is clean in `src/Dispatch.UI`.
 
+### Added
+
+- **macOS is now a supported install target.** A release ships `dispatch-<ver>-macos.tar.gz` - one universal,
+  self-contained bundle for Apple Silicon and Intel - installed by `installer/macos/install.sh` as a launchd
+  LaunchDaemon, with the same flags and on-disk shape as Linux (`/opt/dispatch` + `/var/db/dispatch`) and the
+  same bundled-SQLite default. The dashboard's upgrade package gained `osx-arm64` and `osx-x64` payloads, so
+  a Mac can stage *and* apply an update: a `WatchPaths` job runs a root applier that re-verifies the manifest
+  signature, swaps the release symlink, polls `/health`, and rolls back if the new version never comes up.
+  The daemon runs as root by default because macOS, unlike Linux, has no way to let an unprivileged process
+  bind port 25; `--user <name>` opts out and SMTP falls back to 2525 as it does wherever 25 cannot be bound.
+  Binaries are ad-hoc signed, not notarized. See [`docs/macos.md`](docs/macos.md); a macOS runner now lints
+  the property lists with `plutil` and runs a real install / update-applier / uninstall smoke.
+
 ### Changed
 
 - Dependabot no longer proposes EF Core majors (`Microsoft.EntityFrameworkCore*`,
