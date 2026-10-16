@@ -367,6 +367,11 @@ install -m 644 "$TMP_PLISTS/$LABEL.plist"        "$DAEMON_DIR/$LABEL.plist"
 install -m 644 "$TMP_PLISTS/$UPDATE_LABEL.plist" "$DAEMON_DIR/$UPDATE_LABEL.plist"
 rm -rf "$TMP_PLISTS"
 install -m 755 "$PLIST_SRC/dispatch-update.sh"   "$INSTALL_DIR/dispatch-update.sh"
+# Keep a copy of this script outside the release symlink, so the machine carries its own uninstaller and
+# re-configurer. A .pkg already leaves one at /opt/dispatch/pkg/install.sh, but a tarball install left
+# nothing: after the download folder was deleted there was no command to run and no way to find out the
+# service was even installed (it has no /Applications entry - it is a LaunchDaemon, not an app).
+install -m 755 "$SCRIPT_DIR/install.sh" "$INSTALL_DIR/install.sh"
 # Release public key for the updater's independent signature re-verify (defense-in-depth over the app check).
 PUBKEY_SRC="$PLIST_SRC/dispatch-update-public.pem"
 [[ -f "$PUBKEY_SRC" ]] || PUBKEY_SRC="$SOURCE_DIR/src/Dispatch.Core/Updates/dispatch-update-public.pem"
@@ -383,6 +388,15 @@ if [[ "$NO_START" == "1" ]]; then
   echo "      sudo launchctl bootstrap system $DAEMON_DIR/$LABEL.plist)"
   exit 0
 fi
+# Clear any persisted "disabled" override before loading. `launchctl disable` writes an override keyed by the
+# service LABEL into launchd's own database, and it survives deleting the plist and reinstalling the product.
+# Since this script's own --uninstall calls disable, a machine that was ever uninstalled and then reinstalled
+# would bootstrap with exit status 0, print a success banner, and never start anything - launchd honors the
+# stale override over RunAtLoad and KeepAlive alike. enable + bootstrap is the documented pairing.
+for _l in "$LABEL" "$UPDATE_LABEL"; do
+  launchctl enable "system/${_l}" >/dev/null 2>&1 || true
+done
+
 if ! launchctl bootstrap system "$DAEMON_DIR/$LABEL.plist" 2>/dev/null; then
   launchctl load -w "$DAEMON_DIR/$LABEL.plist" 2>/dev/null \
     || { echo "ERROR: launchd refused to load $DAEMON_DIR/$LABEL.plist (plutil -lint says: $(plutil -lint "$DAEMON_DIR/$LABEL.plist" 2>&1))" >&2; exit 1; }
@@ -402,12 +416,42 @@ if [[ "$NO_FIREWALL" != "1" ]] && [[ -x /usr/libexec/ApplicationFirewall/socketf
   fi
 fi
 
+# Prove it came up. Everything above can succeed while nothing is actually running - a stale launchd
+# override, a signature the kernel refuses to exec, a dashboard port already held by something else. Until
+# now this script asserted success regardless, which on the .pkg path (where install.sh's stdout goes to a
+# log file nobody opens) leaves the operator with "I installed it and nothing happened" and no lead. So poll
+# /health, and if it never answers, print what launchd and the daemon say and exit non-zero - that turns a
+# silently dead install into a FAILED one in Installer.app, which is the honest outcome.
+echo "==> Waiting for the dashboard on https://localhost:$HTTP_PORT"
+up=""
+for _i in $(seq 1 30); do
+  if curl -fsSk -m 3 "https://localhost:$HTTP_PORT/health" >/dev/null 2>&1; then up=1; break; fi
+  sleep 2
+done
+if [[ -z "$up" ]]; then
+  echo "ERROR: Dispatch is not answering https://localhost:$HTTP_PORT after 60s." >&2
+  echo "       launchd's view of the job:" >&2
+  launchctl print "system/$LABEL" 2>&1 \
+    | { grep -E "^[[:space:]]*(state|pid|last exit code|exit reason|runs|run type|program)" || echo "         (launchd has no such job loaded)"; } \
+    | sed 's/^/         /' >&2
+  echo "       last lines of $LOG_DIR/launchd.err.log:" >&2
+  { tail -5 "$LOG_DIR/launchd.err.log" 2>/dev/null | sed 's/^/         /' >&2 \
+      || echo "         (no such file - which usually means launchd never exec'd the binary at all)"; } >&2
+  echo "       last lines of $LOG_DIR/dispatch.jsonl:" >&2
+  { tail -3 "$LOG_DIR/dispatch.jsonl" 2>/dev/null | cut -c1-400 | sed 's/^/         /' >&2 \
+    || echo "         (no application log yet)"; } >&2
+  echo "       Port in use by something else? sudo lsof -nP -iTCP:$HTTP_PORT -sTCP:LISTEN" >&2
+  echo "       Everything install.sh printed: cat /tmp/dispatch-pkg-postinstall.log (pkg) or the terminal above." >&2
+  exit 1
+fi
+
 echo
 echo "Dispatch is installed and running."
 echo "  Dashboard: https://localhost:$HTTP_PORT  (self-signed cert; log in with the admin password you set)"
 echo "  SMTP:      25 and 587, falling back to 2525 when 25 cannot be bound (in use, or unprivileged)"
 echo "  Ports, retention and other settings are managed in the dashboard."
 echo "  Status:    sudo launchctl print system/${LABEL}"
+echo "  Uninstall: sudo $INSTALL_DIR/install.sh --uninstall"
 echo "  Logs:      $LOG_DIR  (and: log show --last 10m --predicate 'process == \"Dispatch.Service\"')"
 if [[ -z "$SERVICE_USER" ]]; then
   echo "  The daemon runs as root so it can bind SMTP 25/587 (macOS has no CAP_NET_BIND_SERVICE)."
