@@ -35,4 +35,14 @@ public class SmtpPortGuardTests
         var settings = new Dictionary<string, string?> { ["Port"] = "25" };
         Assert.False(SmtpPortGuard.UsesOutboundPort25(provider, settings));
     }
+
+    [Theory]
+    [InlineData(RelayProviderType.GoogleWorkspace)]
+    [InlineData(RelayProviderType.Microsoft365)]
+    public void Direct_mx_providers_are_always_flagged(RelayProviderType provider)
+    {
+        // Direct MX delivery has no configurable port - it's always 25, whatever settings happen to hold.
+        Assert.True(SmtpPortGuard.UsesOutboundPort25(provider, new Dictionary<string, string?>()));
+        Assert.True(SmtpPortGuard.UsesOutboundPort25(provider, new Dictionary<string, string?> { ["Port"] = "587" }));
+    }
 }

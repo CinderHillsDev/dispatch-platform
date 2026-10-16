@@ -21,4 +21,14 @@ public enum RelayProviderType
     Smtp2Go,
     Maileroo,
     Bird,
+
+    /// <summary>Direct, unauthenticated delivery to Google Workspace's unified inbound mail endpoint
+    /// (smtp.google.com). Every Workspace domain shares this same endpoint, so there is nothing per-domain
+    /// to configure - only use it for domains actually hosted on Google Workspace.</summary>
+    GoogleWorkspace,
+
+    /// <summary>Direct, unauthenticated delivery to a Microsoft 365 tenant's inbound mail endpoint
+    /// (&lt;tenant&gt;.mail.protection.outlook.com). Unlike Google Workspace this is tenant-specific, so the
+    /// hostname must be typed in.</summary>
+    Microsoft365,
 }
