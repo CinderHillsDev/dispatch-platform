@@ -472,7 +472,8 @@ jobs:
           # 644 while the Linux ones are 755, and every way of copying them into an artifact - cp, ditto,
           # pkgbuild - preserves the mode it is handed, so a checkout with 644 scripts ships an installer that
           # dies with a bare 126 behind a password prompt. build-app.sh checks this too, but only for
-          # install.sh; the check belongs in git, not in one packaging script.
+          # install.sh; the check belongs in git, not in one packaging script. (It immediately failed on
+          # build-app.sh itself, which the write tool created 644.)
           for f in installer/macos/install.sh installer/macos/dispatch-update.sh \
                    installer/macos/build-app.sh; do
             m="$(git ls-files -s "$f" | awk '{print $1}')"
