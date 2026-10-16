@@ -39,11 +39,12 @@ A small embedded web UI - served directly from the process on port 8420 - lets a
 
 **Key design goals:**
 
-- Zero external runtime dependencies - single self-contained executable on both Windows and Linux
+- Zero external runtime dependencies - single self-contained executable on Windows, Linux and macOS
 - **Dual ingest** - accept mail via SMTP or HTTP API; same spool pipeline, same delivery guarantees
 - Embedded ASP.NET Core web UI for configuration, log inspection, and API key management
 - Windows: installs as a Windows Service via MSI
 - Linux: runs as a systemd unit
+- macOS: runs as a launchd LaunchDaemon ([`docs/macos.md`](macos.md))
 - Provider-agnostic relay - swap between Mailgun, SendGrid, SMTP, Azure Communication Services, or others through the UI without restarting
 - Free and open source - released under the Apache License 2.0; no license key required to run
 
@@ -149,6 +150,7 @@ Dispatch/
   installer/
     windows/                # WiX v6 .wxs files for MSI
     linux/                  # dispatch.service systemd unit template + install.sh
+    macos/                  # install.sh, the two LaunchDaemons, the update applier
   docs/                     # Architecture diagrams, user guide
   tests/
     Dispatch.Core.Tests/
@@ -162,7 +164,8 @@ Dispatch/
 | OS | Default path |
 |---|---|
 | Windows | `C:\ProgramData\Dispatch\spool\` |
-| Linux | `/var/lib/dispatch/spool/` |
+| Linux | `/var/lib/dispatch/.dispatch-spool/` |
+| macOS | `/var/db/dispatch/.dispatch-spool/` |
 
 ---
 
@@ -279,7 +282,7 @@ PostgreSQL is written to **only after** the provider responds. If PostgreSQL is 
 | OS | Default path |
 |---|---|
 | Windows | `C:\ProgramData\Dispatch\spool\` |
-| Linux | `/var/lib/dispatch/spool/` |
+| Linux | `/var/lib/dispatch/.dispatch-spool/` |
 
 The path is configurable in the web UI under **Settings → Storage & Retention** (stored in the `config` table as `spool.directory`).
 
@@ -2213,9 +2216,10 @@ Every relay lifecycle event written to `relay_log` carries these properties:
 ### 13.4 Log File Locations
 
 | OS | Default path |
-|---|---|\
+|---|---|
 | Windows | `C:\ProgramData\Dispatch\logs\dispatch-.log` |
 | Linux | `/var/log/dispatch/dispatch-.log` |
+| macOS | `/var/log/dispatch/dispatch-.log` (plus the launchd stdout/stderr sinks in the same directory) |
 
 ### 13.5 Retention and Purge
 
@@ -2510,16 +2514,18 @@ GET /health
 
 HTTP status codes: `200` for healthy or degraded, `503` for critical (so uptime checkers alert correctly).
 
-### 14.5 Spool File Security (Linux)
+### 14.5 Spool File Security (Linux and macOS)
 
 `.eml` files contain email content including potentially sensitive message bodies. On Linux:
 
 - The `dispatch` service runs as a dedicated `dispatch` system user
-- `spool/` and all subdirectories are owned by `dispatch:dispatch` with mode `700`
+- `.dispatch-spool/` and all subdirectories are owned by `dispatch:dispatch` with mode `700`
 - Individual `.eml` and `.meta` files are created with mode `600`
 - The `install.sh` script enforces these permissions and the systemd unit runs with `PrivateTmp=true` and `ProtectHome=true`
 
 On Windows, the spool directory under `C:\ProgramData\Dispatch\spool\` is created with ACLs that grant access only to the `NETWORK SERVICE` account the service runs under and local administrators.
+
+macOS takes the Linux path: `SpoolDirectory` guards the permission code with `!OperatingSystem.IsWindows()`, so `.dispatch-spool/` and its subdirectories are mode `700` and `.eml` / `.meta` files mode `600`, created with the daemon's umask (the LaunchDaemon sets `Umask` 0077, matching systemd's `UMask=0077`). `install.sh` pre-creates the directories so the modes are right from the first message rather than after the first restart. There is no `PrivateTmp` / `ProtectHome` equivalent; the data root is mode 700 instead.
 
 ---
 
@@ -3196,6 +3202,28 @@ curl -sSL https://github.com/yourorg/dispatch/releases/download/v1.1.0/install.s
   sudo bash -s -- --upgrade --silent
 ```
 
+### 16.7 macOS
+
+macOS installs the same way (`install.sh`, same flags, same bundled-SQLite default) but with `launchd` where
+section 16.3 uses systemd, and `/var/db/dispatch` where it uses `/var/lib/dispatch`. Two differences are
+load-bearing rather than cosmetic, so they are stated here as well as in
+[`docs/macos.md`](macos.md):
+
+- **The daemon runs as root by default.** macOS has no `CAP_NET_BIND_SERVICE`, so an unprivileged process
+  cannot bind 25/587 at all. `--user <name>` opts into an unprivileged service, and the SMTP listener then
+  falls back to 2525 - the same fallback it already uses on Linux when the capability is absent.
+- **The update applier is a `WatchPaths` job, not a `Type=notify` service.** systemd's `Type=notify` makes
+  `systemctl restart` return only when the new version is ready, so Linux gets its health gate for free. A
+  `launchd` restart returns immediately, so `dispatch-update.sh` polls `/health` itself before deciding the
+  update succeeded, and rolls the symlink back if it never passes.
+
+macOS ships two artifacts: the tarball whose `install.sh` is described above, and
+`dispatch-{version}-macos.pkg` - a flat package whose payload is the same staged tree and whose postinstall
+execs that same `install.sh`, so there is one install logic rather than a third copy to keep in sync. The
+package is unsigned because CI holds no Developer ID identity, which is why
+[`docs/macos.md`](macos.md#install-with-the-pkg) installs it with `installer -pkg` from a terminal instead of
+by opening it.
+
 ---
 
 ## 17. Security Considerations
@@ -3518,9 +3546,13 @@ GitHub Actions handles all CI/CD automation.
 | Publish Windows x64 service | `dotnet publish -r win-x64 --self-contained` |
 | Publish Windows bootstrap EXE | `dotnet publish Dispatch.Bootstrap.Windows -r win-x64 --self-contained` |
 | Publish Linux x64 | `dotnet publish -r linux-x64 --self-contained` |
+| Publish macOS arm64 / x64 | `dotnet publish -r osx-arm64 --self-contained` (and `osx-x64`, cross-published) |
+| Ad-hoc sign the macOS apphost | `codesign --force --sign -` on a macOS runner (Apple Silicon will not exec an unsigned Mach-O) |
 | Build MSI | `dotnet build installer/windows` (WiX v6 MSBuild integration) |
 | Bundle bootstrap + MSI → Setup.exe | WiX Burn bootstrapper chain |
 | Build Linux tarball | `tar` packaging of binary + `install.sh` |
+| Build macOS tarball | `tar` packaging of both arch payloads + `install.sh` + the two LaunchDaemons |
+| Build macOS .pkg | `pkgbuild` of the same staged tree + a postinstall that execs its `install.sh` (`installer/macos/build-pkg.sh`) |
 | GitHub Release | Triggered on version tag push (`v*`) |
 
 ### 18.2 Release Artefacts
@@ -3528,6 +3560,8 @@ GitHub Actions handles all CI/CD automation.
 - `DispatchSetup-{version}-x64.exe` - **Windows bootstrap installer** (run this; bundles the MSI internally)
 - `Dispatch-{version}-x64.msi` - Windows MSI (for IT admins doing scripted/silent deploys after manual DB setup)
 - `Dispatch-{version}-linux-x64.tar.gz` - Linux self-contained archive (binary + `install.sh`)
+- `dispatch-{version}-macos.tar.gz` - universal macOS archive (arm64 + Intel payloads, `install.sh`, the launchd property lists + the update applier)
+- `dispatch-{version}-macos.pkg` - universal macOS package installer: the same payloads and the same `install.sh`, driven by a postinstall instead of a shell. Unsigned, so `sudo installer -pkg <file> -target /` rather than a double-click ([`docs/macos.md`](macos.md#install-with-the-pkg))
 - `install.sh` - Linux bootstrap script (also available standalone for `curl | bash` installs)
 - `SHA256SUMS` - checksums for all release files
 

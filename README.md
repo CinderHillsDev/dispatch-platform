@@ -5,7 +5,7 @@
 **Self-hosted .NET email relay - forward mail from your apps to any cloud provider**
 
 [![Build](https://github.com/CinderHillsDev/dispatch-platform/actions/workflows/build.yml/badge.svg)](https://github.com/CinderHillsDev/dispatch-platform/actions)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)](https://docs.dispatchrelay.app/deployment/overview/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Docker-lightgrey)](https://docs.dispatchrelay.app/deployment/overview/)
 
 Point your applications and devices at Dispatch over **SMTP** (the standard ports **25** and **587** by default - it falls back to **2525** only if 25 is already taken) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services - or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
 
@@ -52,7 +52,17 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 - **Secure by default** - HTTPS-only dashboard, a shared TLS cert for SMTP + the API, bcrypt-hashed passwords & API keys, encrypted secrets at rest, CIDR allow-lists so it's never an open relay.
 - **Privacy first - no call home** - no telemetry, no analytics, no usage stats, no automatic update pings. The only outbound connections are to the mail providers you configure; updates are applied from a signed package you upload yourself.
 - **Observability** - unauthenticated `/health` and Prometheus `/metrics` (dashboard-port, allow-list-gated).
-- **Deploy anywhere** - Windows & Linux installers, a multi-arch Docker image, or a ready-to-import virtual appliance for Hyper-V, VMware, KVM & Proxmox. No database server to install: Dispatch bundles SQLite, or points at a PostgreSQL, MariaDB/MySQL or SQL Server you already run ([docs/database.md](docs/database.md)).
+- **Deploy anywhere** - Windows, Linux & macOS installers, a multi-arch Docker image, or a ready-to-import virtual appliance for Hyper-V, VMware, KVM & Proxmox. No database server to install: Dispatch bundles SQLite, or points at a PostgreSQL, MariaDB/MySQL or SQL Server you already run ([docs/database.md](docs/database.md)).
+
+### Platform support
+
+| Platform | Status |
+|---|---|
+| Windows (Service + MSI) | Supported |
+| Linux (systemd, glibc; x64 + arm64) | Supported |
+| Docker / containers (amd64 + arm64) | Supported |
+| macOS (launchd daemon; Apple Silicon + Intel) | Supported - universal self-contained tarball, or a `.pkg` you install with `installer -pkg`. In-app updates included; signed ad-hoc, not notarized ([docs/macos.md](docs/macos.md)) |
+| FreeBSD, musl Alpine | Not supported |
 
 ## Quickstart
 
@@ -84,7 +94,7 @@ Everything lives on the docs site: **https://docs.dispatchrelay.app/** · releas
 
 | | |
 |---|---|
-| **[Deployment](https://docs.dispatchrelay.app/deployment/overview/)** | Docker, Linux, Windows, and the virtual appliance |
+| **[Deployment](https://docs.dispatchrelay.app/deployment/overview/)** | Docker, Linux, Windows, macOS, and the virtual appliance |
 | **[Relay providers](https://docs.dispatchrelay.app/providers/overview/)** | Per-provider setup and settings |
 | **[Sending mail](https://docs.dispatchrelay.app/sending/smtp/)** | SMTP, HTTP API, Local Inbox, message features |
 | **[Routing](https://docs.dispatchrelay.app/routing/)** | Route by sender/recipient domain |

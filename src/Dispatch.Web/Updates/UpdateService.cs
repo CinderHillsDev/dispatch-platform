@@ -355,9 +355,10 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
         await File.WriteAllTextAsync(Path.Combine(UpdatesDir, "status.json"), JsonSerializer.Serialize(s, Json), ct);
     }
 
-    // Linux: the systemd dispatch-update.path watcher picks up apply.request - nothing to do. Windows: there
-    // is no path watcher, so write the embedded updater script to the data dir and launch it DECOUPLED as
-    // SYSTEM via Task Scheduler, so it survives the service restart it performs.
+    // Linux: the systemd dispatch-update.path watcher picks up apply.request - nothing to do. macOS: the
+    // same idea, a launchd WatchPaths job (installer/macos/app.dispatchrelay.dispatch-update.plist).
+    // Windows: there is no path watcher, so write the embedded updater script to the data dir and launch it
+    // DECOUPLED as SYSTEM via Task Scheduler, so it survives the service restart it performs.
     private void TriggerPlatformApply()
     {
         if (!OperatingSystem.IsWindows()) return;

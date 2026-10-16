@@ -66,11 +66,44 @@ sudo ./linux/install.sh --admin-password "<dashboard admin password>" --generate
 Omitting `--sql-connection` uses the bundled SQLite database at `/var/lib/dispatch/dispatch.db`.
 `--generate-cert` creates a self-signed
 PFX and serves the dashboard over HTTPS (spec §17.2). Prerequisites: the .NET 10 SDK and Node.js (the script
-builds the embedded UI and publishes); a prebuilt self-contained tarball is future work.
+builds the embedded UI and publishes). From a release tarball neither is needed - pass `--prebuilt <dir>`, or
+let `install.sh` pick the arch payload out of the tarball it shipped in.
+
+## macOS (`macos/`)
+
+`install.sh` is the same script with the systemd parts replaced by `launchd`: it lays out `/opt/dispatch`
+(release symlink + binaries), `/var/db/dispatch` (`appsettings.json` mode 600, the SQLite database, the spool,
+`.dispatch-key`), `/var/log/dispatch`, and installs two LaunchDaemons - `app.dispatchrelay.dispatch.plist`
+(the service) and `app.dispatchrelay.dispatch-update.plist` (the `WatchPaths` job that applies staged
+updates as root).
+
+```bash
+# From the release tarball - no SDK, no Node, arch auto-detected (Apple Silicon or Intel):
+sudo ./install.sh --admin-password "<dashboard admin password>"
+
+# Existing database server, or an unprivileged service account:
+sudo ./install.sh --sql-connection "Host=...;Database=DispatchLog;Username=...;Password=..." --admin-password "<pw>"
+sudo ./install.sh --user _dispatch --admin-password "<pw>"      # SMTP then listens on 2525
+
+sudo ./install.sh --uninstall                                  # daemons + binaries removed, data kept
+```
+
+Two differences from Linux worth knowing before you read the flags again:
+
+- **Root by default.** macOS has no `CAP_NET_BIND_SERVICE`, so binding 25/587 needs root; `--user` opts out
+  and the listener falls back to 2525. The updater daemon stays root either way.
+- **`launchctl stop` does not stop it.** `KeepAlive` brings it straight back. Use
+  `sudo launchctl bootout system/app.dispatchrelay.dispatch`.
+
+The binaries are ad-hoc signed, not notarized: if you extracted the tarball somewhere other than through
+`install.sh`, clear the quarantine flag with `xattr -dr com.apple.quarantine <dir>`. See
+[docs/macos.md](../docs/macos.md) for the full picture.
 
 ## Validation status
 
-The Windows artifacts (PowerShell bootstrap, WiX MSI/bundle, the net472 launcher) and the Linux
-installer scripts were authored on macOS and **must be validated on the target OS** - they cannot be
-built or executed here. The Linux `install.sh` passes `bash -n` syntax checks, and CI runs a full
-tarball install + /health smoke on Ubuntu.
+The Windows artifacts (PowerShell bootstrap, WiX MSI/bundle, the net472 launcher) and the Linux and macOS
+installer scripts were authored on a different OS than they target, so **CI runs them on the target OS** -
+that is what [`installers.yml`](../.github/workflows/installers.yml) is for: a full tarball install + /health
+smoke on Ubuntu, and plist linting with `plutil` plus a real `launchd` install, update-applier no-op check
+and uninstall on a macOS runner. The Linux `install.sh` also passes `bash -n` syntax checks. Anything not
+covered by those jobs (notably the Windows upgrade smoke) still needs a manual check on the target.
