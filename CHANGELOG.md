@@ -12,6 +12,16 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
 
 ## [Unreleased]
 
+### Fixed
+
+- **Deleting a routing rule that had already matched a message failed with a database error.** `relay_log`
+  carries a foreign key to `routing_rules`, so the dashboard's delete threw `FOREIGN KEY constraint failed`
+  (reported on SQLite, and the same on the other three backends) as soon as a rule had routed one message.
+  A rule that had never matched deleted cleanly, which is how it survived two releases. The delete now
+  clears the reference on the history first, which is what deleting a Relay already does, so the log rows
+  survive and keep naming the rule that matched them - the name is denormalised onto each row, the id was
+  only ever a pointer. Fixes #31.
+
 ### Security
 
 - **The dashboard's password hash is now encrypted at rest.** `webui.password_hash` was written to the SQL
