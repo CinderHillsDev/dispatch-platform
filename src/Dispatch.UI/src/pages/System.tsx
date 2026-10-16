@@ -98,7 +98,7 @@ function ChangePasswordPanel() {
     <div className="panel" style={{ maxWidth: 620 }}>
       <h2>Admin password</h2>
       <p className="muted" style={{ fontSize: 13, marginTop: -6 }}>
-        Change the dashboard sign-in password. Minimum 12 characters with an uppercase letter, a lowercase letter and a digit.
+        Change the dashboard sign-in password. Minimum 8 characters; anything guessable is rejected, so a phrase you can remember beats a symbol soup.
       </p>
       <label style={{ display: "block", margin: "8px 0" }}>
         <div style={{ fontSize: 13 }}>New password</div>

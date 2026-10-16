@@ -3304,10 +3304,19 @@ When `webui.require_auth = true`:
 - **Brute-force protection**: 10 failed login attempts within 5 minutes = 15-minute lockout for that source IP (same mechanism as SMTP AUTH, tracked in-memory)
 - The `GET /health` endpoint is exempt from auth - always accessible
 
-**Password requirements** (enforced at the web UI password change form):
-- Minimum 12 characters
-- At least one uppercase, one lowercase, one digit
-- Common password list check (top 10,000 passwords rejected)
+**Password requirements** (enforced at the web UI password change form, and by `reset-admin-password`,
+which call the same `AuthEndpoints.ValidatePassword`):
+- Minimum 8 characters
+- Rejected if it is on the common-password list, or contains a common token (`password`, `qwerty`,
+  `welcome`, `admin`, a digit run like `123456789`), checked case-insensitively
+- No character-class rule. Composition requirements were removed: with a length floor and a blacklist in
+  place they push predictable passwords into the same predictable shapes (`Correct1horse`), at the cost of
+  daily friction on the one credential that controls a mail relay.
+
+The floor is not the only line of defence and is not meant to be: bcrypt cost 12 (§17.5) makes offline
+attacks expensive, `webui.password_hash` is itself encrypted at rest (§17.5), the dashboard is closed to
+non-private source ranges by default (§17.4), and the login throttle (§17.3 above) caps online guessing at
+about 2,900 attempts per IP per day.
 
 **Password recovery.** There is no email-based "forgot password" flow - the dashboard has no outbound
 email of its own to send one from. Recovery is instead local-access-only: `Dispatch.Service
