@@ -848,15 +848,20 @@ jobs:
         run: |
           set -uo pipefail
 
-          # Start from a clean slate: the .pkg step above left the service installed. Removing it through the
-          # copy install.sh leaves at /opt/dispatch/install.sh is itself the regression test for the bug where
-          # a reinstall after an uninstall silently started nothing (launchctl disable persists by label).
-          sudo test -x /opt/dispatch/install.sh || { echo "install.sh left no uninstaller behind"; exit 1; }
-          sudo /opt/dispatch/install.sh --uninstall >/dev/null || { echo "--uninstall failed"; exit 1; }
-          sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 && { echo "still loaded"; exit 1; }
-
           tarball="$(ls dispatch-ci-macos-*.tar.gz)"
           dir="/tmp/extract/${tarball%.tar.gz}"
+
+          # Start from a known-clean machine, using whichever uninstaller is present: the .pkg step above
+          # finishes by uninstalling, so /opt/dispatch may already be gone. Either way this is the setup for
+          # the regression this step actually tests - the install that follows is a REINSTALL after an
+          # uninstall, which is the case that used to silently start nothing because `launchctl disable`
+          # persists by label and survives the whole directory disappearing.
+          if [ -x /opt/dispatch/install.sh ]; then
+            sudo /opt/dispatch/install.sh --uninstall >/dev/null || { echo "/opt/dispatch/install.sh --uninstall failed"; exit 1; }
+          else
+            sudo "$dir/install.sh" --uninstall >/dev/null || { echo "install.sh --uninstall failed"; exit 1; }
+          fi
+          sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 && { echo "the daemon survived an uninstall"; exit 1; }
           bash installer/macos/build-app.sh "$dir" 0.0.0-ci dispatch-ci-macos.dmg \
             || { echo "build-app.sh FAILED"; exit 1; }
           ls -lh dispatch-ci-macos.dmg
