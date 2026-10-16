@@ -21,4 +21,5 @@ public enum RelayProviderType
     Smtp2Go,
     Maileroo,
     Bird,
+    Emailit,
 }
