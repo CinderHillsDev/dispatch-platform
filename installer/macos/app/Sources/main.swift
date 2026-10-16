@@ -190,7 +190,7 @@ private final class Controller: NSObject, NSMenuDelegate {
     /// status-bar menu has no window to route through anyway.
     private func item(_ title: String, _ action: Selector?, _ key: String, target: AnyObject?) -> NSMenuItem {
         let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
-        if let action = action { i.target = target } else { i.isEnabled = false }
+        if action != nil { i.target = target } else { i.isEnabled = false }
         return i
     }
 

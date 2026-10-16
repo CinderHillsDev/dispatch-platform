@@ -69,9 +69,11 @@ chmod 755 "$BIN_DIR/dispatchrelay"
 
 # ---- Info.plist, version-stamped -------------------------------------------------------------
 /bin/cp "$SCRIPT_DIR/app/Info.plist" "$APP/Contents/Info.plist"
+# Set only rewrites keys that exist, and Info.plist declares no CFBundleIconFile on purpose (the icon is
+# conditional, see below), so the icon key is added here rather than set. Failing to notice that is how the
+# build dies with "Entry, :CFBundleIconFile, Does Not Exist" on a machine that has nothing wrong with it.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" \
-                        -c "Set :CFBundleVersion $VER" \
-                        -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist" >/dev/null
+                        -c "Set :CFBundleVersion $VER" "$APP/Contents/Info.plist" >/dev/null
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # An icon is what makes an app findable in /Applications, and a menu bar app with a generic icon reads as a
@@ -87,6 +89,8 @@ if [[ -f "$ICON_SRC" ]] && command -v iconutil >/dev/null 2>&1; then
     sips -z "$double" "$double" "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null 2>&1 || true
   done
   if iconutil -c icns "$ICONSET" -o "$RES_DIR/AppIcon.icns" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" -c "Add :CFBundleIconFile string AppIcon" \
+      "$APP/Contents/Info.plist" >/dev/null
     echo "icon: built AppIcon.icns"
   else
     echo "icon: iconutil failed; shipping without one (Info.plist's AppIcon reference is ignored when absent)" >&2
@@ -98,6 +102,9 @@ else
 fi
 
 # ---- sign: inner binary first, then the bundle ------------------------------------------------
+# Everything that writes Info.plist or adds resources has to happen above this line: codesign seals the
+# bundle's contents, so touching it afterwards makes --verify fail with a "resource envelope is obsolete"
+# error that looks like a signing problem and is really an ordering one.
 # Ad-hoc, no hardened runtime. Hardened runtime with no entitlements buys nothing here and can block the
 # .NET runtime the payload carries, and the daemon is launched by launchd from /opt rather than by this
 # bundle, so the app's own options do not constrain it.
