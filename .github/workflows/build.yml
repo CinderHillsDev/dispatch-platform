@@ -99,10 +99,15 @@ jobs:
       - name: Test (MariaDB backend)
         env:
           DISPATCH_TEST_ENGINE: mysql
-          DISPATCH_TEST_SQL: "Server=127.0.0.1;Port=53306;Uid=root;Pwd=Dispatch_Ci_Pass1"
+          DISPATCH_TEST_SQL: "Server=127.0.0.1;Port=13306;Uid=root;Pwd=Dispatch_Ci_Pass1"
           DISPATCH_REQUIRE_SQL: ""
         run: |
-          docker run -d --rm --name maria-ci -e MARIADB_ROOT_PASSWORD=Dispatch_Ci_Pass1 -p 53306:3306 mariadb:11
+          # Host port 13306, deliberately outside the runners' ip_local_port_range (32768-60999): a port
+          # inside it can already be taken by an outbound socket when docker tries to bind, and the step
+          # dies with "address already in use" on a run that changed nothing but the weather. This is that
+          # flake, seen on an unrelated PR. Remove any leftover container first so a retry is idempotent.
+          docker rm -f maria-ci >/dev/null 2>&1 || true
+          docker run -d --rm --name maria-ci -e MARIADB_ROOT_PASSWORD=Dispatch_Ci_Pass1 -p 13306:3306 mariadb:11
           for _ in $(seq 1 40); do docker exec maria-ci mariadb -uroot -pDispatch_Ci_Pass1 -e "SELECT 1" >/dev/null 2>&1 && break; sleep 3; done
           dotnet test tests/Dispatch.Data.Tests --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results-mysql.trx" --results-directory TestResults
           docker rm -f maria-ci
