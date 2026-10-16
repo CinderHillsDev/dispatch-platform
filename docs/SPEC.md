@@ -3217,6 +3217,13 @@ load-bearing rather than cosmetic, so they are stated here as well as in
   `launchd` restart returns immediately, so `dispatch-update.sh` polls `/health` itself before deciding the
   update succeeded, and rolls the symlink back if it never passes.
 
+macOS ships two artifacts: the tarball whose `install.sh` is described above, and
+`dispatch-{version}-macos.pkg` - a flat package whose payload is the same staged tree and whose postinstall
+execs that same `install.sh`, so there is one install logic rather than a third copy to keep in sync. The
+package is unsigned because CI holds no Developer ID identity, which is why
+[`docs/macos.md`](macos.md#install-with-the-pkg) installs it with `installer -pkg` from a terminal instead of
+by opening it.
+
 ---
 
 ## 17. Security Considerations
@@ -3545,6 +3552,7 @@ GitHub Actions handles all CI/CD automation.
 | Bundle bootstrap + MSI → Setup.exe | WiX Burn bootstrapper chain |
 | Build Linux tarball | `tar` packaging of binary + `install.sh` |
 | Build macOS tarball | `tar` packaging of both arch payloads + `install.sh` + the two LaunchDaemons |
+| Build macOS .pkg | `pkgbuild` of the same staged tree + a postinstall that execs its `install.sh` (`installer/macos/build-pkg.sh`) |
 | GitHub Release | Triggered on version tag push (`v*`) |
 
 ### 18.2 Release Artefacts
@@ -3553,6 +3561,7 @@ GitHub Actions handles all CI/CD automation.
 - `Dispatch-{version}-x64.msi` - Windows MSI (for IT admins doing scripted/silent deploys after manual DB setup)
 - `Dispatch-{version}-linux-x64.tar.gz` - Linux self-contained archive (binary + `install.sh`)
 - `dispatch-{version}-macos.tar.gz` - universal macOS archive (arm64 + Intel payloads, `install.sh`, the launchd property lists + the update applier)
+- `dispatch-{version}-macos.pkg` - universal macOS package installer: the same payloads and the same `install.sh`, driven by a postinstall instead of a shell. Unsigned, so `sudo installer -pkg <file> -target /` rather than a double-click ([`docs/macos.md`](macos.md#install-with-the-pkg))
 - `install.sh` - Linux bootstrap script (also available standalone for `curl | bash` installs)
 - `SHA256SUMS` - checksums for all release files
 

@@ -12,11 +12,22 @@ install, and the cryptographic behaviour is identical on both platforms.
 
 ## What ships
 
-`dispatch-<version>-macos.tar.gz` - one universal tarball containing both Apple Silicon (`bin-arm64`) and
-Intel (`bin-x64`) self-contained payloads, plus the installer and the launchd property lists. No .NET SDK,
-no Node, no database server needed on the target machine. The installer picks the payload matching the
-machine's architecture. `install.sh` and `dispatch-update.sh` are written for the macOS userland: BSD tools
-(`dscl`, `plutil`, `pfctl`, `socketfilterfw`, `shasum`, `codesign`, `xattr`) and no GNU-only flags.
+Two artifacts, one install logic:
+
+- `dispatch-<version>-macos.tar.gz` - one universal tarball containing both Apple Silicon (`bin-arm64`) and
+  Intel (`bin-x64`) self-contained payloads, plus the installer and the launchd property lists. No .NET SDK,
+  no Node, no database server needed on the target machine. The installer picks the payload matching the
+  machine's architecture. `install.sh` and `dispatch-update.sh` are written for the macOS userland: BSD tools
+  (`dscl`, `plutil`, `pfctl`, `socketfilterfw`, `shasum`, `codesign`, `xattr`) and no GNU-only flags.
+- `dispatch-<version>-macos.pkg` - the same files in a flat package installer, for someone who would rather
+  run an installer than read a README. It adds no install logic of its own: `installer(8)` runs a postinstall
+  that execs the tarball's `install.sh` from the payload directory. See
+  [Install with the .pkg](#install-with-the-pkg), and note that it is **unsigned**, which changes how you can
+  launch it.
+
+Both are staged by the same step in `release.yml`, and the `.pkg` is assembled by
+`installer/macos/build-pkg.sh` - the same script CI installs for real on every push touching `installer/**`,
+so a release never attaches a package nobody has installed.
 
 ## Install
 
@@ -49,6 +60,50 @@ systemd:
   macOS unified logging
   carries little beyond crashes, since the service writes to files by design.
 
+## Install with the .pkg
+
+```bash
+sudo installer -pkg dispatch-<version>-macos.pkg -target /
+```
+
+That is the command to type, and the reason this section leads with a command instead of a double-click is
+[Gatekeeper](#gatekeeper-and-signing): the `.pkg` is built by CI, CI has no Apple Developer ID identity, so
+the artifact is unsigned and Finder refuses to open it. `installer(8)` run from a terminal is not Gatekeeper,
+and on a server it is what you would use anyway.
+
+What the package does is small enough to state exactly. `installer(8)` copies the payload to
+`/opt/dispatch/pkg` and runs `installer/macos/pkg/postinstall` as **root**, which execs that directory's
+`install.sh`. Nothing else decides anything - layout, plist substitution, service account, firewall and CPU
+architecture are all `install.sh`'s existing behaviour - so the `.pkg` and the tarball cannot drift. After a
+successful install the postinstall deletes `/opt/dispatch/pkg/bin-arm64` and `bin-x64`, because `install.sh`
+had already copied this machine's binaries into `/opt/dispatch/releases/<version>` and a self-contained
+runtime is not something to keep twice, and it leaves the scripts behind so the same file still handles
+reconfiguration and uninstall.
+
+Two consequences of driving a terminal installer from a package:
+
+- **No password is collected.** A `.pkg` has no tty to prompt on, and the distribution-style JavaScript prompt
+  that would fix that is only worth its complexity once the installer is signed and notarized. So the admin
+  password seed is left empty, which is a supported state rather than an accident: the dashboard shows a
+  one-time first-run setup screen, and that screen is reachable without authentication *only* while no
+  password hash exists. Everything under `/api/` stays 401 until you set it, so the machine is never left
+  serving an open admin UI. Open `https://localhost:8420` once the package finishes and set the password.
+- **To pass flags, leave a `pkg.conf`.** The postinstall sources `/opt/dispatch/pkg/pkg.conf` if it exists and
+  forwards `DISPATCH_PKG_ARGS` to `install.sh`, which is how an unattended package install points at a
+  database server or an unprivileged service account:
+
+  ```bash
+  printf 'DISPATCH_PKG_ARGS="--sql-connection %s"\n' "'Host=db.internal;Database=DispatchLog;Username=dispatch;Password=...'" \
+    | sudo tee /opt/dispatch/pkg/pkg.conf
+  ```
+
+  Write that file *before* installing (or install, then re-run
+  `sudo /opt/dispatch/pkg/install.sh <flags>` - it is idempotent and preserves the database).
+
+Re-installing the `.pkg` over an existing host is the upgrade path for a machine that was installed with it:
+`install.sh` boots the daemon out first, writes a new `releases/<version>` directory and re-points `current`.
+The in-app Updates page stays the other route, and is the one that verifies a signed manifest.
+
 ## Gatekeeper and signing
 
 The binaries are **ad-hoc signed, not notarized** - the project has no Apple Developer ID. Apple Silicon
@@ -63,16 +118,23 @@ xattr -dr com.apple.quarantine <the folder>
 ```
 
 `dispatch-update.sh` re-seals the apphost ad-hoc after extracting an upgrade payload, because extraction is
-allowed to move bytes and a stale signature kills the process on exec. Notarization is the remaining gap: it
-needs a Developer ID certificate and Apple's notary service, so a future `.pkg` installer is where that would
-land. Nothing in Dispatch needs Screen Recording, Full Disk Access or any other privacy permission - it is a
-daemon, not an app.
+allowed to move bytes and a stale signature kills the process on exec. The `.pkg` inherits the same gap: it is
+built unsigned, because `security find-identity -v -p codesigning` reports 0 valid identities on the hosted
+macOS runners and the repository has no certificate to hand them. Nothing about Dispatch needs Screen
+Recording, Full Disk Access or any other privacy permission - it is a daemon, not an app.
+
+Wiring a Developer ID would be a small change and a real improvement, in this order: an Installer identity
+available to CI (`pkgbuild --sign`, which `installer/macos/build-pkg.sh` already honours through
+`DISPATCH_PKG_SIGN_IDENTITY`), then `xcrun notarytool submit` followed by `stapler staple` on the product. Only
+the certificate and the notary credentials are missing - `pkgbuild`, `productbuild`, `hdiutil` and `notarytool`
+are all present on the runners.
 
 ## Paths
 
 | Path | Purpose |
 |---|---|
 | `/opt/dispatch/` | install root, like Linux. `current` is a symlink to the active release under `releases/<version>`; `dispatch-update.sh` + the public key live here |
+| `/opt/dispatch/pkg/` | only after a `.pkg` install: the payload `install.sh` ran from. Kept so reconfiguration and `--uninstall` work without the original download; its `bin-*` directories are removed once the install succeeds |
 | `/var/db/dispatch/` | config + data, like Linux's `/var/lib/dispatch`: `appsettings.json`, the SQLite database, the spool, the `.dispatch-key` key file, and `updates/` (staging) |
 | `/var/db/dispatch/updates/` | what the service stages (`staged/<version>/`, `apply.request`) and the applier's `status.json`, which the Updates page reads |
 | `/var/log/dispatch/` | `dispatch.jsonl` plus the `launchd` stdout / stderr sinks |
@@ -130,7 +192,13 @@ sudo ./install.sh --uninstall
 ```
 
 Boots out both daemons, removes the property lists and the install root. `/var/db/dispatch` (database,
-config, spool, keys) and `/var/log/dispatch` are left in place.
+config, spool, keys) and `/var/log/dispatch` are left in place. A `.pkg` has no uninstaller of its own - no
+package format does; `pkgutil --forget` deletes the receipt and touches no files - so use the copy the payload
+left behind:
+
+```bash
+sudo /opt/dispatch/pkg/install.sh --uninstall
+```
 
 ## Self-update
 
@@ -164,7 +232,8 @@ On a machine where you have not installed via `install.sh` yet, the first instal
   key directory is available, but if you hit it: macOS has no `/etc/machine-id`, so the key is stretched from
   the *machine name* and a security warning is logged. The installer pins `DISPATCH_KEY_DIR`, so this only
   affects someone running the binaries by hand.
-- **No notarized installer.** See "Gatekeeper and signing".
+- **No notarized installer.** Neither the tarball nor the `.pkg` is signed; see "Gatekeeper and signing".
+  Install the `.pkg` with `installer -pkg` from a terminal rather than by opening it.
 - **Inbound SMTP is not enabled by default.** The service binds `::` (which includes IPv4), so no sysctl or
   IPv6-only wrinkle is involved; it is simply the same "opening an inbound SMTP relay on a workstation is a
   choice, not a default" policy as on Windows.

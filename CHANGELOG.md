@@ -54,8 +54,13 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
   signature, swaps the release symlink, polls `/health`, and rolls back if the new version never comes up.
   The daemon runs as root by default because macOS, unlike Linux, has no way to let an unprivileged process
   bind port 25; `--user <name>` opts out and SMTP falls back to 2525 as it does wherever 25 cannot be bound.
-  Binaries are ad-hoc signed, not notarized. See [`docs/macos.md`](docs/macos.md); a macOS runner now lints
-  the property lists with `plutil` and runs a real install / update-applier / uninstall smoke.
+  Binaries are ad-hoc signed, not notarized. A release also ships `dispatch-<ver>-macos.pkg` - the same staged
+  payload in a package installer, whose postinstall execs that `install.sh` from the payload directory so the
+  two artifacts cannot drift; it is built unsigned, because GitHub's macOS runners have no Developer ID
+  identity, so it is installed with `sudo installer -pkg dispatch-<ver>-macos.pkg -target /` rather than by
+  opening it. See [`docs/macos.md`](docs/macos.md); a macOS runner now lints the property lists with `plutil`
+  and runs a real install through both the tarball and the `.pkg`, plus the update-applier and uninstall
+  smokes.
 
 ### Changed
 

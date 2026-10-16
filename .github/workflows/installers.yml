@@ -466,7 +466,18 @@ jobs:
         run: |
           set -uo pipefail
           plutil -lint installer/macos/*.plist
-          bash -n installer/macos/*.sh
+          bash -n installer/macos/*.sh installer/macos/pkg/postinstall
+
+          # File mode, asserted rather than assumed: the macOS port shipped install.sh + dispatch-update.sh at
+          # 644 while the Linux ones are 755. release.yml chmods while staging so the tarball hid the bug, but
+          # pkgbuild preserves the modes it is handed, so a .pkg built from a checkout carries an unexecutable
+          # install.sh into the customer's payload. Same trap for the two pkg scripts.
+          for f in installer/macos/install.sh installer/macos/dispatch-update.sh installer/macos/build-pkg.sh \
+                   installer/macos/pkg/postinstall; do
+            m="$(git ls-files -s "$f" | awk '{print $1}')"
+            [ "$m" = "100755" ] || { echo "$f is mode $m in git, want 100755"; exit 1; }
+          done
+          echo "OK: installer scripts are executable in git (a .pkg payload inherits these modes)"
 
           # Assert what install.sh's substitutions PRODUCE, read back with plutil -extract (the same call
           # dispatch-update.sh uses to find the service account). Reading the parsed values instead of the
@@ -766,3 +777,61 @@ jobs:
           test ! -e /Library/LaunchDaemons/app.dispatchrelay.dispatch.plist || { echo "plist left behind"; exit 1; }
           sudo test -d /var/db/dispatch || { echo "uninstall deleted the data dir - it must not"; exit 1; }
           echo "OK: uninstalled cleanly, data preserved"
+
+      # The .pkg is a wrapper around install.sh, so the only check that counts is installing one for real on a
+      # Mac and asking whether a supervised, healthy service came out of the other end. Deliberately last in
+      # the job: the step above uninstalled the tarball install, so this is a fresh system, which is what a
+      # customer's first .pkg install is.
+      - name: Install through the .pkg
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        run: |
+          set -uo pipefail
+          tarball="$(ls dispatch-ci-macos-*.tar.gz)"
+          dir="/tmp/extract/${tarball%.tar.gz}"
+
+          bash installer/macos/build-pkg.sh "$dir" 0.0.0-ci dispatch-ci-macos.pkg \
+            || { echo "build-pkg.sh FAILED"; exit 1; }
+          # States the artifact's real posture instead of leaving it to be discovered on a download page.
+          # 0 identities on the hosted runners = unsigned = Gatekeeper refuses a browser download; that is a
+          # certificate CI does not have, not something this pipeline can fix in place.
+          pkgutil --check-signature dispatch-ci-macos.pkg | head -3
+
+          sudo installer -pkg dispatch-ci-macos.pkg -target / || { echo "installer -pkg FAILED"; exit 1; }
+          sudo pkgutil --pkgs | grep -qx app.dispatchrelay.dispatch || { echo "installer succeeded with no receipt"; exit 1; }
+
+          ok=0
+          for _ in $(seq 1 36); do
+            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 5
+          done
+          if [ "$ok" != 1 ]; then
+            echo "=== postinstall log ==="; sudo tail -n 80 /tmp/dispatch-pkg-postinstall.log 2>&1
+            echo "=== launchctl ==="; sudo launchctl print system/app.dispatchrelay.dispatch 2>&1 | tail -40
+            echo "=== installer's own view ==="; sudo grep -i dispatch /var/log/install.log 2>/dev/null | tail -30
+            echo "the .pkg did not produce a healthy service"; exit 1
+          fi
+          sudo launchctl print system/app.dispatchrelay.dispatch | grep -q "state = running" \
+            || { echo "the .pkg installed a daemon launchd is not supervising"; exit 1; }
+          echo "OK: the .pkg installed a launchd-supervised, healthy service through install.sh"
+
+          # The three promises postinstall makes beyond "it ran": the staged binaries are trimmed so a Mac
+          # does not pay twice for a self-contained runtime, the scripts survive so the pkg's own install.sh
+          # can still uninstall, and the transcript lands where an operator debugging an install looks.
+          case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
+          sudo test ! -e "/opt/dispatch/pkg/bin-$A" || { echo "the .pkg left a second copy of the binaries on disk"; exit 1; }
+          sudo test -x /opt/dispatch/pkg/install.sh || { echo "postinstall deleted the installer uninstall needs"; exit 1; }
+          sudo test -f /var/log/dispatch/pkg-postinstall.log || { echo "no postinstall log in the log dir"; exit 1; }
+          sudo test -d /opt/dispatch/releases || { echo "no release dir - install.sh did not run"; exit 1; }
+          echo "OK: payload trimmed, uninstall path intact, postinstall logged"
+
+          # A .pkg cannot ask for an admin password, so the machine must be WAITING for one: the SPA and
+          # /health stay open by design, everything under /api/ must still be 401 until first-run setup.
+          code=$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8420/api/audit)
+          [ "$code" = "401" ] || { echo "unauthenticated /api/audit returned $code - a pkg install must not open the admin API"; exit 1; }
+          echo "OK: admin API still 401 pending first-run setup (no password seeded by the pkg)"
+
+          # And the uninstall a .pkg customer is told about, run through the payload's own copy.
+          sudo /opt/dispatch/pkg/install.sh --uninstall
+          sudo test ! -d /opt/dispatch || { echo "uninstall left /opt/dispatch behind"; exit 1; }
+          sudo test -d /var/db/dispatch || { echo "uninstall deleted the data dir - it must not"; exit 1; }
+          echo "OK: the .pkg's own uninstall path works"

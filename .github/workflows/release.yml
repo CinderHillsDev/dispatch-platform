@@ -476,11 +476,28 @@ jobs:
           tar -czf "${stage}.tar.gz" -C staging "${stage}"
           ls -lh "${stage}.tar.gz"
 
+      # The .pkg is built by the same script the Installers workflow installs on every push (macos-tarball),
+      # so the artifact attached to a release is an artifact CI has actually booted a service with. Building a
+      # second copy of this recipe here is how a release ships a .pkg nobody ever ran.
+      - name: Build the macOS .pkg
+        shell: bash
+        run: |
+          set -uo pipefail
+          ver="${{ steps.ver.outputs.version }}"
+          bash installer/macos/build-pkg.sh "staging/dispatch-${ver}-macos" "$ver" "dispatch-${ver}-macos.pkg"
+          ls -lh dispatch-*-macos.pkg
+          # The runners have no Developer ID identity (0 valid identities), so this says "no signature" on
+          # every release. That is the honest state of the artifact, and the line an operator reads when a
+          # double-click does not work; docs/macos.md carries the matching instruction.
+          pkgutil --check-signature "dispatch-${ver}-macos.pkg" | head -3
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
         with:
           name: macos
-          path: dispatch-*-macos.tar.gz
+          path: |
+            dispatch-*-macos.tar.gz
+            dispatch-*-macos.pkg
           if-no-files-found: error
           retention-days: 3
 
@@ -555,6 +572,7 @@ jobs:
           cp "dist/windows/DispatchSetup.exe" "release/DispatchSetup-${VER}-x64.exe"
           cp dist/linux/dispatch-*-linux.tar.gz release/
           cp dist/macos/dispatch-*-macos.tar.gz release/
+          cp dist/macos/dispatch-*-macos.pkg release/
           cp dist/upgrade-package/* release/          # the single cross-platform upgrade package
           ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
 
@@ -571,5 +589,6 @@ jobs:
             release/DispatchSetup-*-x64.exe
             release/dispatch-*-linux.tar.gz
             release/dispatch-*-macos.tar.gz
+            release/dispatch-*-macos.pkg
             release/dispatch-upgrade-*
             release/SHA256SUMS

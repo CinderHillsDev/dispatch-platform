@@ -1,0 +1,83 @@
+#!/bin/bash
+# Dispatch SMTP Relay - macOS .pkg postinstall.
+#
+# installer(8) runs this as root after it has copied the payload, with $1 the path to the package and $2 the
+# target volume: "/" on the boot disk, "/Volumes/Whatever" for a secondary one. Both facts are verified on a
+# hosted macOS runner rather than assumed, because the whole design depends on them: root is what lets the
+# script bind SMTP 25 and write under /opt, and $2 is what makes the payload addressable without hardcoding
+# a volume.
+#
+# It does one thing: exec the install.sh the payload just dropped, from the directory it landed in. The .pkg
+# has no opinion about layout, plists, service accounts, firewall rules, or which CPU to install for,
+# because install.sh already decides all of that and is the same file the tarball ships. A second copy of
+# that logic here is how two installers for one product begin to disagree.
+#
+# Why there is no password prompt: a .pkg has no way to read one. There is no tty, and a distribution-style
+# pkg with a JavaScript prompt is only worth its complexity once the installer is Developer ID signed and
+# notarized, which requires a certificate CI does not have. So install.sh runs with no --admin-password:
+# the seed stays empty, and the dashboard then presents a one-time first-run setup screen, which is
+# reachable without authentication ONLY while no password hash exists. Nothing is served with an open admin
+# UI in the meantime; the operator sets the password on first visit. For a fully unattended pkg, drop a
+# pkg.conf next to this payload (see below) or use the tarball's install.sh directly.
+
+set -uo pipefail
+
+TARGET="${2:-/}"
+PKG_DIR="$TARGET/opt/dispatch/pkg"
+LOG="/tmp/dispatch-pkg-postinstall.log"
+
+say() { echo "$(date '+%Y-%m-%dT%H:%M:%S%z') pkg-postinstall: $*" >>"$LOG"; }
+
+say "starting: user=$(id -un) uid=$(id -u) target='$TARGET' arch=$(uname -m) pkg=$1"
+
+if [[ ! -f "$PKG_DIR/install.sh" ]]; then
+  say "FATAL: $PKG_DIR/install.sh is not there. The pkg was built with a different --install-location than"
+  say "FATAL: this script assumes; fix build-pkg.sh rather than letting installer(8) report success on a"
+  say "FATAL: machine where Dispatch was never installed."
+  exit 1
+fi
+# Not executable means the build copied a 644 install.sh into the payload, which is how the macOS installer
+# scripts sat in git. exec would fail with a bare 126 in a log nobody reads, so name the problem instead.
+if [[ ! -x "$PKG_DIR/install.sh" ]]; then
+  say "FATAL: $PKG_DIR/install.sh is not executable (payload mode was preserved from an unexecutable source)"
+  exit 1
+fi
+
+# pkg.conf is the escape hatch for an unattended .pkg: a single line setting DISPATCH_PKG_ARGS with any of
+# install.sh's own flags. Word splitting is deliberate, so quote-free space separated flags only.
+DISPATCH_PKG_ARGS="${DISPATCH_PKG_ARGS:-}"
+if [[ -f "$PKG_DIR/pkg.conf" ]]; then
+  # shellcheck disable=SC1091
+  . "$PKG_DIR/pkg.conf"
+  say "using flags from pkg.conf: $DISPATCH_PKG_ARGS"
+fi
+
+# stdin from /dev/null: an installer running as root with no terminal must never block waiting for input.
+# install.sh only prompts when stdin is a tty, so this also proves the non-interactive path is the one being
+# shipped. Output goes to the log; installer(8) tees this script's own stdout into /var/log/install.log.
+"$PKG_DIR/install.sh" ${DISPATCH_PKG_ARGS:-} </dev/null >>"$LOG" 2>&1
+rc=$?
+say "install.sh exit=$rc"
+
+if [[ $rc -eq 0 ]]; then
+  # install.sh copied this CPU's binaries into /opt/dispatch/releases/<ver> already. Left in place they would
+  # sit on disk a second time (a self-contained .NET runtime per arch, so ~2x the install), which is the one
+  # real cost of driving a shared installer from a pkg payload. The scripts, plists and public key stay:
+  # uninstall and re-configuration both run through this install.sh, and it is what makes
+  #     sudo /opt/dispatch/pkg/install.sh --uninstall
+  # work after a pkg install. pkgutil --files will still list the deleted bin-* paths - any .pkg that moves
+  # its own payload over-reports like that, and the receipt is used for version detection, not removal.
+  rm -rf "$PKG_DIR/bin-arm64" "$PKG_DIR/bin-x64"
+  say "trimmed the staged binaries; the release dir under /opt/dispatch/releases is the only copy now"
+fi
+
+# Keep a copy where an operator looking for install evidence would look. /var/log/dispatch is 0700 root, and
+# install.sh only creates it on the success path, hence the guard.
+if [[ -d /var/log/dispatch ]]; then
+  cp "$LOG" /var/log/dispatch/pkg-postinstall.log 2>/dev/null || true
+  chmod 600 /var/log/dispatch/pkg-postinstall.log 2>/dev/null || true
+fi
+
+# Non-zero here is what makes installer(8) and Installer.app report a FAILED install. Swallowing it would
+# leave a receipt, a payload and no service - the worst of all three outcomes.
+exit $rc
