@@ -41,10 +41,11 @@ inside the bundle, so the app and the command line are one install path, in one 
 `../build-app.sh <staged-dir> <version> <output.dmg>` compiles `Sources/main.swift` with `swiftc` (one file,
 no package manifest, no third-party dependency), stamps `Info.plist`, and wraps the bundle in a `.dmg` with
 an `Applications` symlink so installing really is a drag. It runs on the same macOS runner that builds the
-`.pkg`, from the same staging directory as the tarball.
+the release stages, from the same staging directory the release job publishes.
 
 **Apple Silicon only.** That halves the download and removes "which `bin-<arch>` does this Mac want" from the
-install path entirely. An Intel Mac still has the universal tarball and the `.pkg`; `build-app.sh` fails loudly
+install path entirely. There is no Intel artifact - no `osx-x64` publish and no such key in the upgrade
+manifest, so an Intel host is refused by name - and `build-app.sh` fails loudly
 rather than quietly shipping an app whose payload has no `bin-arm64`.
 
 ## Signing: what is and is not true today

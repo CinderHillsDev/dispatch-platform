@@ -6,10 +6,10 @@
 // daemon cannot do is be *visible*: no icon, no entry in /Applications, no answer to "is it even installed",
 // which is how a working install and a dead one came to look identical from the outside. This bundle is the
 // visible half - state, a way to open the dashboard, and Install/Remove buttons driving the same install.sh
-// the tarball and .pkg ship.
+// every macOS route ships.
 //
 // One file, compiled with swiftc by installer/macos/build-app.sh: no Xcode project, no package manifest, no
-// third-party dependency, so the same macOS runner that builds the .pkg builds this too.
+// third-party dependency, so the same macOS runner that publishes the payload builds this too.
 //
 // Privileged actions go through `do shell script ... with administrator privileges`, i.e. Authorization
 // Services, which needs no entitlement and no helper tool. SMAppService/SMJobBless would be the alternative,

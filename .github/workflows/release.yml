@@ -341,7 +341,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  # macOS bundle: one universal tarball (Apple Silicon + Intel), self-contained, run as a launchd
+  # macOS bundle: the one file a Mac user downloads, self-contained and Apple Silicon only, run as a launchd
   # LaunchDaemon. Built on a macOS runner rather than cross-published from Linux for one reason: the code
   # signature. Apple Silicon will not exec an unsigned Mach-O, and the apphost is the one binary the build
   # patches after the runtime pack was signed, so the seal has to be checked (and if necessary re-made

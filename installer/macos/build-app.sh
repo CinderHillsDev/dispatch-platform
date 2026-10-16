@@ -3,14 +3,16 @@
 #
 #   ./build-app.sh <staged-dir> <version> <output-dmg>
 #
-# <staged-dir> is what the release job assembles for the universal tarball: install.sh, dispatch-update.sh,
+# <staged-dir> is what the release job stages: install.sh, dispatch-update.sh,
 # the two LaunchDaemon property lists, dispatch-update-public.pem, and bin-arm64/ (+ bin-x64/, which this
 # script deliberately drops). The payload is copied INTO the bundle, so DispatchRelay.app is a complete installer:
 # nobody has to find a second download to install the service after moving the app.
 #
 # Apple Silicon only. That is a product decision, not an oversight: an arm64-only bundle halves the download,
 # removes the "which bin-<arch> does this Mac want" question from the install path entirely, and matches the
-# machines Dispatch is actually being run on here. An Intel Mac still has the universal tarball and the .pkg.
+# machines Dispatch is actually being run on here. There is no Intel artifact at all now: no osx-x64 publish,
+# no osx-x64 key in the upgrade manifest, so an Intel host is refused by name rather than sent a binary it
+# cannot exec. The .pkg that used to cover both architectures is gone with it (docs/RELEASING.md).
 #
 # Signing is ad-hoc. A Developer ID + notarization would make the first open frictionless; without it,
 # Gatekeeper blocks a quarantined download once and right-click > Open gets around it (or run the app once
@@ -42,13 +44,13 @@ BIN_DIR="$APP/Contents/MacOS"
 RES_DIR="$APP/Contents/Resources"
 mkdir -p "$BIN_DIR" "$RES_DIR"
 
-# ---- payload: the same files the tarball ships, minus the other architecture -----------------------------
+# ---- payload: the files release.yml stages, which are what every macOS route runs -----------------------
 mkdir -p "$RES_DIR/payload"
 for f in install.sh dispatch-update.sh dispatch-update-public.pem \
          app.dispatchrelay.dispatch.plist app.dispatchrelay.dispatch-update.plist README.txt; do
   if [[ -f "$STAGED/$f" ]]; then /bin/cp "$STAGED/$f" "$RES_DIR/payload/"; fi
 done
-[[ -f "$RES_DIR/payload/README.txt" ]] || echo "note: no README.txt in the staged dir (the tarball's copy is generated in release.yml)" >&2
+[[ -f "$RES_DIR/payload/README.txt" ]] || echo "note: no README.txt in the staged dir; release.yml generates it, so a CI-built bundle ships without the user's README" >&2
 /bin/cp -R "$STAGED/bin-arm64" "$RES_DIR/payload/bin-arm64"
 chmod 755 "$RES_DIR/payload" "$RES_DIR/payload/install.sh" "$RES_DIR/payload/dispatch-update.sh" 2>/dev/null || true
 

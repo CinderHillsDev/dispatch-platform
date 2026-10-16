@@ -31,7 +31,7 @@
 #   # Or point at a database server you already run (PostgreSQL, MariaDB/MySQL, SQL Server):
 #   sudo ./install.sh --sql-connection "Host=...;Database=DispatchLog;Username=...;Password=..." --admin-password "<pw>"
 #
-#   # From a release tarball (self-contained binaries for both Mac CPU types; no .NET SDK / Node required):
+#   # From the release bundle (self-contained Apple Silicon binaries; no .NET SDK / Node required):
 #   sudo ./install.sh --prebuilt ./bin-arm64 --admin-password "<pw>"
 #
 #   # Run unprivileged (SMTP lands on 2525 because 25/587 need root):
@@ -57,7 +57,7 @@
 #                          2525). The updater still runs as root - it has to swap files under /opt.
 #   --source <path>        Repo source root (default: two levels up from this script). Build-from-source mode.
 #   --prebuilt <dir>       Install pre-published self-contained binaries from <dir> instead of building from
-#                          source. Used by the release tarball; needs neither the .NET SDK nor Node.
+#                          source. Used by the release bundle; needs neither the .NET SDK nor Node.
 #   --no-firewall          Skip the best-effort Application Firewall rules.
 #   --no-start             Stage the install (binaries + LaunchDaemons installed) without starting anything.
 #                          launchd loads both jobs at the next boot.
@@ -213,9 +213,10 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Auto-select prebuilt binaries by CPU arch when --prebuilt wasn't given, so one tarball + one command works
-# on any Mac (Apple Silicon or Intel). Prefer a per-arch dir (bin-arm64 / bin-x64) shipped in a universal
-# tarball, then a plain bin/ (single-arch tarball). If none are found we fall through to build-from-source.
+# Auto-select prebuilt binaries by CPU arch when --prebuilt wasn't given, so one command works whether this
+# script is being run out of the release bundle, a mounted .dmg, or a source tree. Releases ship bin-arm64
+# only; a machine that lands on bin-x64 has no artifact to find, so the per-arch lookup stays for anyone
+# publishing their own payload. If nothing matches we fall through to build-from-source.
 if [[ -z "$PREBUILT_DIR" ]]; then
   case "$(uname -m)" in
     arm64|aarch64) _arch=arm64 ;;
@@ -237,7 +238,7 @@ launchctl bootout "system/${LABEL}" >/dev/null 2>&1 || true
 mkdir -p "$INSTALL_DIR/releases"
 REL_VER="base"
 if [[ -n "$PREBUILT_DIR" ]]; then
-  # Release-tarball mode: copy the self-contained publish output as-is (no SDK / Node build).
+  # Prebuilt mode: copy the self-contained publish output as-is (no SDK / Node build).
   # A relative --prebuilt is resolved against the current dir, then against the script's own dir, so
   # `--prebuilt ./bin-arm64` works whether you run it from inside the extracted folder or by path.
   if [[ ! -d "$PREBUILT_DIR" && -d "$SCRIPT_DIR/$PREBUILT_DIR" ]]; then PREBUILT_DIR="$SCRIPT_DIR/$PREBUILT_DIR"; fi
@@ -273,7 +274,7 @@ rm -f "$INSTALL_DIR/Dispatch.Service" 2>/dev/null || true
 find "$INSTALL_DIR" -maxdepth 1 -type f -name '*.dll' -delete 2>/dev/null || true
 
 # Arm64 macOS refuses to execute an unsigned Mach-O, and every binary we ship has to carry at least an
-# ad-hoc signature. Release tarballs are signed at build time; a from-source build is signed by the SDK on
+# ad-hoc signature. Release payloads are signed at build time; a from-source build is signed by the SDK on
 # the machine. Re-signing the apphost here is cheap, idempotent insurance against a copy that lost it (and
 # against a payload that was downloaded and had its signature invalidated by any byte change).
 if command -v codesign >/dev/null 2>&1; then
@@ -342,7 +343,7 @@ chown -R "$OWNER:$OWNER_GROUP" "$DATA_DIR/.dispatch-spool"
 chmod 700 "$DATA_DIR/.dispatch-spool" "$DATA_DIR/.dispatch-spool/incoming" "$DATA_DIR/.dispatch-spool/processing" "$DATA_DIR/.dispatch-spool/failed"
 
 echo "==> Installing the launchd daemons + the web-UI updater"
-# The plists and the applier live next to this script, in both the release tarball and the source tree
+# The plists and the applier live next to this script, in both the release bundle and the source tree
 # (installer/macos/). Check rather than guess: a missing file here means launchd never gets a job and the
 # symptom shows up much later as "the update did nothing".
 PLIST_SRC="$SCRIPT_DIR"
@@ -368,7 +369,7 @@ install -m 644 "$TMP_PLISTS/$UPDATE_LABEL.plist" "$DAEMON_DIR/$UPDATE_LABEL.plis
 rm -rf "$TMP_PLISTS"
 install -m 755 "$PLIST_SRC/dispatch-update.sh"   "$INSTALL_DIR/dispatch-update.sh"
 # Keep a copy of this script outside the release symlink, so the machine carries its own uninstaller and
-# re-configurer. A .pkg already leaves one at /opt/dispatch/pkg/install.sh, but a tarball install left
+# re-configurer. Before this, a command-line install left
 # nothing: after the download folder was deleted there was no command to run and no way to find out the
 # service was even installed (it has no /Applications entry - it is a LaunchDaemon, not an app).
 install -m 755 "$SCRIPT_DIR/install.sh" "$INSTALL_DIR/install.sh"
@@ -418,7 +419,7 @@ fi
 
 # Prove it came up. Everything above can succeed while nothing is actually running - a stale launchd
 # override, a signature the kernel refuses to exec, a dashboard port already held by something else. Until
-# now this script asserted success regardless, which on the .pkg path (where install.sh's stdout goes to a
+# now this script asserted success regardless, which on the app path (where install.sh's stdout goes to a
 # log file nobody opens) leaves the operator with "I installed it and nothing happened" and no lead. So poll
 # /health, and if it never answers, print what launchd and the daemon say and exit non-zero - that turns a
 # silently dead install into a FAILED one in Installer.app, which is the honest outcome.
