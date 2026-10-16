@@ -77,8 +77,8 @@ chmod 755 "$BIN_DIR/dispatchrelay"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # An icon is what makes an app findable in /Applications, and a menu bar app with a generic icon reads as a
-# half-finished tool. If the source PNG is present, build an .icns with the stock tools; if not, ship without
-# one rather than ship a broken reference (PlistBuddy already named AppIcon, which Finder ignores when absent).
+# half-finished tool. If the source PNG is present, build an .icns with the stock tools and add the
+# CFBundleIconFile key; if not, ship with no key at all rather than a reference to a file that is not there.
 ICON_SRC="$SCRIPT_DIR/app/Resources/DispatchIcon.png"
 if [[ -f "$ICON_SRC" ]] && command -v iconutil >/dev/null 2>&1; then
   ICONSET="$WORK/AppIcon.iconset"
@@ -89,12 +89,13 @@ if [[ -f "$ICON_SRC" ]] && command -v iconutil >/dev/null 2>&1; then
     sips -z "$double" "$double" "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null 2>&1 || true
   done
   if iconutil -c icns "$ICONSET" -o "$RES_DIR/AppIcon.icns" >/dev/null 2>&1; then
-    /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" -c "Add :CFBundleIconFile string AppIcon" \
-      "$APP/Contents/Info.plist" >/dev/null
+    # Separate invocations: PlistBuddy stops at the first failing -c, and Delete on a key that was never
+    # declared (Info.plist declares no icon, since this branch is conditional) counts as a failure.
+    /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist" >/dev/null
     echo "icon: built AppIcon.icns"
   else
-    echo "icon: iconutil failed; shipping without one (Info.plist's AppIcon reference is ignored when absent)" >&2
-    /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+    echo "icon: iconutil failed; shipping with the generic icon" >&2
   fi
 else
   echo "icon: no $ICON_SRC; shipping without one" >&2
