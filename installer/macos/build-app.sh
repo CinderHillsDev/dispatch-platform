@@ -56,7 +56,12 @@ chmod 755 "$RES_DIR/payload" "$RES_DIR/payload/install.sh" "$RES_DIR/payload/dis
 # One source file, no package manager, no Xcode project. The deployment target is the bundle's
 # LSMinimumSystemVersion so a newer SDK on the runner cannot quietly produce a binary that will not
 # launch on an older Mac.
+# -module-name is not cosmetic. Swift derives the module name from the OUTPUT FILE name, and "Dispatch" is
+# already the name of Apple's libdispatch module - which Foundation imports. Naming the module Dispatch makes
+# the compiler report "circular dependency between modules 'Dispatch' and 'Foundation'", which is a confusing
+# way to say that an app cannot be its own namesake. The executable keeps the name the bundle expects.
 xcrun swiftc -O -target arm64-apple-macos13.0 \
+  -module-name DispatchApp \
   -framework AppKit \
   -o "$BIN_DIR/Dispatch" \
   "$SCRIPT_DIR/app/Sources/main.swift"
