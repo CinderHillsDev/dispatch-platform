@@ -25,6 +25,7 @@ public class RelayProviderFactoryTests
     [InlineData(RelayProviderType.Smtp2Go, typeof(Smtp2GoProvider))]
     [InlineData(RelayProviderType.Maileroo, typeof(MailerooProvider))]
     [InlineData(RelayProviderType.Bird, typeof(BirdProvider))]
+    [InlineData(RelayProviderType.Emailit, typeof(EmailitProvider))]
     public void Builds_expected_provider_type(RelayProviderType provider, Type expected)
     {
         var built = Factory().Build(new RelayConfig { Provider = provider });

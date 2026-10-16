@@ -75,6 +75,10 @@ public static class RelayProviderSchema
             new("WorkspaceId", "bird.workspace_id", Secret: false, Required: true),
             new("ChannelId", "bird.channel_id", Secret: false, Required: true),
         ],
+        RelayProviderType.Emailit =>
+        [
+            new("ApiKey", "emailit.api_key", Secret: true, Required: true),
+        ],
         _ => [],
     };
 }

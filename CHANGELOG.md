@@ -56,6 +56,14 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
 
 ### Added
 
+- **Emailit is now a relay provider.** Structured JSON sends to their v2 Emails API with a Bearer key, which
+  fits alongside Resend, SMTP2GO and Maileroo - the shape theirs most resembles. To/Cc/Bcc are split from the
+  envelope so a blind copy stays out of the visible headers, the From display name and any Reply-To are carried
+  through rather than flattened, and attachments go base64-encoded inline. Each send also carries the message's
+  spool id as an `Idempotency-Key`, which closes the awkward gap for a relay: when a response is lost the worker
+  retries the same message, and Emailit replays the stored success instead of delivering it twice (a failed send
+  releases the key, so retrying after a fix still sends). Their 429/500/503 responses land on Dispatch's
+  transient retry path, every other 4xx is permanent. Closes #26.
 - **macOS is now a supported install target.** A release ships `dispatch-<ver>-macos.tar.gz` - one universal,
   self-contained bundle for Apple Silicon and Intel - installed by `installer/macos/install.sh` as a launchd
   LaunchDaemon, with the same flags and on-disk shape as Linux (`/opt/dispatch` + `/var/db/dispatch`) and the

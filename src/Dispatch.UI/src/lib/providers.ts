@@ -50,6 +50,7 @@ export const PROVIDER_FIELDS: Record<string, ProviderField[]> = {
   ],
   Smtp2Go: [{ name: "ApiKey", secret: true, required: true }],
   Maileroo: [{ name: "ApiKey", secret: true, required: true, label: "Sending Key" }],
+  Emailit: [{ name: "ApiKey", secret: true, required: true, placeholder: "secret_..." }],
   Bird: [
     { name: "ApiKey", secret: true, required: true },
     { name: "WorkspaceId", secret: false, required: true },
@@ -83,6 +84,7 @@ export const PROVIDER_BRAND: Record<string, { bg: string; fg?: string; mark: str
   Bird: { bg: "#2A21E5", mark: "BD" },
   Smtp2Go: { bg: "#00A4E4", mark: "S2" },
   Maileroo: { bg: "#4F46E5", mark: "ML" },
+  Emailit: { bg: "#5FF5A5", fg: "#1a1a1a", mark: "EI" },
   AzureCommunication: { bg: "#0078D4", mark: "AZ" },
   Smtp: { bg: "#64748B", mark: "@" },
   Local: { bg: "#475569", mark: "DEV" },
@@ -99,12 +101,13 @@ export const PROVIDER_DOCS: Record<string, string> = {
   Smtp2Go: "https://app.smtp2go.com/settings/api-keys",
   Maileroo: "https://maileroo.com/docs/email-api/introduction",
   Bird: "https://docs.bird.com/api/channels-api",
+  Emailit: "https://emailit.com/docs/api-reference/",
   AzureCommunication: "https://learn.microsoft.com/azure/communication-services/quickstarts/email/send-email",
 };
 
 // Display order for provider pickers (real deliverable providers first; Local/SMTP last).
 export const PROVIDER_ORDER = [
-  "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Bird", "Smtp2Go", "Maileroo", "AzureCommunication", "Smtp", "Local",
+  "Mailgun", "SendGrid", "AmazonSes", "Postmark", "Resend", "SparkPost", "Bird", "Smtp2Go", "Maileroo", "Emailit", "AzureCommunication", "Smtp", "Local",
 ];
 
 // Friendly labels for the provider picker (enum name -> display name).
@@ -118,6 +121,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   Bird: "Bird",
   Smtp2Go: "SMTP2GO",
   Maileroo: "Maileroo",
+  Emailit: "Emailit",
   AzureCommunication: "Azure Communication Services",
   Smtp: "Generic SMTP host",
   Local: "Local (developer capture - no external delivery)",

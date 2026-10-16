@@ -7,7 +7,7 @@
 [![Build](https://github.com/CinderHillsDev/dispatch-platform/actions/workflows/build.yml/badge.svg)](https://github.com/CinderHillsDev/dispatch-platform/actions)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Docker-lightgrey)](https://docs.dispatchrelay.app/deployment/overview/)
 
-Point your applications and devices at Dispatch over **SMTP** (the standard ports **25** and **587** by default - it falls back to **2525** only if 25 is already taken) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services - or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
+Point your applications and devices at Dispatch over **SMTP** (the standard ports **25** and **587** by default - it falls back to **2525** only if 25 is already taken) or a Mailgun-compatible **HTTP API**. Dispatch queues every message durably and forwards it to a dozen providers - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Emailit, Bird, Azure Communication Services - or any SMTP smart host, with a live web dashboard to monitor, configure, and troubleshoot everything.
 
 ### 📚 **[Read the documentation →](https://docs.dispatchrelay.app/)**
 
@@ -44,7 +44,7 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 ## Features
 
 - **Two ways in** - SMTP (STARTTLS, optional AUTH) and a Mailgun-compatible HTTP/HTTPS API with per-key tokens.
-- **A dozen providers** - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Bird, Azure Communication Services, generic SMTP - plus **Local** capture mode. CC/BCC, attachments, and custom headers everywhere.
+- **A dozen providers** - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Emailit, Bird, Azure Communication Services, generic SMTP - plus **Local** capture mode. CC/BCC, attachments, and custom headers everywhere.
 - **[Local Inbox](https://docs.dispatchrelay.app/sending/local-inbox/)** - a built-in mail trap: capture and inspect what your app sends, without delivering anything. Great for development and CI.
 - **Durable spool** - instant `250 OK`, auto-retry with back-off, retry-from-UI for failures.
 - **Smart routing** - send by sender/recipient domain to different relays, with a catch-all default and a simulate tool.
