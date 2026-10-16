@@ -466,18 +466,19 @@ jobs:
         run: |
           set -uo pipefail
           plutil -lint installer/macos/*.plist
-          bash -n installer/macos/*.sh installer/macos/pkg/postinstall
+          bash -n installer/macos/*.sh
 
           # File mode, asserted rather than assumed: the macOS port shipped install.sh + dispatch-update.sh at
-          # 644 while the Linux ones are 755. release.yml chmods while staging so the tarball hid the bug, but
-          # pkgbuild preserves the modes it is handed, so a .pkg built from a checkout carries an unexecutable
-          # install.sh into the customer's payload. Same trap for the two pkg scripts.
-          for f in installer/macos/install.sh installer/macos/dispatch-update.sh installer/macos/build-pkg.sh \
-                   installer/macos/pkg/postinstall; do
+          # 644 while the Linux ones are 755, and every way of copying them into an artifact - cp, ditto,
+          # pkgbuild - preserves the mode it is handed, so a checkout with 644 scripts ships an installer that
+          # dies with a bare 126 behind a password prompt. build-app.sh checks this too, but only for
+          # install.sh; the check belongs in git, not in one packaging script.
+          for f in installer/macos/install.sh installer/macos/dispatch-update.sh \
+                   installer/macos/build-app.sh; do
             m="$(git ls-files -s "$f" | awk '{print $1}')"
             [ "$m" = "100755" ] || { echo "$f is mode $m in git, want 100755"; exit 1; }
           done
-          echo "OK: installer scripts are executable in git (a .pkg payload inherits these modes)"
+          echo "OK: installer scripts are executable in git (every packaging route inherits these modes)"
 
           # Assert what install.sh's substitutions PRODUCE, read back with plutil -extract (the same call
           # dispatch-update.sh uses to find the service account). Reading the parsed values instead of the
@@ -557,9 +558,12 @@ jobs:
 
       # Only the arch this runner can execute is populated; the other bin-* dir is deliberately absent, so
       # install.sh's selection cannot pass on a mis-detection.
-      - name: Assemble the tarball
+      # The layout the release stages, minus the tarball: macOS ships ONE file (the .dmg), so CI installs
+      # from the same staging directory build-app.sh will package, and the headless path people use over SSH
+      # is the install.sh inside that bundle. Staging it directly means CI exercises the file users get
+      # rather than a round trip through an archive nobody downloads.
+      - name: Stage the macOS payload
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
-        id: bundle
         run: |
           set -uo pipefail
           case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
@@ -571,17 +575,7 @@ jobs:
              installer/macos/app.dispatchrelay.dispatch-update.plist "staging/${stage}/"
           cp src/Dispatch.Core/Updates/dispatch-update-public.pem "staging/${stage}/"
           chmod +x "staging/${stage}/install.sh" "staging/${stage}/dispatch-update.sh" "staging/${stage}/bin-${A}/Dispatch.Service"
-          tar -czf "${stage}.tar.gz" -C staging "${stage}"
-          ls -lh "${stage}.tar.gz"
-
-      - name: Upload tarball artifact
-        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: dispatch-macos-tarball
-          path: dispatch-ci-macos-*.tar.gz
-          if-no-files-found: error
-          retention-days: 3
+          ls -l "staging/${stage}"
 
       # Real end-to-end check: a default install (bundled SQLite, no database server, daemon as root so it
       # binds SMTP 25), then /health, then the things a Mac-specific failure would break.
@@ -591,9 +585,8 @@ jobs:
           ADMIN_PW: "Ci-Smoke-Passw0rd!"
         run: |
           set -uo pipefail
-          tarball="$(ls dispatch-ci-macos-*.tar.gz)"
-          mkdir -p /tmp/extract && tar -xzf "$tarball" -C /tmp/extract
-          dir="/tmp/extract/${tarball%.tar.gz}"
+          case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
+          dir="staging/dispatch-ci-macos-$A"
           sudo "$dir/install.sh" --admin-password "$ADMIN_PW" || { echo "install.sh FAILED"; exit 1; }
 
           ok=0
@@ -770,73 +763,13 @@ jobs:
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
         run: |
           set -uo pipefail
-          tarball="$(ls dispatch-ci-macos-*.tar.gz)"
-          dir="/tmp/extract/${tarball%.tar.gz}"
+          case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
+          dir="staging/dispatch-ci-macos-$A"
           sudo "$dir/install.sh" --uninstall
           sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 && { echo "daemon still loaded after uninstall"; exit 1; }
           test ! -e /Library/LaunchDaemons/app.dispatchrelay.dispatch.plist || { echo "plist left behind"; exit 1; }
           sudo test -d /var/db/dispatch || { echo "uninstall deleted the data dir - it must not"; exit 1; }
           echo "OK: uninstalled cleanly, data preserved"
-
-      # The .pkg is a wrapper around install.sh, so the only check that counts is installing one for real on a
-      # Mac and asking whether a supervised, healthy service came out of the other end. Deliberately last in
-      # the job: the step above uninstalled the tarball install, so this is a fresh system, which is what a
-      # customer's first .pkg install is.
-      - name: Install through the .pkg
-        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
-        run: |
-          set -uo pipefail
-          tarball="$(ls dispatch-ci-macos-*.tar.gz)"
-          dir="/tmp/extract/${tarball%.tar.gz}"
-
-          bash installer/macos/build-pkg.sh "$dir" 0.0.0-ci dispatch-ci-macos.pkg \
-            || { echo "build-pkg.sh FAILED"; exit 1; }
-          # States the artifact's real posture instead of leaving it to be discovered on a download page.
-          # 0 identities on the hosted runners = unsigned = Gatekeeper refuses a browser download; that is a
-          # certificate CI does not have, not something this pipeline can fix in place.
-          # || true: this is a status line, not a gate. pkgutil exits non-zero on an unsigned package, and
-          # GitHub runs the step under bash -e, so unguarded it aborts the install test before it installs.
-          pkgutil --check-signature dispatch-ci-macos.pkg | head -3 || true
-
-          sudo installer -pkg dispatch-ci-macos.pkg -target / || { echo "installer -pkg FAILED"; exit 1; }
-          sudo pkgutil --pkgs | grep -qx app.dispatchrelay.dispatch || { echo "installer succeeded with no receipt"; exit 1; }
-
-          ok=0
-          for _ in $(seq 1 36); do
-            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
-            sleep 5
-          done
-          if [ "$ok" != 1 ]; then
-            echo "=== postinstall log ==="; sudo tail -n 80 /tmp/dispatch-pkg-postinstall.log 2>&1
-            echo "=== launchctl ==="; sudo launchctl print system/app.dispatchrelay.dispatch 2>&1 | tail -40
-            echo "=== installer's own view ==="; sudo grep -i dispatch /var/log/install.log 2>/dev/null | tail -30
-            echo "the .pkg did not produce a healthy service"; exit 1
-          fi
-          sudo launchctl print system/app.dispatchrelay.dispatch | grep -q "state = running" \
-            || { echo "the .pkg installed a daemon launchd is not supervising"; exit 1; }
-          echo "OK: the .pkg installed a launchd-supervised, healthy service through install.sh"
-
-          # The three promises postinstall makes beyond "it ran": the staged binaries are trimmed so a Mac
-          # does not pay twice for a self-contained runtime, the scripts survive so the pkg's own install.sh
-          # can still uninstall, and the transcript lands where an operator debugging an install looks.
-          case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
-          sudo test ! -e "/opt/dispatch/pkg/bin-$A" || { echo "the .pkg left a second copy of the binaries on disk"; exit 1; }
-          sudo test -x /opt/dispatch/pkg/install.sh || { echo "postinstall deleted the installer uninstall needs"; exit 1; }
-          sudo test -f /var/log/dispatch/pkg-postinstall.log || { echo "no postinstall log in the log dir"; exit 1; }
-          sudo test -d /opt/dispatch/releases || { echo "no release dir - install.sh did not run"; exit 1; }
-          echo "OK: payload trimmed, uninstall path intact, postinstall logged"
-
-          # A .pkg cannot ask for an admin password, so the machine must be WAITING for one: the SPA and
-          # /health stay open by design, everything under /api/ must still be 401 until first-run setup.
-          code=$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8420/api/audit)
-          [ "$code" = "401" ] || { echo "unauthenticated /api/audit returned $code - a pkg install must not open the admin API"; exit 1; }
-          echo "OK: admin API still 401 pending first-run setup (no password seeded by the pkg)"
-
-          # And the uninstall a .pkg customer is told about, run through the payload's own copy.
-          sudo /opt/dispatch/pkg/install.sh --uninstall
-          sudo test ! -d /opt/dispatch || { echo "uninstall left /opt/dispatch behind"; exit 1; }
-          sudo test -d /var/db/dispatch || { echo "uninstall deleted the data dir - it must not"; exit 1; }
-          echo "OK: the .pkg's own uninstall path works"
 
       # DispatchRelay.app is the same install.sh in the shape Mac users look for, so what needs proving here is not
       # the daemon (covered above) but the bundle and the one privileged script its Install button runs. The
@@ -848,13 +781,13 @@ jobs:
         run: |
           set -uo pipefail
 
-          tarball="$(ls dispatch-ci-macos-*.tar.gz)"
-          dir="/tmp/extract/${tarball%.tar.gz}"
+          case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
+          dir="staging/dispatch-ci-macos-$A"
 
-          # Start from a known-clean machine, using whichever uninstaller is present: the .pkg step above
-          # finishes by uninstalling, so /opt/dispatch may already be gone. Either way this is the setup for
-          # the regression this step actually tests - the install that follows is a REINSTALL after an
-          # uninstall, which is the case that used to silently start nothing because `launchctl disable`
+          # Start from a known-clean machine, using whichever uninstaller is present. The previous step
+          # uninstalled, so /opt/dispatch is expected to be gone and the staged copy is the fallback. Either
+          # way this is the setup for the regression this step tests: the install that follows is a REINSTALL
+          # after an uninstall, the case that used to silently start nothing because `launchctl disable`
           # persists by label and survives the whole directory disappearing.
           if [ -x /opt/dispatch/install.sh ]; then
             sudo /opt/dispatch/install.sh --uninstall >/dev/null || { echo "/opt/dispatch/install.sh --uninstall failed"; exit 1; }
@@ -864,6 +797,7 @@ jobs:
           sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 && { echo "the daemon survived an uninstall"; exit 1; }
           bash installer/macos/build-app.sh "$dir" 0.0.0-ci dispatch-ci-macos.dmg \
             || { echo "build-app.sh FAILED"; exit 1; }
+          test ! -e "$dir/bin-x64" || { echo "the runner staged an x64 payload; this Mac is not arm64"; exit 1; }
           ls -lh dispatch-ci-macos.dmg
 
           echo "::group::mount the dmg and verify the bundle"

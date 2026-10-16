@@ -61,8 +61,8 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 | Windows (Service + MSI) | Supported |
 | Linux (systemd, glibc; x64 + arm64) | Supported |
 | Docker / containers (amd64 + arm64) | Supported |
-| macOS (launchd daemon; Apple Silicon + Intel) | Supported - drag `DispatchRelay.app` from a `.dmg` (Apple Silicon) and it installs the background service for you; universal tarball and `.pkg` too. In-app updates included; signed ad-hoc, not notarized ([docs/macos.md](docs/macos.md)) |
-| FreeBSD, musl Alpine | Not supported |
+| macOS, Apple Silicon (launchd daemon + menu bar app) | Supported - one file: drag `DispatchRelay.app` from the `.dmg` to Applications and it installs the background service. In-app updates included. Ad-hoc signed, not notarized ([docs/macos.md](docs/macos.md)) |
+| macOS on Intel, FreeBSD, musl Alpine | Not supported |
 
 ## Quickstart
 

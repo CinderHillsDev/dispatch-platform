@@ -109,8 +109,18 @@ fi
 # Ad-hoc, no hardened runtime. Hardened runtime with no entitlements buys nothing here and can block the
 # .NET runtime the payload carries, and the daemon is launched by launchd from /opt rather than by this
 # bundle, so the app's own options do not constrain it.
-codesign --force --sign - --timestamp=none "$BIN_DIR/dispatchrelay" >/dev/null
-codesign --force --sign - --timestamp=none "$APP" >/dev/null
+# DISPATCH_APP_SIGN_IDENTITY turns the ad-hoc seal into a Developer ID one when a runner ever has a
+# certificate; the notary step still has to be added on top (see docs/macos.md), so this alone does not make
+# the download frictionless. Default stays ad-hoc, which is honest about what CI can do today.
+IDENTITY="${DISPATCH_APP_SIGN_IDENTITY:--}"
+[[ "$IDENTITY" == "-" ]] && echo "signing: ad-hoc (set DISPATCH_APP_SIGN_IDENTITY to sign with a Developer ID)" || echo "signing: $IDENTITY"
+# Not an array: /bin/bash on macOS is 3.2, and expanding an empty array under `set -u` is an unbound
+# variable error there, which would fail every ad-hoc-signed build. A plain string that word-splits away to
+# nothing is the portable form.
+OPTS=""
+[[ "$IDENTITY" != "-" ]] && OPTS="--options runtime"
+codesign --force --sign "$IDENTITY" --timestamp=none $OPTS "$BIN_DIR/dispatchrelay" >/dev/null
+codesign --force --sign "$IDENTITY" --timestamp=none $OPTS "$APP" >/dev/null
 codesign --verify --verbose=2 "$APP" 2>&1 | tail -3
 
 # ---- dmg: the app plus an Applications shortcut, so the install really is a drag --------------

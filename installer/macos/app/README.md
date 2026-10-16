@@ -34,7 +34,7 @@ run the service - it finds it, reports on it, and installs or removes it.
   `/opt/dispatch/install.sh`, which `install.sh` itself leaves behind and root owns.
 
 There is no second copy of the install logic here on purpose: `build-app.sh` ships `installer/macos/install.sh`
-inside the bundle, so the app, the tarball and the `.pkg` are one install path in three containers.
+inside the bundle, so the app and the command line are one install path, in one file.
 
 ## How it is built
 
