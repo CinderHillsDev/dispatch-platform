@@ -486,10 +486,11 @@ jobs:
           ver="${{ steps.ver.outputs.version }}"
           bash installer/macos/build-pkg.sh "staging/dispatch-${ver}-macos" "$ver" "dispatch-${ver}-macos.pkg"
           ls -lh dispatch-*-macos.pkg
-          # The runners have no Developer ID identity (0 valid identities), so this says "no signature" on
-          # every release. That is the honest state of the artifact, and the line an operator reads when a
-          # double-click does not work; docs/macos.md carries the matching instruction.
-          pkgutil --check-signature "dispatch-${ver}-macos.pkg" | head -3
+          # The runners have no Developer ID identity, so "no signature" is the honest state of this artifact
+          # on every release, and docs/macos.md carries the matching instruction. || true because pkgutil
+          # reports an unsigned package by exiting non-zero, and bash -e would fail the release on a status
+          # line - the same trap that aborted the CI install step.
+          pkgutil --check-signature "dispatch-${ver}-macos.pkg" 2>&1 | head -3 || true
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7

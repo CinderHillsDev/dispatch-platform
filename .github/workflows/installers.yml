@@ -794,7 +794,9 @@ jobs:
           # States the artifact's real posture instead of leaving it to be discovered on a download page.
           # 0 identities on the hosted runners = unsigned = Gatekeeper refuses a browser download; that is a
           # certificate CI does not have, not something this pipeline can fix in place.
-          pkgutil --check-signature dispatch-ci-macos.pkg | head -3
+          # || true: this is a status line, not a gate. pkgutil exits non-zero on an unsigned package, and
+          # GitHub runs the step under bash -e, so unguarded it aborts the install test before it installs.
+          pkgutil --check-signature dispatch-ci-macos.pkg | head -3 || true
 
           sudo installer -pkg dispatch-ci-macos.pkg -target / || { echo "installer -pkg FAILED"; exit 1; }
           sudo pkgutil --pkgs | grep -qx app.dispatchrelay.dispatch || { echo "installer succeeded with no receipt"; exit 1; }

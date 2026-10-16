@@ -31,6 +31,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$SCRIPT_DIR/pkg/postinstall" ]] || { echo "missing $SCRIPT_DIR/pkg/postinstall" >&2; exit 1; }
 for f in install.sh dispatch-update.sh app.dispatchrelay.dispatch.plist \
          app.dispatchrelay.dispatch-update.plist dispatch-update-public.pem; do
+  # Checked on the staged tree, before anything is packed. The alternative is listing the finished package's
+  # Payload, which means piping expand into cpio and hoping the flags match how pkgbuild compressed it -
+  # that produces a warning nobody can act on. install.sh in particular is the whole reason the .pkg exists:
+  # the postinstall runs that file, so a package without it is a wrapper around nothing.
   [[ -f "$STAGED/$f" ]] || { echo "staged dir is missing $f" >&2; exit 1; }
 done
 # At least one arch must be present. A real release carries both and install.sh picks by uname -m at install
@@ -84,17 +88,8 @@ echo "=== signature posture of the artifact just built ==="
 # '|| true' is load bearing: pkgutil exits non-zero when a pkg is unsigned, and every .pkg CI builds is
 # unsigned (the hosted runners have no Developer ID identity). Without it a release dies on its own status
 # report - and dies only on the real builds, never on a machine where someone signed one by hand.
+# pkgutil exits non-zero when the package is unsigned, which is every package this script builds on CI, so
+# the report is silenced. A status line that can abort the build it is reporting on is worse than no report.
+# The `|| true` has to sit on the whole pipeline: with pipefail set, `head` finishing 0 does not save you
+# from pkgutil's exit status, which is the one that fires.
 pkgutil --check-signature "$OUT" 2>&1 | head -4 || true
-
-# Belt and braces: prove the payload really carries install.sh. expand + cpio are present on macOS, but a
-# difference in either is not worth failing a release over - the CI smoke installs the pkg for real, and that
-# is the check that matters. Count the matches into a variable rather than piping grep -q: with pipefail set,
-# grep -q's early exit would SIGPIPE cpio and report a good payload as a missing one.
-if command -v expand >/dev/null 2>&1 && command -v cpio >/dev/null 2>&1; then
-  hits="$( { expand -p Payload "$OUT" 2>/dev/null; } | { cpio -t 2>/dev/null; } | grep -c 'install\.sh$' || true )"
-  if [[ "${hits:-0}" != "0" ]]; then
-    echo "OK: payload carries install.sh (the .pkg installs through it, not through a copy of it)"
-  else
-    echo "warning: could not list install.sh inside the payload - check the pkgbuild --root layout" >&2
-  fi
-fi
