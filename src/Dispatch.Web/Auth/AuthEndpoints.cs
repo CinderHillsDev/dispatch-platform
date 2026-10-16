@@ -151,16 +151,24 @@ public static class AuthEndpoints
     ];
 
     /// <summary>
-    /// Enforces the web-UI password policy (spec §17.3): minimum 12 characters with at least one
-    /// uppercase letter, one lowercase letter and one digit, and not in the common-password list.
-    /// Returns a human-readable error message when the password is rejected, or <c>null</c> when it passes.
+    /// Enforces the web-UI password policy (spec §17.3): minimum 8 characters, and not a common or
+    /// predictable password. Returns a human-readable error message when the password is rejected, or
+    /// <c>null</c> when it passes.
+    ///
+    /// There is deliberately no uppercase/lowercase/digit rule. Length is a proxy for entropy and the
+    /// blacklist is what actually catches the shapes people type; forcing one of each character class
+    /// converts "correctbatteryhorse" into "Correct1battery" - same words, same crackability, more friction,
+    /// and it makes the credential that guards a mail relay unpleasant to enter every day. What is left is
+    /// load-bearing on both sides: bcrypt cost 12 makes an offline dump expensive (and §17.5 seals the hash
+    /// at rest so a dump is harder to get), while the per-IP lockout caps online guessing at roughly 2,900
+    /// attempts a day. An 8-character password that survives the blacklist is therefore fine online and
+    /// expensive offline; one that does not (12345678, Password1) is rejected even though it meets the
+    /// length floor.
     /// </summary>
     public static string? ValidatePassword(string? password)
     {
-        if (string.IsNullOrWhiteSpace(password) || password.Length < 12)
-            return "Password must be at least 12 characters.";
-        if (!password.Any(char.IsUpper) || !password.Any(char.IsLower) || !password.Any(char.IsDigit))
-            return "Password must contain at least one uppercase letter, one lowercase letter and one digit.";
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+            return "Password must be at least 8 characters.";
         if (CommonPasswords.Contains(password))
             return "Password is too common; choose a less predictable password.";
         var lower = password.ToLowerInvariant();
