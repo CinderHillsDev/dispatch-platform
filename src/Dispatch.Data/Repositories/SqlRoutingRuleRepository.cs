@@ -70,20 +70,10 @@ public sealed class SqlRoutingRuleRepository(IDbContextFactory<DispatchDbContext
 
     public async Task<bool> DeleteAsync(int id, CancellationToken ct = default)
     {
+        // Negation probe: the pre-fix body, kept only to see whether the new regression test in
+        // SqlRoutingTests actually catches this. Do not merge.
         await using var db = await contexts.CreateDbContextAsync(ct);
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-
-        // relay_log carries a foreign key to this row, so deleting a rule that ever matched a message fails
-        // with a constraint error (issue #31) unless the reference is cleared first. Same contract as deleting
-        // a Relay: the log rows survive and still say which rule matched, because routing_rule_name is
-        // denormalised onto each one; only the id, which now points at nothing, goes. In one transaction, so
-        // a delete cannot half-apply and leave history nulled with the rule still in place.
-        await db.RelayLog.Where(r => r.RoutingRuleId == id)
-            .ExecuteUpdateAsync(s => s.SetProperty(r => r.RoutingRuleId, (int?)null), ct);
-
-        var affected = await db.RoutingRules.Where(r => r.Id == id).ExecuteDeleteAsync(ct);
-        await tx.CommitAsync(ct);
-        return affected > 0;
+        return await db.RoutingRules.Where(r => r.Id == id).ExecuteDeleteAsync(ct) > 0;
     }
 
     public async Task ReorderAsync(IReadOnlyList<int> idsInPriorityOrder, CancellationToken ct = default)
