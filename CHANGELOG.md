@@ -65,7 +65,7 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
   releases the key, so retrying after a fix still sends). Their 429/500/503 responses land on Dispatch's
   transient retry path, every other 4xx is permanent. Closes #26.
 - **macOS now installs like a Mac app.** The release ships `dispatch-<ver>-macos.dmg` containing
-  `Dispatch.app` - a menu bar control panel for Apple Silicon that shows whether the relay is running, opens
+  `DispatchRelay.app` - a menu bar control panel for Apple Silicon that shows whether the relay is running, opens
   the dashboard, and installs or removes the background service through one administrator prompt. The daemon
   stays a `LaunchDaemon`, because nothing that has to bind SMTP 25 before anyone logs in can be a Dock app;
   what changed is that the product is now *visible* - an icon in `/Applications`, and an uninstaller that

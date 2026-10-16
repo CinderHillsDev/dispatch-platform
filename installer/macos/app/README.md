@@ -1,6 +1,6 @@
-# Dispatch.app - the macOS menu bar control panel
+# DispatchRelay.app - the macOS menu bar control panel
 
-`Dispatch.app` is the visible half of the macOS product. The other half - the thing that actually relays
+`DispatchRelay.app` is the visible half of the macOS product. The other half - the thing that actually relays
 mail - is a LaunchDaemon, and the split is deliberate.
 
 ## Why the daemon is not an app
@@ -53,7 +53,7 @@ The binary and the bundle are **ad-hoc signed**. There is no Developer ID certif
 notarization, because the project has no Apple Developer account, so:
 
 - A `.dmg` downloaded in a browser arrives quarantined, and Gatekeeper refuses the first open. Right-click >
-  Open gets past it once; `xattr -dr com.apple.quarantine Dispatch.app` does the same from a terminal.
+  Open gets past it once; `xattr -dr com.apple.quarantine DispatchRelay.app` does the same from a terminal.
 - `install.sh` strips quarantine from the binaries it installs and re-signs the apphost on the target
   machine, so the *daemon* is not affected by any of this. Only the app's first launch is.
 - No hardened runtime options are set. With no entitlements it buys nothing here, and the daemon is spawned

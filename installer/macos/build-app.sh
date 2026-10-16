@@ -1,11 +1,11 @@
 #!/bin/bash
-# Build Dispatch.app - the macOS menu bar control panel - and wrap it in a drag-to-Applications .dmg.
+# Build DispatchRelay.app - the macOS menu bar control panel - and wrap it in a drag-to-Applications .dmg.
 #
 #   ./build-app.sh <staged-dir> <version> <output-dmg>
 #
 # <staged-dir> is what the release job assembles for the universal tarball: install.sh, dispatch-update.sh,
 # the two LaunchDaemon property lists, dispatch-update-public.pem, and bin-arm64/ (+ bin-x64/, which this
-# script deliberately drops). The payload is copied INTO the bundle, so Dispatch.app is a complete installer:
+# script deliberately drops). The payload is copied INTO the bundle, so DispatchRelay.app is a complete installer:
 # nobody has to find a second download to install the service after moving the app.
 #
 # Apple Silicon only. That is a product decision, not an oversight: an arm64-only bundle halves the download,
@@ -27,7 +27,7 @@ command -v hdiutil  >/dev/null 2>&1 || { echo "hdiutil not found - this is not m
 command -v codesign >/dev/null 2>&1 || { echo "codesign not found" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
-APP_NAME="Dispatch.app"
+APP_NAME="DispatchRelay.app"
 WORK="$(mktemp -d /tmp/dispatch-app.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -61,11 +61,11 @@ chmod 755 "$RES_DIR/payload" "$RES_DIR/payload/install.sh" "$RES_DIR/payload/dis
 # the compiler report "circular dependency between modules 'Dispatch' and 'Foundation'", which is a confusing
 # way to say that an app cannot be its own namesake. The executable keeps the name the bundle expects.
 xcrun swiftc -O -target arm64-apple-macos13.0 \
-  -module-name DispatchApp \
+  -module-name dispatchrelay \
   -framework AppKit \
-  -o "$BIN_DIR/Dispatch" \
+  -o "$BIN_DIR/dispatchrelay" \
   "$SCRIPT_DIR/app/Sources/main.swift"
-chmod 755 "$BIN_DIR/Dispatch"
+chmod 755 "$BIN_DIR/dispatchrelay"
 
 # ---- Info.plist, version-stamped -------------------------------------------------------------
 /bin/cp "$SCRIPT_DIR/app/Info.plist" "$APP/Contents/Info.plist"
@@ -101,7 +101,7 @@ fi
 # Ad-hoc, no hardened runtime. Hardened runtime with no entitlements buys nothing here and can block the
 # .NET runtime the payload carries, and the daemon is launched by launchd from /opt rather than by this
 # bundle, so the app's own options do not constrain it.
-codesign --force --sign - --timestamp=none "$BIN_DIR/Dispatch" >/dev/null
+codesign --force --sign - --timestamp=none "$BIN_DIR/dispatchrelay" >/dev/null
 codesign --force --sign - --timestamp=none "$APP" >/dev/null
 codesign --verify --verbose=2 "$APP" 2>&1 | tail -3
 
@@ -112,7 +112,7 @@ mv "$APP" "$DMG_ROOT/"
 ln -s /Applications "$DMG_ROOT/Applications"
 if [[ -f "$RES_DIR/payload/README.txt" ]]; then cp "$RES_DIR/payload/README.txt" "$WORK/README.txt"; fi
 
-hdiutil create -volname "Dispatch $VER" -srcfolder "$DMG_ROOT" -ov -format UDZO "$OUT" >/dev/null
+hdiutil create -volname "Dispatch Relay $VER" -srcfolder "$DMG_ROOT" -ov -format UDZO "$OUT" >/dev/null
 chmod 644 "$OUT"
 
 echo "built: $OUT"

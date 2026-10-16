@@ -1,4 +1,4 @@
-// Dispatch - menu bar control panel for the Dispatch SMTP relay daemon.
+// DispatchRelay - menu bar control panel for the Dispatch SMTP relay daemon.
 //
 // Why this file exists at all: the product is a LaunchDaemon. It has to start at boot before anyone logs in,
 // and it has to run as root to bind SMTP 25/587, because macOS has no per-process capability grant for
@@ -87,7 +87,7 @@ private enum Privileged {
     /// Run a shell script as root through Authorization Services - the system's one password prompt. The
     /// handler is called on a background queue. osascript's stderr carries the script's own error text, which
     /// is what the menu surfaces: install.sh writes a real diagnosis there when it gives up.
-    static func run(_ script: String, _ handler: @escaping (Result<String, String>) -> Void) {
+    static func run(_ script: String, _ handler: @escaping (_ ok: Bool, _ text: String) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let escaped = script
                 .replacingOccurrences(of: "\\", with: "\\\\")
@@ -96,38 +96,45 @@ private enum Privileged {
             // Event timeout would report a failure over an install that was merely slow.
             let appleScript = "with timeout of 1800 seconds\n do shell script \"\(escaped)\" with administrator privileges\nend timeout"
 
+            // Output goes to files, not Pipes. A Pipe plus waitUntilExit() deadlocks once the child writes
+            // more than the 64 KB buffer, and install.sh printing its launchctl dump can get there; a
+            // readabilityHandler would fix that and introduce a data race on the accumulating Data.
+            let dir = FileManager.default.temporaryDirectory
+            let outURL = dir.appendingPathComponent("dispatch-out-\(UUID().uuidString).txt")
+            let errURL = dir.appendingPathComponent("dispatch-err-\(UUID().uuidString).txt")
+            FileManager.default.createFile(atPath: outURL.path, contents: nil)
+            FileManager.default.createFile(atPath: errURL.path, contents: nil)
+            defer { try? FileManager.default.removeItem(at: outURL); try? FileManager.default.removeItem(at: errURL) }
+
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
             proc.arguments = ["-e", appleScript]
-            let out = Pipe()
-            let err = Pipe()
-            proc.standardOutput = out
-            proc.standardError = err
-
-            // Drain both pipes before waiting. install.sh and its cp output routinely exceed a 64 KB pipe
-            // buffer, and a full pipe plus waitUntilExit() deadlocks the app with a spinning menu bar.
-            var received = Data()
-            var problems = Data()
-            out.fileHandleForReading.readabilityHandler = { received.append($0.availableData) }
-            err.fileHandleForReading.readabilityHandler = { problems.append($0.availableData) }
-            proc.terminationHandler = { _ in
-                out.fileHandleForReading.readabilityHandler = nil
-                err.fileHandleForReading.readabilityHandler = nil
+            guard let outFH = FileHandle(forWritingAtPath: outURL.path),
+                  let errFH = FileHandle(forWritingAtPath: errURL.path) else {
+                handler(false, "could not open temporary files to capture the installer's output")
+                return
             }
+            proc.standardOutput = outFH
+            proc.standardError = errFH
             do {
                 try proc.run()
                 proc.waitUntilExit()
-                out.fileHandleForReading.readabilityHandler = nil
-                err.fileHandleForReading.readabilityHandler = nil
+                outFH.closeFile()
+                errFH.closeFile()
+                let body = (try? Data(contentsOf: outURL)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
                 if proc.terminationStatus == 0 {
-                    handler(.success(String(data: received, encoding: .utf8) ?? ""))
+                    handler(true, body)
                 } else {
-                    let text = String(data: problems, encoding: .utf8)?
+                    let problems = (try? Data(contentsOf: errURL)).flatMap { String(data: $0, encoding: .utf8) }?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    handler(.failure(text.isEmpty ? "the helper command exited \(proc.terminationStatus) with no output" : text))
+                    // osascript prefixes "Command failed." with no detail; the script's own stderr is the
+                    // part worth showing, and install.sh writes a real diagnosis there since #52.
+                    handler(false, problems.isEmpty
+                        ? "the privileged command exited \(proc.terminationStatus) with no output. Details: /var/log/dispatch and /tmp/dispatch-pkg-postinstall.log"
+                        : problems)
                 }
             } catch {
-                handler(.failure("could not run osascript: \(error)"))
+                handler(false, "could not run osascript: \(error)")
             }
         }
     }
@@ -147,18 +154,18 @@ private final class Controller: NSObject, NSMenuDelegate {
 
     func start() {
         if let button = status.button {
-            button.image = NSImage(systemSymbolName: "shippingbox", accessibilityDescription: "Dispatch")
+            button.image = NSImage(systemSymbolName: "shippingbox", accessibilityDescription: "Dispatch Relay")
             button.imagePosition = .imageLeading
-            button.title = " Dispatch"
+            button.title = " Dispatch Relay"
         }
         menu.delegate = self
         menu.autoenablesItems = false
 
-        stateItem = item("Checking...", nil, nil)
-        openItem = item("Open Dashboard", #selector(openDashboard), "d")
-        installItem = item("Install background service...", #selector(installTapped), "")
-        removeItem = item("Remove background service...", #selector(removeTapped), "")
-        let refreshItem = item("Refresh", #selector(refresh), "r")
+        stateItem = item("Checking...", nil, "", target: nil)
+        openItem = item("Open Dashboard", #selector(openDashboard), "d", target: self)
+        installItem = item("Install background service...", #selector(installTapped), "", target: self)
+        removeItem = item("Remove background service...", #selector(removeTapped), "", target: self)
+        let refreshItem = item("Refresh", #selector(refresh), "r", target: self)
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
 
         menu.addItem(stateItem)
@@ -168,7 +175,7 @@ private final class Controller: NSObject, NSMenuDelegate {
         menu.addItem(removeItem)
         menu.addItem(.separator())
         menu.addItem(refreshItem)
-        menu.addItem(item("Dispatch \(version)", nil, nil))
+        menu.addItem(item("Dispatch Relay \(version)", nil, "", target: nil))
         menu.addItem(.separator())
         menu.addItem(item("Quit", #selector(NSApplication.terminate(_:)), "q", target: nil))
         status.menu = menu
@@ -181,7 +188,7 @@ private final class Controller: NSObject, NSMenuDelegate {
 
     /// Items need an explicit target: with autoenablesItems off there is no responder-chain walk, and a
     /// status-bar menu has no window to route through anyway.
-    private func item(_ title: String, _ action: Selector?, _ key: String, target: AnyObject? = self) -> NSMenuItem {
+    private func item(_ title: String, _ action: Selector?, _ key: String, target: AnyObject?) -> NSMenuItem {
         let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
         if let action = action { i.target = target } else { i.isEnabled = false }
         return i
@@ -250,16 +257,11 @@ private final class Controller: NSObject, NSMenuDelegate {
         busy = true
         stateItem.title = "\(verb)..."
         openItem.isEnabled = false; installItem.isEnabled = false; removeItem.isEnabled = false
-        Privileged.run(script) { result in
+        Privileged.run(script) { ok, text in
             DispatchQueue.main.async {
                 self.busy = false
-                switch result {
-                case .success:
-                    self.refresh()
-                case .failure(let message):
-                    self.refresh()
-                    self.fail(verb, message)
-                }
+                self.refresh()
+                if !ok { self.fail(verb, text) }
             }
         }
     }
@@ -279,7 +281,7 @@ private final class Controller: NSObject, NSMenuDelegate {
     }
 }
 
-private final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = Controller()
 
     func applicationDidFinishLaunching(_ notification: Notification) {

@@ -25,7 +25,7 @@ Three artifacts, one install logic:
   [Install with the .pkg](#install-with-the-pkg), and note that it is **unsigned**, which changes how you can
   launch it.
 
-- `dispatch-<version>-macos.dmg` - **the recommended path on Apple Silicon.** Drag `Dispatch.app` into
+- `dispatch-<version>-macos.dmg` - **the recommended path on Apple Silicon.** Drag `DispatchRelay.app` into
   Applications; the app is a menu bar control panel that shows whether the daemon is running, opens the
   dashboard, and installs or removes the background service through one administrator prompt. It carries the
   same `install.sh` and the same `bin-arm64` payload inside it, so there is no second download and no second
@@ -118,11 +118,11 @@ Re-installing the `.pkg` over an existing host is the upgrade path for a machine
 `install.sh` boots the daemon out first, writes a new `releases/<version>` directory and re-points `current`.
 The in-app Updates page stays the other route, and is the one that verifies a signed manifest.
 
-## Install with Dispatch.app (the .dmg)
+## Install with DispatchRelay.app (the .dmg)
 
 ```bash
-# drag Dispatch.app into /Applications, then launch it once
-open /Applications/Dispatch.app
+# drag DispatchRelay.app into /Applications, then launch it once
+open /Applications/DispatchRelay.app
 # click the menu bar item -> Install background service...
 # then Open Dashboard (https://localhost:8420) and set the admin password on first run
 ```
@@ -233,7 +233,7 @@ from the tarball in a folder you still have, `sudo ./install.sh --uninstall` is 
 installed the `.pkg` and something went far enough wrong that `/opt/dispatch/install.sh` is missing, the
 payload's own copy is at `/opt/dispatch/pkg/install.sh`.
 
-Installing through `Dispatch.app`? Its "Remove background service..." item calls the same script; you can
+Installing through `DispatchRelay.app`? Its "Remove background service..." item calls the same script; you can
 then drag the app itself to the Trash.
 
 No package format has an uninstaller, so `sudo pkgutil --forget app.dispatchrelay.dispatch` only clears the

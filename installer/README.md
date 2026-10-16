@@ -78,7 +78,7 @@ let `install.sh` pick the arch payload out of the tarball it shipped in.
 updates as root).
 
 ```bash
-# Or don't: the release .dmg carries Dispatch.app, whose menu bar item installs/removes this very
+# Or don't: the release .dmg carries DispatchRelay.app, whose menu bar item installs/removes this very
 # install.sh through one administrator prompt (Apple Silicon only; see macos/app/README.md).
 
 # From the release tarball - no SDK, no Node, arch auto-detected (Apple Silicon or Intel):
@@ -93,7 +93,7 @@ sudo /opt/dispatch/install.sh --uninstall                      # the same, from 
 ```
 
 `build-pkg.sh` wraps the same directory as a `.pkg` (its postinstall just execs `install.sh`), and
-`build-app.sh` wraps it as `Dispatch.app` inside a `.dmg`. Three containers, one install path - a second copy
+`build-app.sh` wraps it as `DispatchRelay.app` inside a `.dmg`. Three containers, one install path - a second copy
 of the install logic is how two installers for one product start to disagree.
 
 Two differences from Linux worth knowing before you read the flags again:

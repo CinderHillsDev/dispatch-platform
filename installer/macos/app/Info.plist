@@ -11,21 +11,25 @@
   administrator prompt.
 
   LSUIElement means no Dock icon and no app switcher entry - a control panel, not a document app.
+
+  The executable is dispatchrelay, not Dispatch: "Dispatch" is already the name of Apple's libdispatch
+  module, which Foundation imports, so a target named after it fails to compile with a circular-dependency
+  error. It also happens to match the project's domain and the app.dispatchrelay.* launchd labels.
 -->
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Dispatch</string>
+    <string>Dispatch Relay</string>
     <key>CFBundleExecutable</key>
-    <string>Dispatch</string>
+    <string>dispatchrelay</string>
     <key>CFBundleIdentifier</key>
     <string>app.dispatchrelay.console</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Dispatch</string>
+    <string>DispatchRelay</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
