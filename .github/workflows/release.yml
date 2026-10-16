@@ -600,10 +600,9 @@ jobs:
           prerelease: ${{ contains(needs.windows.outputs.version, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+          # Everything the staging step put in release/, rather than a second list of artifact names. The
+          # explicit list is how dispatch-<ver>-macos.dmg got built, checksummed into SHA256SUMS, and then
+          # silently left out of the release: fail_on_unmatched_files only complains when a PATTERN matches
+          # nothing, so a pattern that was never written down is invisible. The staging step is the manifest.
           files: |
-            release/DispatchSetup-*-x64.exe
-            release/dispatch-*-linux.tar.gz
-            release/dispatch-*-macos.tar.gz
-            release/dispatch-*-macos.pkg
-            release/dispatch-upgrade-*
-            release/SHA256SUMS
+            release/*
