@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using Dispatch.Core.Logging;
 using Dispatch.Core.Providers;
 using Dispatch.Core.Routing;
 using Dispatch.Data.Repositories;
@@ -53,5 +55,42 @@ public class SqlRoutingTests(DatabaseFixture sql) : IClassFixture<DatabaseFixtur
 
         Assert.True(await rules.DeleteAsync(a.Id));
         Assert.Equal(1, await rules.CountReferencingRelayAsync(relay.Id));
+    }
+
+    [Fact]
+    public async Task Deleting_a_rule_that_already_matched_a_message_keeps_the_history()
+    {
+        if (!sql.Available) return;
+        var relays = new SqlRelayRepository(sql.Contexts);
+        var rules = new SqlRoutingRuleRepository(sql.Contexts);
+        var logs = new SqlLogRepository(sql.Contexts);
+
+        var relay = await relays.CreateAsync("Acme target", RelayProviderType.Local, 4, 0);
+        var rule = await rules.CreateAsync(new RoutingRule
+        {
+            Name = "Acme", RecipientPattern = "*.acme.com", RelayId = relay.Id, Enabled = true,
+        });
+
+        // One message through the rule. That is the whole difference between the delete that works and the
+        // one reported in issue #31: relay_log carries a foreign key to routing_rules.
+        const string spoolId = "rule-delete-history";
+        await logs.InsertAsync(new RelayLogEntry
+        {
+            Event = "Delivered", Status = "OK", SpoolId = spoolId,
+            FromAddress = "svc@myco.com", FromDomain = "myco.com",
+            ToAddresses = ["person@acme.com"], ToDomain = "acme.com", Subject = "routed once",
+            RelayId = relay.Id, RelayName = relay.Name,
+            RoutingRuleId = rule.Id, RoutingRuleName = rule.Name, RoutingMatched = true,
+        });
+
+        Assert.True(await rules.DeleteAsync(rule.Id));
+
+        // relay_log's row must survive with its names, and only the dangling id cleared - the history has to
+        // keep saying what matched, which is what RelayLogEntry's own doc comment promises.
+        await using var db = await sql.Contexts.CreateDbContextAsync();
+        var row = await db.RelayLog.AsNoTracking().SingleAsync(r => r.SpoolId == spoolId);
+        Assert.Null(row.RoutingRuleId);
+        Assert.Equal(rule.Name, row.RoutingRuleName);
+        Assert.True(row.RoutingMatched);
     }
 }
