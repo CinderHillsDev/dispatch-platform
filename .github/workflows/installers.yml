@@ -837,3 +837,82 @@ jobs:
           sudo test ! -d /opt/dispatch || { echo "uninstall left /opt/dispatch behind"; exit 1; }
           sudo test -d /var/db/dispatch || { echo "uninstall deleted the data dir - it must not"; exit 1; }
           echo "OK: the .pkg's own uninstall path works"
+
+      # Dispatch.app is the same install.sh in the shape Mac users look for, so what needs proving here is not
+      # the daemon (covered above) but the bundle and the one privileged script its Install button runs. The
+      # app itself is a menu bar UI; CI cannot click it, so the step runs the identical command text - copied
+      # from installer/macos/app/Sources/main.swift - as root, which is exactly what Authorization Services
+      # would hand to /bin/sh after the password prompt.
+      - name: Build Dispatch.app and drive its install path
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        run: |
+          set -uo pipefail
+
+          # Start from a clean slate: the .pkg step above left the service installed. Removing it through the
+          # copy install.sh leaves at /opt/dispatch/install.sh is itself the regression test for the bug where
+          # a reinstall after an uninstall silently started nothing (launchctl disable persists by label).
+          sudo test -x /opt/dispatch/install.sh || { echo "install.sh left no uninstaller behind"; exit 1; }
+          sudo /opt/dispatch/install.sh --uninstall >/dev/null || { echo "--uninstall failed"; exit 1; }
+          sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 && { echo "still loaded"; exit 1; }
+
+          tarball="$(ls dispatch-ci-macos-*.tar.gz)"
+          dir="/tmp/extract/${tarball%.tar.gz}"
+          bash installer/macos/build-app.sh "$dir" 0.0.0-ci dispatch-ci-macos.dmg \
+            || { echo "build-app.sh FAILED"; exit 1; }
+          ls -lh dispatch-ci-macos.dmg
+
+          echo "::group::mount the dmg and verify the bundle"
+          hdiutil attach -nobrowse -readonly -mountpoint /tmp/appimg dispatch-ci-macos.dmg >/dev/null
+          APP=/tmp/appimg/Dispatch.app
+          test -d "$APP" || { echo "the dmg has no Dispatch.app at its root"; exit 1; }
+          test -x "$APP/Contents/MacOS/Dispatch" || { echo "no executable in the bundle"; exit 1; }
+          plutil -lint "$APP/Contents/Info.plist" || exit 1
+          # It is a control panel, not a Dock app: without LSUIElement a menu bar extra also grows a Dock
+          # tile, which is the opposite of the reason this bundle exists.
+          [ "$(plutil -extract LSUIElement raw "$APP/Contents/Info.plist")" = "true" ] \
+            || { echo "LSUIElement is not true; the app would sit in the Dock as if it were a document app"; exit 1; }
+          codesign --verify --verbose=2 "$APP" 2>&1 | tail -2 || { echo "the bundle is not validly signed"; exit 1; }
+          # arm64-only is a decision, so it is asserted rather than trusted: a stray bin-x64 would double the
+          # download and reintroduce the "which architecture does this Mac want" question.
+          test -d "$APP/Contents/Resources/payload/bin-arm64" || { echo "payload has no bin-arm64"; exit 1; }
+          test ! -e "$APP/Contents/Resources/payload/bin-x64" || { echo "payload carries bin-x64 too"; exit 1; }
+          file "$APP/Contents/Resources/payload/bin-arm64/Dispatch.Service" | grep -qi "arm64" || exit 1
+          echo "OK: Dispatch.app is a signed, arm64-only, menu-bar-only bundle with a complete payload"
+          echo "::endgroup::"
+
+          echo "::group::the Install button's command, as root"
+          # Keep this in step with installTapped() in app/Sources/main.swift. The copy into a 0700 root-owned
+          # directory is the part being tested: root must not exec a script out of a user-writable bundle.
+          SRC="$APP/Contents/Resources/payload"
+          d="$(sudo mktemp -d /var/tmp/dispatch-app.XXXXXX)"
+          sudo chmod 700 "$d"
+          sudo cp -R "$SRC/." "$d/"
+          sudo chmod -R go-rwx "$d"
+          sudo "$d/install.sh" --prebuilt "$d/bin-arm64" || { echo "the app's install command failed"; sudo rm -rf "$d"; exit 1; }
+          sudo rm -rf "$d"
+          echo "::endgroup::"
+
+          for i in $(seq 1 30); do
+            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          [ "${ok:-}" = 1 ] || { echo "no dashboard after the app's install path"; exit 1; }
+          sudo launchctl print system/app.dispatchrelay.dispatch | grep -q "state = running" \
+            || { echo "launchd is not supervising the daemon the app installed"; exit 1; }
+          echo "OK: installing through Dispatch.app's own path produced a running, launchd-supervised service"
+
+          # And the Remove button's, which prefers the root-owned copy on disk.
+          sudo test -x /opt/dispatch/install.sh || { echo "the app's install left no /opt/dispatch/install.sh"; exit 1; }
+          sudo /opt/dispatch/install.sh --uninstall >/dev/null || { echo "the app's uninstall command failed"; exit 1; }
+          sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 && { echo "daemon survived uninstall"; exit 1; }
+          sudo test -d /var/db/dispatch || { echo "uninstall deleted the data dir"; exit 1; }
+          echo "OK: Dispatch.app installs and removes the background service, and leaves the data alone"
+          hdiutil detach /tmp/appimg >/dev/null 2>&1 || true
+
+      - name: Upload macOS app artifact
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dispatch-macos-app
+          path: dispatch-ci-macos.dmg
+          if-no-files-found: error

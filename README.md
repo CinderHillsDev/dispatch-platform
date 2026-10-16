@@ -61,7 +61,7 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 | Windows (Service + MSI) | Supported |
 | Linux (systemd, glibc; x64 + arm64) | Supported |
 | Docker / containers (amd64 + arm64) | Supported |
-| macOS (launchd daemon; Apple Silicon + Intel) | Supported - universal self-contained tarball, or a `.pkg` you install with `installer -pkg`. In-app updates included; signed ad-hoc, not notarized ([docs/macos.md](docs/macos.md)) |
+| macOS (launchd daemon; Apple Silicon + Intel) | Supported - drag `Dispatch.app` from a `.dmg` (Apple Silicon) and it installs the background service for you; universal tarball and `.pkg` too. In-app updates included; signed ad-hoc, not notarized ([docs/macos.md](docs/macos.md)) |
 | FreeBSD, musl Alpine | Not supported |
 
 ## Quickstart

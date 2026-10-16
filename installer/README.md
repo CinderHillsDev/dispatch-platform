@@ -78,6 +78,9 @@ let `install.sh` pick the arch payload out of the tarball it shipped in.
 updates as root).
 
 ```bash
+# Or don't: the release .dmg carries Dispatch.app, whose menu bar item installs/removes this very
+# install.sh through one administrator prompt (Apple Silicon only; see macos/app/README.md).
+
 # From the release tarball - no SDK, no Node, arch auto-detected (Apple Silicon or Intel):
 sudo ./install.sh --admin-password "<dashboard admin password>"
 
@@ -86,7 +89,12 @@ sudo ./install.sh --sql-connection "Host=...;Database=DispatchLog;Username=...;P
 sudo ./install.sh --user _dispatch --admin-password "<pw>"      # SMTP then listens on 2525
 
 sudo ./install.sh --uninstall                                  # daemons + binaries removed, data kept
+sudo /opt/dispatch/install.sh --uninstall                      # the same, from an installed machine
 ```
+
+`build-pkg.sh` wraps the same directory as a `.pkg` (its postinstall just execs `install.sh`), and
+`build-app.sh` wraps it as `Dispatch.app` inside a `.dmg`. Three containers, one install path - a second copy
+of the install logic is how two installers for one product start to disagree.
 
 Two differences from Linux worth knowing before you read the flags again:
 

@@ -12,7 +12,7 @@ install, and the cryptographic behaviour is identical on both platforms.
 
 ## What ships
 
-Two artifacts, one install logic:
+Three artifacts, one install logic:
 
 - `dispatch-<version>-macos.tar.gz` - one universal tarball containing both Apple Silicon (`bin-arm64`) and
   Intel (`bin-x64`) self-contained payloads, plus the installer and the launchd property lists. No .NET SDK,
@@ -25,11 +25,25 @@ Two artifacts, one install logic:
   [Install with the .pkg](#install-with-the-pkg), and note that it is **unsigned**, which changes how you can
   launch it.
 
-Both are staged by the same step in `release.yml`, and the `.pkg` is assembled by
-`installer/macos/build-pkg.sh` - the same script CI installs for real on every push touching `installer/**`,
-so a release never attaches a package nobody has installed.
+- `dispatch-<version>-macos.dmg` - **the recommended path on Apple Silicon.** Drag `Dispatch.app` into
+  Applications; the app is a menu bar control panel that shows whether the daemon is running, opens the
+  dashboard, and installs or removes the background service through one administrator prompt. It carries the
+  same `install.sh` and the same `bin-arm64` payload inside it, so there is no second download and no second
+  install logic. It is arm64-only by design, which halves the download and removes the
+  "which architecture does this Mac want" question from the install path.
+  See [`installer/macos/app/README.md`](../installer/macos/app/README.md) for why the service is a daemon the
+  app *drives* rather than an app that *is* the service.
+
+All three are staged by the same step in `release.yml`, and the `.pkg` and `.dmg` are assembled by
+`installer/macos/build-pkg.sh` and `installer/macos/build-app.sh` - the same scripts CI installs for real on
+every push touching `installer/**`, so a release never attaches an installer nobody has run. The tarball and
+the `.pkg` stay universal (Intel Macs have a supported route); only the `.app` is Apple Silicon only.
 
 ## Install
+
+If you are on Apple Silicon, use the [`.dmg`](#install-with-dispatchapp-the-dmg) - it is the least to
+remember, and it is the only artifact that gives you something to see in `/Applications`. The tarball path
+below is equivalent and is what the `.pkg` and the `.app` both shell out to.
 
 ```bash
 sudo ./install.sh --admin-password '<DashboardPassword!>'
@@ -103,6 +117,25 @@ Two consequences of driving a terminal installer from a package:
 Re-installing the `.pkg` over an existing host is the upgrade path for a machine that was installed with it:
 `install.sh` boots the daemon out first, writes a new `releases/<version>` directory and re-points `current`.
 The in-app Updates page stays the other route, and is the one that verifies a signed manifest.
+
+## Install with Dispatch.app (the .dmg)
+
+```bash
+# drag Dispatch.app into /Applications, then launch it once
+open /Applications/Dispatch.app
+# click the menu bar item -> Install background service...
+# then Open Dashboard (https://localhost:8420) and set the admin password on first run
+```
+
+The app is not the relay. It is a menu bar control panel for the `LaunchDaemon` - the relay has to start at
+boot before anyone logs in and run as root to bind SMTP 25, neither of which an app launched from the Dock
+can do ([why](../installer/macos/app/README.md#why-the-daemon-is-not-an-app)). Install it and the daemon is
+the thing that runs; quit the app and mail keeps flowing.
+
+"Install background service" copies the payload bundled inside the app into a `0700` root-owned directory and
+runs `install.sh` from there - so root never executes a script out of a folder your user account can rewrite.
+If a dashboard password was set previously it is kept; a fresh machine gets the first-run setup screen,
+because a `.pkg`/`.app` has no way to prompt for one.
 
 ## Gatekeeper and signing
 
@@ -187,18 +220,28 @@ pf rules are *not* removed by `--uninstall` (same policy as Linux's firewalld pe
 
 ## Uninstall
 
-```bash
-sudo ./install.sh --uninstall
-```
-
-Boots out both daemons, removes the property lists and the install root. `/var/db/dispatch` (database,
-config, spool, keys) and `/var/log/dispatch` are left in place. A `.pkg` has no uninstaller of its own - no
-package format does; `pkgutil --forget` deletes the receipt and touches no files - so use the copy the payload
-left behind:
+Every route leaves the same on-disk uninstaller, and it is the one to use:
 
 ```bash
-sudo /opt/dispatch/pkg/install.sh --uninstall
+sudo /opt/dispatch/install.sh --uninstall
 ```
+
+It boots out both launchd jobs, removes both property lists and `/opt/dispatch`, and deliberately keeps
+`/var/db/dispatch` (database, config, spool, `.dispatch-key`) and `/var/log/dispatch` - deleting an
+operator's mail history is not a side effect someone should get from the word "uninstall". If you installed
+from the tarball in a folder you still have, `sudo ./install.sh --uninstall` is the same thing. If you
+installed the `.pkg` and something went far enough wrong that `/opt/dispatch/install.sh` is missing, the
+payload's own copy is at `/opt/dispatch/pkg/install.sh`.
+
+Installing through `Dispatch.app`? Its "Remove background service..." item calls the same script; you can
+then drag the app itself to the Trash.
+
+No package format has an uninstaller, so `sudo pkgutil --forget app.dispatchrelay.dispatch` only clears the
+installer receipt and touches no files. `pf` rules and Application Firewall entries added by the installer are
+not removed (same policy as Linux's permanent firewalld rules); see [Firewall](#firewall).
+
+To wipe the data too, once you are sure: `sudo rm -rf /var/db/dispatch /var/log/dispatch`. Deleting
+`.dispatch-key` makes the stored provider secrets unrecoverable, so keep it if you mean to reinstall.
 
 ## Self-update
 

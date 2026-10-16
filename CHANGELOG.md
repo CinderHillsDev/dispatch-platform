@@ -64,6 +64,20 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
   retries the same message, and Emailit replays the stored success instead of delivering it twice (a failed send
   releases the key, so retrying after a fix still sends). Their 429/500/503 responses land on Dispatch's
   transient retry path, every other 4xx is permanent. Closes #26.
+- **macOS now installs like a Mac app.** The release ships `dispatch-<ver>-macos.dmg` containing
+  `Dispatch.app` - a menu bar control panel for Apple Silicon that shows whether the relay is running, opens
+  the dashboard, and installs or removes the background service through one administrator prompt. The daemon
+  stays a `LaunchDaemon`, because nothing that has to bind SMTP 25 before anyone logs in can be a Dock app;
+  what changed is that the product is now *visible* - an icon in `/Applications`, and an uninstaller that
+  works without reading a README. The app carries the same `install.sh` inside it, so there is one install
+  path in three containers (`.dmg`, `.pkg`, tarball).
+- **The macOS installer can no longer report success over a service that never started.** `install.sh` now
+  clears the `launchctl disable` override before bootstrapping (it persists by label across uninstalls, so
+  every install *after* an uninstall used to load the job and never run it), waits on `/health` before
+  claiming anything, prints launchd's own verdict plus the log tails if it never comes up, and exits
+  non-zero - which turns a silent nothing-happened into a failed install you can act on. It also leaves a
+  copy of itself at `/opt/dispatch/install.sh`, so the tarball path has an uninstaller too
+  ([`docs/macos.md`](docs/macos.md)).
 - **macOS is now a supported install target.** A release ships `dispatch-<ver>-macos.tar.gz` - one universal,
   self-contained bundle for Apple Silicon and Intel - installed by `installer/macos/install.sh` as a launchd
   LaunchDaemon, with the same flags and on-disk shape as Linux (`/opt/dispatch` + `/var/db/dispatch`) and the

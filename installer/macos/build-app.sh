@@ -1,0 +1,116 @@
+#!/bin/bash
+# Build Dispatch.app - the macOS menu bar control panel - and wrap it in a drag-to-Applications .dmg.
+#
+#   ./build-app.sh <staged-dir> <version> <output-dmg>
+#
+# <staged-dir> is what the release job assembles for the universal tarball: install.sh, dispatch-update.sh,
+# the two LaunchDaemon property lists, dispatch-update-public.pem, and bin-arm64/ (+ bin-x64/, which this
+# script deliberately drops). The payload is copied INTO the bundle, so Dispatch.app is a complete installer:
+# nobody has to find a second download to install the service after moving the app.
+#
+# Apple Silicon only. That is a product decision, not an oversight: an arm64-only bundle halves the download,
+# removes the "which bin-<arch> does this Mac want" question from the install path entirely, and matches the
+# machines Dispatch is actually being run on here. An Intel Mac still has the universal tarball and the .pkg.
+#
+# Signing is ad-hoc. A Developer ID + notarization would make the first open frictionless; without it,
+# Gatekeeper blocks a quarantined download once and right-click > Open gets around it (or run the app once
+# with `xattr -d com.apple.quarantine`). Everything else here works unsigned.
+
+set -euo pipefail
+
+STAGED="${1:?usage: build-app.sh <staged-dir> <version> <output-dmg>}"
+VER="${2:?missing version}"
+OUT="${3:?missing output path}"
+
+command -v swiftc   >/dev/null 2>&1 || { echo "swiftc not found (needs Xcode or the Command Line Tools)" >&2; exit 1; }
+command -v hdiutil  >/dev/null 2>&1 || { echo "hdiutil not found - this is not macOS" >&2; exit 1; }
+command -v codesign >/dev/null 2>&1 || { echo "codesign not found" >&2; exit 1; }
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+APP_NAME="Dispatch.app"
+WORK="$(mktemp -d /tmp/dispatch-app.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+
+STAGED="$(cd "$STAGED" && pwd -P)"
+[[ -f "$STAGED/install.sh" ]]            || { echo "staged dir has no install.sh: $STAGED" >&2; exit 1; }
+[[ -x "$STAGED/install.sh" ]]            || { echo "staged install.sh is not executable (pkgbuild/cp keeps modes, so an unexecutable source ships an unrunnable installer)" >&2; exit 1; }
+[[ -d "$STAGED/bin-arm64" ]]             || { echo "staged dir has no bin-arm64/ - this bundle is Apple Silicon only and would ship an app that installs nothing" >&2; exit 1; }
+[[ -f "$STAGED/bin-arm64/Dispatch.Service" ]] || { echo "bin-arm64 has no Dispatch.Service" >&2; exit 1; }
+
+APP="$WORK/$APP_NAME"
+BIN_DIR="$APP/Contents/MacOS"
+RES_DIR="$APP/Contents/Resources"
+mkdir -p "$BIN_DIR" "$RES_DIR"
+
+# ---- payload: the same files the tarball ships, minus the other architecture -----------------------------
+mkdir -p "$RES_DIR/payload"
+for f in install.sh dispatch-update.sh dispatch-update-public.pem \
+         app.dispatchrelay.dispatch.plist app.dispatchrelay.dispatch-update.plist README.txt; do
+  if [[ -f "$STAGED/$f" ]]; then /bin/cp "$STAGED/$f" "$RES_DIR/payload/"; fi
+done
+[[ -f "$RES_DIR/payload/README.txt" ]] || echo "note: no README.txt in the staged dir (the tarball's copy is generated in release.yml)" >&2
+/bin/cp -R "$STAGED/bin-arm64" "$RES_DIR/payload/bin-arm64"
+chmod 755 "$RES_DIR/payload" "$RES_DIR/payload/install.sh" "$RES_DIR/payload/dispatch-update.sh" 2>/dev/null || true
+
+# ---- executable ------------------------------------------------------------------------------
+# One source file, no package manager, no Xcode project. The deployment target is the bundle's
+# LSMinimumSystemVersion so a newer SDK on the runner cannot quietly produce a binary that will not
+# launch on an older Mac.
+xcrun swiftc -O -target arm64-apple-macos13.0 \
+  -framework AppKit \
+  -o "$BIN_DIR/Dispatch" \
+  "$SCRIPT_DIR/app/Sources/main.swift"
+chmod 755 "$BIN_DIR/Dispatch"
+
+# ---- Info.plist, version-stamped -------------------------------------------------------------
+/bin/cp "$SCRIPT_DIR/app/Info.plist" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" \
+                        -c "Set :CFBundleVersion $VER" \
+                        -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist" >/dev/null
+printf 'APPL????' > "$APP/Contents/PkgInfo"
+
+# An icon is what makes an app findable in /Applications, and a menu bar app with a generic icon reads as a
+# half-finished tool. If the source PNG is present, build an .icns with the stock tools; if not, ship without
+# one rather than ship a broken reference (PlistBuddy already named AppIcon, which Finder ignores when absent).
+ICON_SRC="$SCRIPT_DIR/app/Resources/DispatchIcon.png"
+if [[ -f "$ICON_SRC" ]] && command -v iconutil >/dev/null 2>&1; then
+  ICONSET="$WORK/AppIcon.iconset"
+  mkdir -p "$ICONSET"
+  for size in 16 32 64 128 256 512; do
+    sips -z "$size" "$size" "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null 2>&1 || true
+    double=$((size * 2))
+    sips -z "$double" "$double" "$ICON_SRC" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null 2>&1 || true
+  done
+  if iconutil -c icns "$ICONSET" -o "$RES_DIR/AppIcon.icns" >/dev/null 2>&1; then
+    echo "icon: built AppIcon.icns"
+  else
+    echo "icon: iconutil failed; shipping without one (Info.plist's AppIcon reference is ignored when absent)" >&2
+    /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+  fi
+else
+  echo "icon: no $ICON_SRC; shipping without one" >&2
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleIconFile" "$APP/Contents/Info.plist" >/dev/null 2>&1 || true
+fi
+
+# ---- sign: inner binary first, then the bundle ------------------------------------------------
+# Ad-hoc, no hardened runtime. Hardened runtime with no entitlements buys nothing here and can block the
+# .NET runtime the payload carries, and the daemon is launched by launchd from /opt rather than by this
+# bundle, so the app's own options do not constrain it.
+codesign --force --sign - --timestamp=none "$BIN_DIR/Dispatch" >/dev/null
+codesign --force --sign - --timestamp=none "$APP" >/dev/null
+codesign --verify --verbose=2 "$APP" 2>&1 | tail -3
+
+# ---- dmg: the app plus an Applications shortcut, so the install really is a drag --------------
+DMG_ROOT="$WORK/image"
+mkdir -p "$DMG_ROOT"
+mv "$APP" "$DMG_ROOT/"
+ln -s /Applications "$DMG_ROOT/Applications"
+if [[ -f "$RES_DIR/payload/README.txt" ]]; then cp "$RES_DIR/payload/README.txt" "$WORK/README.txt"; fi
+
+hdiutil create -volname "Dispatch $VER" -srcfolder "$DMG_ROOT" -ov -format UDZO "$OUT" >/dev/null
+chmod 644 "$OUT"
+
+echo "built: $OUT"
+echo "  app:      $APP_NAME ($(du -sh "$DMG_ROOT/$APP_NAME" | cut -f1 | tr -d ' ') on disk, arm64 only)"
+echo "  payload:  install.sh + bin-arm64 ($(find "$DMG_ROOT/$APP_NAME/Contents/Resources/payload" -type f | wc -l | tr -d ' ') files)"
+echo "  signed:   ad-hoc (notarization needs a Developer ID this project does not have)"

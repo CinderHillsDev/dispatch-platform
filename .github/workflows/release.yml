@@ -467,11 +467,11 @@ jobs:
           Checksums: SHA256SUMS next to this file, or:  shasum -a 256 -c SHA256SUMS
           Status:    sudo launchctl print system/app.dispatchrelay.dispatch
           Logs:      /var/log/dispatch
-          Uninstall:
-            sudo launchctl bootout system/app.dispatchrelay.dispatch
-            sudo launchctl bootout system/app.dispatchrelay.dispatch-update
-            sudo rm -rf /opt/dispatch /var/db/dispatch /var/log/dispatch
-            sudo rm -f /Library/LaunchDaemons/app.dispatchrelay.dispatch*.plist
+          Uninstall (removes the daemons and the binaries, and KEEPS your database, config and encryption
+          key on purpose - deleting an operator's mail history is not something "uninstall" should do):
+            sudo /opt/dispatch/install.sh --uninstall
+          Wipe the data too, only once you are sure:
+            sudo rm -rf /var/db/dispatch /var/log/dispatch
           EOF
           tar -czf "${stage}.tar.gz" -C staging "${stage}"
           ls -lh "${stage}.tar.gz"
@@ -492,6 +492,18 @@ jobs:
           # line - the same trap that aborted the CI install step.
           pkgutil --check-signature "dispatch-${ver}-macos.pkg" 2>&1 | head -3 || true
 
+      # The .app is the same install.sh, wrapped in the shape Mac users expect: an icon in /Applications that
+      # says whether the daemon is running and installs/removes it through one admin prompt. Built from the
+      # identical staging dir as the tarball and the .pkg, and by the same script CI installs on every push,
+      # so there is one install path with three containers rather than three install paths.
+      - name: Build the macOS .app and .dmg
+        shell: bash
+        run: |
+          set -uo pipefail
+          ver="${{ steps.ver.outputs.version }}"
+          bash installer/macos/build-app.sh "staging/dispatch-${ver}-macos" "$ver" "dispatch-${ver}-macos.dmg"
+          ls -lh dispatch-*-macos.dmg
+
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
         with:
@@ -499,6 +511,7 @@ jobs:
           path: |
             dispatch-*-macos.tar.gz
             dispatch-*-macos.pkg
+            dispatch-*-macos.dmg
           if-no-files-found: error
           retention-days: 3
 
@@ -574,6 +587,7 @@ jobs:
           cp dist/linux/dispatch-*-linux.tar.gz release/
           cp dist/macos/dispatch-*-macos.tar.gz release/
           cp dist/macos/dispatch-*-macos.pkg release/
+          cp dist/macos/dispatch-*-macos.dmg release/
           cp dist/upgrade-package/* release/          # the single cross-platform upgrade package
           ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
 
