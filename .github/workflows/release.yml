@@ -309,7 +309,27 @@ jobs:
             echo "::error::DISPATCH_UPDATE_SIGNING_KEY is not set - refusing to publish an unsigned upgrade package (it would be rejected by every installer anyway). Set the signing-key secret to cut a release."
             exit 1
           fi
-          tar -czf "dispatch-upgrade-${ver}.tar.gz" -C pkg manifest.json manifest.json.sig linux-x64.tar.gz linux-arm64.tar.gz win-x64.zip
+          tar -czf "dispatch-upgrade-${ver}.tar.gz" -C pkg manifest.json manifest.json.sig \
+            linux-x64.tar.gz linux-arm64.tar.gz osx-arm64.tar.gz osx-x64.tar.gz win-x64.zip
+
+          # The manifest is a promise; prove the package keeps it. Every arch key must match what
+          # UpdateService.CurrentArch will ask for, the file it names must exist in the tarball, and its
+          # sha256 must match. A host checks the signature, finds its arch entry, then needs the file - an
+          # advertised-but-absent payload reads to the operator as "valid package, nothing to install", and
+          # nothing else in this pipeline would notice.
+          verify="$(mktemp -d)"
+          tar -xzf "dispatch-upgrade-${ver}.tar.gz" -C "$verify"
+          for arch in linux-x64 linux-arm64 osx-arm64 osx-x64 win-x64; do
+            entry="$(tr -d ' \n' < "$verify/manifest.json" | grep -o "\"$arch\":{[^}]*}")"
+            [ -n "$entry" ] || { echo "::error::manifest has no $arch entry"; exit 1; }
+            file="$(printf '%s' "$entry" | grep -o '"file":"[^"]*"' | cut -d'"' -f4)"
+            want="$(printf '%s' "$entry" | grep -o '"sha256":"[^"]*"' | cut -d'"' -f4)"
+            [ -f "$verify/$file" ] || { echo "::error::$arch names $file but the package does not contain it"; exit 1; }
+            got="$(sha256sum "$verify/$file" | awk '{print $1}')"
+            [ "$want" = "$got" ] || { echo "::error::$arch payload $file does not match the manifest sha256"; exit 1; }
+            printf 'package ok: %-12s %s (%s MB)\n' "$arch" "$file" "$(( $(stat -c %s "$verify/$file") / 1000000 ))"
+          done
+          rm -rf "$verify"
           ls -lh "dispatch-upgrade-${ver}.tar.gz"
 
       - name: Upload upgrade package
