@@ -178,10 +178,20 @@ if [[ -n "$ACTION" ]]; then
         exit 3
       fi
       lp="system/$LABEL"
-      state="$(launchctl print "$lp" 2>/dev/null | awk '/^[[:space:]]*state = /{print $3; exit}')"
-      pid="$(launchctl print "$lp" 2>/dev/null | awk '/^[[:space:]]*pid = /{print $2; exit}')"
-      xcode="$(launchctl print "$lp" 2>/dev/null | awk '/last exit code =/{print $5; exit}')"
-      echo "Dispatch: state=${state:-unknown}${pid:+ pid=$pid}${xcode:+ last-exit=$xcode}"
+      # launchctl prints these as "key = value" with the delimiter as its own field, so $2 is "=" and a
+      # naive awk '{print $2}' renders pid as "pid==". "last exit code = (never exited)" also has a space
+      # in it, so take everything after the delimiter rather than a single field.
+      launchd_dump="$(launchctl print "$lp" 2>/dev/null || true)"
+      state="$(printf '%s\n' "$launchd_dump" | awk '/^[[:space:]]*state = /{sub(/^[^=]*= /,""); print; exit}')"
+      pid="$(printf '%s\n' "$launchd_dump" | awk '/^[[:space:]]*pid = /{sub(/^[^=]*= /,""); print; exit}')"
+      xcode="$(printf '%s\n' "$launchd_dump" | awk '/last exit code =/{sub(/^[^=]*= /,""); print; exit}')"
+      printf 'Dispatch: state=%s' "${state:-not loaded}"
+      [[ -n "$pid" && "$pid" != "0" ]] && printf ' pid=%s' "$pid"
+      [[ -n "$xcode" ]] && printf ' last-exit=%s' "$xcode"
+      printf '\n'
+      if [[ -n "$xcode" && "$xcode" != "(never exited)" && "${xcode%% *}" != "0" ]]; then
+        echo "           the last run exited with $xcode - read $LOG_DIR/launchd.err.log"
+      fi
       if json="$(curl -fsSk -m 4 "https://localhost:${HEALTH_PORT}/health" 2>/dev/null)"; then
         echo "  dashboard  https://localhost:${HEALTH_PORT} ($(jval "$json" status))"
         echo "  version    $(jval "$json" version)"

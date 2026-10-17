@@ -917,7 +917,11 @@ jobs:
           out="$($cli --status 2>&1)" && rc=0 || rc=$?
           echo "$out"
           [ $rc -eq 0 ] || { echo "--status failed on an installed, running service (exit $rc)"; exit 1; }
-          echo "$out" | grep -q "state=running" || { echo "--status did not read launchd's state"; exit 1; }
+          echo "$out" | grep -Eq "state=running pid=[0-9]+" \
+            || { echo "--status did not read launchd's state+pid (fields print as 'key = value'; $2 is '=')"; exit 1; }
+          # launchctl's "last exit code = (never exited)" has a space in it; grabbing one awk field truncates
+          # it to "(never", which reads like a bug in Dispatch rather than in the formatter.
+          echo "$out" | grep -q "(never$" && { echo "--status truncated the exit-code field"; exit 1; }
           echo "$out" | grep -Eq "smtp +listening on .*25" || { echo "--status did not report the SMTP ports"; exit 1; }
           echo "$out" | grep -q "dashboard  https://localhost:8420 (healthy)" \
             || { echo "--status did not read /health correctly"; exit 1; }
