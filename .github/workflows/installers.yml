@@ -802,7 +802,20 @@ jobs:
           ls -lh dispatch-ci-macos.dmg
 
           echo "::group::mount the dmg and verify the bundle"
-          hdiutil attach -nobrowse -readonly -mountpoint /tmp/appimg dispatch-ci-macos.dmg >/dev/null
+          # The launch step detached its own mount seconds ago, and hdiutil answers that with
+          # "Resource temporarily unavailable" rather than waiting. Detach-then-retry, and fail loudly
+          # rather than on a flake that looks like a packaging bug.
+          mnt() {
+            local mp="$1" img="$2" i
+            hdiutil detach "$mp" >/dev/null 2>&1 || true
+            for i in 1 2 3 4 5; do
+              hdiutil attach -nobrowse -readonly -mountpoint "$mp" "$img" >/dev/null 2>&1 && return 0
+              sleep 3
+            done
+            echo "could not mount $img at $mp after 5 tries"
+            return 1
+          }
+          mnt /tmp/appimg dispatch-ci-macos.dmg || exit 1
           APP=/tmp/appimg/DispatchRelay.app
           test -d "$APP" || { echo "the dmg has no DispatchRelay.app at its root"; exit 1; }
           UNAPP="/tmp/appimg/Uninstall DispatchRelay.app"
@@ -966,8 +979,12 @@ jobs:
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
         run: |
           set -uo pipefail
-          hdiutil attach -nobrowse -readonly -mountpoint /tmp/appl dispatch-ci-macos.dmg >/dev/null 2>&1 ||
-            hdiutil attach -nobrowse -mountpoint /tmp/appl dispatch-ci-macos.dmg >/dev/null
+          hdiutil detach /tmp/appl >/dev/null 2>&1 || true
+          for _m in 1 2 3 4 5; do
+            hdiutil attach -nobrowse -readonly -mountpoint /tmp/appl dispatch-ci-macos.dmg >/dev/null 2>&1 && break
+            sleep 3
+            [ "$_m" = 5 ] && { echo "could not mount the dmg for the launch test"; exit 1; }
+          done
           BIN=/tmp/appl/DispatchRelay.app/Contents/MacOS/dispatchrelay
           test -x "$BIN" || { echo "no executable in the mounted bundle"; exit 1; }
 
