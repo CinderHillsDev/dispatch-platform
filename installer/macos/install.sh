@@ -63,6 +63,11 @@
 #                          launchd loads both jobs at the next boot.
 #   --uninstall            Boot out both daemons, remove the property lists and /opt/dispatch, then exit.
 #                          /var/db/dispatch and /var/log/dispatch are left in place (say so at the end).
+#   --status               Report the daemon state, the dashboard, the listening SMTP ports, the spool
+#                          counts and the active release. Needs no install, no app, no browser.
+#   --stop                 Boot the daemon out (a KeepAlive job ignores `launchctl stop`). The update
+#                          watcher stays loaded; mail then queues at the sender until --start.
+#   --start                Enable + bootstrap the daemon, clearing any persisted disabled override.
 #
 set -euo pipefail
 
@@ -89,6 +94,7 @@ TLS_CERT_PATH=""
 TLS_CERT_PASSWORD=""
 NO_FIREWALL="0"
 NO_START="0"
+ACTION=""
 UNINSTALL="0"
 
 while [[ $# -gt 0 ]]; do
@@ -108,6 +114,13 @@ while [[ $# -gt 0 ]]; do
     # at the next boot). Used when baking an image, where the service should start on first boot.
     --no-start) NO_START="1"; shift;;
     --uninstall) UNINSTALL="1"; shift;;
+    --status) ACTION="status"; shift;;
+    --start) ACTION="start"; shift;;
+    --stop) ACTION="stop"; shift;;
+    --help|-h)
+      # Print this file's own flag list rather than a second copy of it, which is how help text drifts.
+      sed -n '/^# Flags:/,/^#$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      exit 0;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -137,6 +150,67 @@ if [[ "$UNINSTALL" == "1" ]]; then
   echo "Dispatch is uninstalled. Kept on disk (remove them yourself if you are sure):"
   echo "  $DATA_DIR   - config, database, spool, .dispatch-key"
   echo "  $LOG_DIR          - logs"
+  exit 0
+fi
+
+# Lifecycle control, here so the machine always carries its own on/off switch.
+#
+# This script is copied to /opt/dispatch/install.sh at install time, so `--status`, `--start` and `--stop`
+# work from the box, over SSH, from a cron job, or from a Recovery terminal - with no browser, and with no
+# dependency on anything in /Applications. That dependency is the thing to avoid: a menu bar app can be
+# dragged to the Trash, moved to another volume, or deleted by the next macOS cleanup prompt, and none of
+# those actions should leave a root process listening on SMTP 25 that nobody can name. The app wraps exactly
+# these operations; it is not the management surface.
+if [[ -n "$ACTION" ]]; then
+  jval() { printf '%s' "$1" | tr -d ' \n' | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4; }
+  jnum() { printf '%s' "$1" | tr -d ' \n' | grep -o "\"$2\":[0-9]*"  | head -1 | cut -d':' -f2; }
+  # The port the applier was told to poll, which is the port the dashboard answers on. Read back from the
+  # installed watcher plist rather than trusting this invocation's default: an operator who moved the
+  # dashboard with --http-port at install time would otherwise be told "nothing is listening on 8420".
+  HEALTH_PORT="$(plutil -extract EnvironmentVariables.DISPATCH_HEALTH_PORT raw \
+      "$DAEMON_DIR/$UPDATE_LABEL.plist" 2>/dev/null || true)"
+  [[ -n "$HEALTH_PORT" ]] || HEALTH_PORT="$HTTP_PORT"
+
+  case "$ACTION" in
+    status)
+      if [[ ! -f "$DAEMON_DIR/$LABEL.plist" ]]; then
+        echo "Dispatch: not installed (no $DAEMON_DIR/$LABEL.plist)"
+        exit 3
+      fi
+      lp="system/$LABEL"
+      state="$(launchctl print "$lp" 2>/dev/null | awk '/^[[:space:]]*state = /{print $3; exit}')"
+      pid="$(launchctl print "$lp" 2>/dev/null | awk '/^[[:space:]]*pid = /{print $2; exit}')"
+      xcode="$(launchctl print "$lp" 2>/dev/null | awk '/last exit code =/{print $5; exit}')"
+      echo "Dispatch: state=${state:-unknown}${pid:+ pid=$pid}${xcode:+ last-exit=$xcode}"
+      if json="$(curl -fsSk -m 4 "https://localhost:${HEALTH_PORT}/health" 2>/dev/null)"; then
+        echo "  dashboard  https://localhost:${HEALTH_PORT} ($(jval "$json" status))"
+        echo "  version    $(jval "$json" version)"
+        echo "  smtp       listening on $(printf '%s' "$json" | tr -d ' \n' \
+              | grep -o '"listeningPorts":\[[^]]*\]' | sed 's/.*\[//; s/\]//' | tr -d '"')"
+        echo "  spool      incoming=$(jnum "$json" incoming) processing=$(jnum "$json" processing) failed=$(jnum "$json" failed)"
+      else
+        echo "  dashboard  https://localhost:${HEALTH_PORT} is not answering /health"
+        echo "             last daemon errors: ${LOG_DIR}/launchd.err.log"
+      fi
+      rel="$(cd "$INSTALL_DIR/current" 2>/dev/null && pwd -P)"
+      echo "  release    ${rel:-(no current symlink under $INSTALL_DIR)}"
+      echo "  data       $DATA_DIR"
+      ;;
+    stop)
+      # bootout, not `launchctl stop`: a KeepAlive job is restarted immediately by anything short of that.
+      # The update watcher is deliberately left loaded - it does nothing without an apply.request, and
+      # stopping it would silently disable staged updates until the next start.
+      launchctl bootout "system/$LABEL" >/dev/null 2>&1 || true
+      echo "Dispatch stopped. It starts again at the next boot, or with: sudo $0 --start"
+      echo "  Mail sent to 25/587 meanwhile is refused, so senders queue and retry."
+      ;;
+    start)
+      launchctl enable "system/$LABEL" >/dev/null 2>&1 || true
+      launchctl bootstrap system "$DAEMON_DIR/$LABEL.plist" >/dev/null 2>&1 \
+        || launchctl kickstart -k "system/$LABEL" >/dev/null 2>&1 || true
+      echo "Dispatch started. Status: sudo $0 --status"
+      ;;
+  esac
   exit 0
 fi
 
@@ -451,7 +525,8 @@ echo "Dispatch is installed and running."
 echo "  Dashboard: https://localhost:$HTTP_PORT  (self-signed cert; log in with the admin password you set)"
 echo "  SMTP:      25 and 587, falling back to 2525 when 25 cannot be bound (in use, or unprivileged)"
 echo "  Ports, retention and other settings are managed in the dashboard."
-echo "  Status:    sudo launchctl print system/${LABEL}"
+echo "  Status:    sudo $INSTALL_DIR/install.sh --status"
+echo "  Stop/Start: sudo $INSTALL_DIR/install.sh --stop | --start"
 echo "  Uninstall: sudo $INSTALL_DIR/install.sh --uninstall"
 echo "  Logs:      $LOG_DIR  (and: log show --last 10m --predicate 'process == \"Dispatch.Service\"')"
 if [[ -z "$SERVICE_USER" ]]; then

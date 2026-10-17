@@ -89,6 +89,13 @@ private enum Privileged {
     /// is what the menu surfaces: install.sh writes a real diagnosis there when it gives up.
     static func run(_ script: String, _ handler: @escaping (_ ok: Bool, _ text: String) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
+            // Already root? Run the script. Going through Authorization Services here would raise a prompt
+            // that nobody can answer - from `sudo`, from a launchd job, or from CI - so the one environment
+            // where these binaries most need to work is the one that would hang.
+            if geteuid() == 0 {
+                runDirectly(script, handler)
+                return
+            }
             let escaped = script
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
@@ -99,6 +106,16 @@ private enum Privileged {
             // Output goes to files, not Pipes. A Pipe plus waitUntilExit() deadlocks once the child writes
             // more than the 64 KB buffer, and install.sh printing its launchctl dump can get there; a
             // readabilityHandler would fix that and introduce a data race on the accumulating Data.
+            run(URL(fileURLWithPath: "/usr/bin/osascript"), arguments: ["-e", appleScript], handler: handler)
+        }
+    }
+
+    /// The same execution path with or without the authorization wrapper.
+    private static func runDirectly(_ script: String, _ handler: @escaping (Bool, String) -> Void) {
+        run(URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script], handler: handler)
+    }
+
+    private static func run(_ exe: URL, arguments: [String], handler: @escaping (Bool, String) -> Void) {
             let dir = FileManager.default.temporaryDirectory
             let outURL = dir.appendingPathComponent("dispatch-out-\(UUID().uuidString).txt")
             let errURL = dir.appendingPathComponent("dispatch-err-\(UUID().uuidString).txt")
@@ -107,8 +124,8 @@ private enum Privileged {
             defer { try? FileManager.default.removeItem(at: outURL); try? FileManager.default.removeItem(at: errURL) }
 
             let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            proc.arguments = ["-e", appleScript]
+            proc.executableURL = exe
+            proc.arguments = arguments
             guard let outFH = FileHandle(forWritingAtPath: outURL.path),
                   let errFH = FileHandle(forWritingAtPath: errURL.path) else {
                 handler(false, "could not open temporary files to capture the installer's output")
@@ -134,10 +151,51 @@ private enum Privileged {
                         : problems)
                 }
             } catch {
-                handler(false, "could not run osascript: \(error)")
+                handler(false, "could not run \(exe.lastPathComponent): \(error)")
             }
         }
     }
+}
+
+// MARK: - Lifecycle scripts
+
+/// The one place that knows how to remove this product. Every "uninstall" affordance - the app's menu, the
+/// standalone uninstaller in the dmg, and a script run from a terminal - ends up in this text, so they cannot
+/// disagree about what gets deleted and what is kept.
+enum Lifecycle {
+    static let installedScript = "/opt/dispatch/install.sh"
+    static let mainAppPath = "/Applications/DispatchRelay.app"
+    static var bundlePayload: String {
+        Bundle.main.resourceURL?.appendingPathComponent("payload").path ?? ""
+    }
+
+    /// `install.sh --uninstall`, from whichever copy is reachable: the on-disk one is root-owned and is the
+    /// script that actually installed this machine, so it wins. The bundle's copy is the fallback for a
+    /// half-finished install, and is copied to a root-owned 0700 dir first so root never execs a file the
+    /// user running the command can rewrite.
+    static func uninstallScript(alsoDeleteApp: Bool) -> String {
+        var script = """
+        if [ -x "\(installedScript)" ]; then
+          "\(installedScript)" --uninstall
+        else
+          set -e
+          d="$(/usr/bin/mktemp -d /var/tmp/dispatch-uninstall.XXXXXX)"
+          /bin/chmod 700 "$d"
+          /bin/cp -R "\(bundlePayload)/." "$d/"
+          /bin/chmod -R go-rwx "$d"
+          trap '/bin/chmod -R u+rwX "$d" 2>/dev/null; /bin/rm -rf "$d"' EXIT
+          "$d/install.sh" --uninstall
+        fi
+        """
+        if alsoDeleteApp {
+            script += "\n/bin/rm -rf "\(mainAppPath)""
+        }
+        return script
+    }
+
+    static let keptOnDisk =
+        "Your database, config, spool and encryption key stay in /var/db/dispatch. Deleting mail history " +
+        "should not be a side effect of an uninstall - remove that yourself once you are sure."
 }
 
 // MARK: - Menu controller
@@ -150,6 +208,7 @@ private final class Controller: NSObject, NSMenuDelegate {
     private var openItem: NSMenuItem!
     private var installItem: NSMenuItem!
     private var removeItem: NSMenuItem!
+    private var uninstallItem: NSMenuItem!
     private var busy = false
 
     func start() {
@@ -165,6 +224,10 @@ private final class Controller: NSObject, NSMenuDelegate {
         openItem = item("Open Dashboard", #selector(openDashboard), "d", target: self)
         installItem = item("Install background service...", #selector(installTapped), "", target: self)
         removeItem = item("Remove background service...", #selector(removeTapped), "", target: self)
+        // The difference between "remove the service" and this is everything a user who is leaving the
+        // product would otherwise have to remember: that the daemon is a LaunchDaemon, not this app, and
+        // that moving the app to the Trash leaves a root process bound to SMTP 25 running. So say it here.
+        uninstallItem = item("Uninstall completely...", #selector(uninstallEverythingTapped), "", target: self)
         let refreshItem = item("Refresh", #selector(refresh), "r", target: self)
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
 
@@ -173,6 +236,7 @@ private final class Controller: NSObject, NSMenuDelegate {
         menu.addItem(openItem)
         menu.addItem(installItem)
         menu.addItem(removeItem)
+        menu.addItem(uninstallItem)
         menu.addItem(.separator())
         menu.addItem(refreshItem)
         menu.addItem(item("Dispatch Relay \(version)", nil, "", target: nil))
@@ -207,6 +271,7 @@ private final class Controller: NSObject, NSMenuDelegate {
         openItem.isEnabled = (state == .running)
         installItem.isEnabled = (state == .notInstalled)
         removeItem.isEnabled = (state != .notInstalled)
+        uninstallItem.isEnabled = (state != .notInstalled)
     }
 
     @objc private func openDashboard() {
@@ -231,26 +296,40 @@ private final class Controller: NSObject, NSMenuDelegate {
         """, doing: "Installing the background service")
     }
 
+    /// For the quit dialog, which cannot route through a menu item's target.
+    func removeServiceNow() { removeTapped() }
+    func uninstallEverythingNow() { uninstallEverythingTapped() }
+
     @objc private func removeTapped() {
-        // Prefer the copy install.sh left at /opt/dispatch/install.sh: root-owned, and the exact script that
-        // installed this machine. The bundle's payload is the fallback for a half-finished install.
-        guard let payload = Bundle.main.resourceURL?.appendingPathComponent("payload").path else {
-            fail("Remove", "the app bundle carries no payload directory; it was built wrong")
-            return
+        // The same script the standalone uninstaller and the CLI run, minus deleting the app bundle: someone
+        // using this menu item has not asked to lose the menu.
+        perform(Lifecycle.uninstallScript(alsoDeleteApp: false), doing: "Removing the background service")
+    }
+
+    @objc private func uninstallEverythingTapped() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Remove the Dispatch service and this app?"
+        alert.informativeText = "The daemon, both launchd jobs, /opt/dispatch and " +
+            "\(Lifecycle.mainAppPath) are deleted. " + Lifecycle.keptOnDisk
+        alert.addButton(withTitle: "Uninstall everything")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        perform(Lifecycle.uninstallScript(alsoDeleteApp: true), doing: "Uninstalling Dispatch")
+        // The bundle deletes itself as part of that script, so staying alive would be the odd behaviour.
+        NSApp.terminate(nil)
+    }
+
+    /// Run a privileged script with a completion handler that has to survive the caller's run loop.
+    private func performAndWait(_ script: String) -> (Bool, String) {
+        let done = DispatchSemaphore(value: 0)
+        var result = (false, "")
+        Privileged.run(script) { ok, text in
+            result = (ok, text)
+            done.signal()
         }
-        perform("""
-        if [ -x "\(installedScript)" ]; then
-          "\(installedScript)" --uninstall
-        else
-          set -e
-          d="$(/usr/bin/mktemp -d /var/tmp/dispatch-uninstall.XXXXXX)"
-          /bin/chmod 700 "$d"
-          /bin/cp -R "\(payload)/." "$d/"
-          /bin/chmod -R go-rwx "$d"
-          trap '/bin/chmod -R u+rwX "$d" 2>/dev/null; /bin/rm -rf "$d"' EXIT
-          "$d/install.sh" --uninstall
-        fi
-        """, doing: "Removing the background service")
+        done.wait()
+        return result
     }
 
     private func perform(_ script: String, doing verb: String) {
@@ -281,11 +360,100 @@ private final class Controller: NSObject, NSMenuDelegate {
     }
 }
 
+/// Privileged.run reports asynchronously; the command-line paths and the uninstaller have no run loop to
+/// wait on, so they block on a semaphore instead. Safe because they never call it from the main queue.
+private func runPrivilegedSync(_ script: String) -> (Bool, String) {
+    let done = DispatchSemaphore(value: 0)
+    var result = (false, "")
+    Privileged.run(script) { ok, text in
+        result = (ok, text)
+        done.signal()
+    }
+    done.wait()
+    return result
+}
+
+#if UNINSTALLER
+/// `Uninstall DispatchRelay.app` - the second icon in the disk image.
+///
+/// It exists for the one case the control panel cannot cover: the control panel is already gone, or the person
+/// does not trust a menu item inside the thing they are trying to remove. It carries install.sh and no
+/// binaries, so it stays small, and it removes the daemon, /opt/dispatch and DispatchRelay.app wherever the
+/// user put it. Run with --yes and it does the whole thing without a dialog, which is also how CI drives the
+/// real binary instead of a transcription of what the binary would run.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let batch = CommandLine.arguments.contains("--yes")
+        if !batch {
+            let ask = NSAlert()
+            ask.alertStyle = .warning
+            ask.messageText = "Uninstall Dispatch Relay?"
+            ask.informativeText = "Removes the background service, /opt/dispatch and DispatchRelay.app. "
+                + Lifecycle.keptOnDisk
+            ask.addButton(withTitle: "Uninstall")
+            ask.addButton(withTitle: "Cancel")
+            guard ask.runModal() == .alertFirstButtonReturn else { exit(0) }
+        }
+
+        let (ok, text) = runPrivilegedSync(Lifecycle.uninstallScript(alsoDeleteApp: true))
+
+        if batch {
+            print(ok ? "Dispatch Relay uninstalled." : "FAILED: \(text)")
+        } else {
+            let report = NSAlert()
+            report.alertStyle = ok ? .informational : .critical
+            report.messageText = ok ? "Dispatch Relay has been uninstalled" : "Uninstall failed"
+            report.informativeText = ok ? Lifecycle.keptOnDisk : text
+            report.runModal()
+        }
+        exit(ok ? 0 : 1)
+    }
+
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+}
+
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+// Unlike the control panel this one has no status item and does need a visible dialog.
+app.setActivationPolicy(.regular)
+app.run()
+
+#else
+/// The menu bar control panel. Quitting it deliberately does not stop the relay - the relay is a LaunchDaemon
+/// that starts at boot and outlives any login session - which is correct behaviour nobody will guess, so it
+/// is said out loud on the way out.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = Controller()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--uninstall-completely") {
+            // The same script the menu item runs, for scripts and for CI. A test that drives a different code
+            // path than the one people click is a test of the wrong path.
+            let (ok, text) = runPrivilegedSync(Lifecycle.uninstallScript(alsoDeleteApp: true))
+            if !ok { FileHandle.standardError.write(Data("FAILED: \(text)".utf8)) }
+            exit(ok ? 0 : 1)
+        }
         controller.start()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Only worth asking when there is something running to ask about.
+        guard FileManager.default.fileExists(atPath: daemonPlist) else { return .terminateNow }
+        let ask = NSAlert()
+        ask.alertStyle = .warning
+        ask.messageText = "The relay keeps running after this quits."
+        ask.informativeText = "Dispatch is a boot-time launchd daemon, not a process this app owns: it "
+            + "continues to accept and forward mail on SMTP 25/587. Choose what you actually mean."
+        ask.addButton(withTitle: "Quit (relay keeps running)")
+        ask.addButton(withTitle: "Remove background service")
+        ask.addButton(withTitle: "Uninstall everything")
+        switch ask.runModal() {
+        case .alertSecondButtonReturn: controller.removeServiceNow()
+        case .alertThirdButtonReturn:  controller.uninstallEverythingNow()
+        default: break
+        }
+        return .terminateNow
     }
 
     // Without this, macOS logs a secure-coding warning for state restoration on an accessory app.
@@ -297,3 +465,4 @@ let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
 app.run()
+#endif

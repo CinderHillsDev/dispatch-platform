@@ -805,6 +805,15 @@ jobs:
           hdiutil attach -nobrowse -readonly -mountpoint /tmp/appimg dispatch-ci-macos.dmg >/dev/null
           APP=/tmp/appimg/DispatchRelay.app
           test -d "$APP" || { echo "the dmg has no DispatchRelay.app at its root"; exit 1; }
+          UNAPP="/tmp/appimg/Uninstall DispatchRelay.app"
+          test -d "$UNAPP" || { echo "the dmg has no uninstaller beside the app"; exit 1; }
+          test -x "$UNAPP/Contents/MacOS/dispatchrelay-uninstall" || { echo "the uninstaller has no executable"; exit 1; }
+          # The uninstaller deletes files and never needs the runtime. If it grew a bin-arm64, the disk image
+          # just doubled for no reason.
+          test ! -e "$UNAPP/Contents/Resources/payload/bin-arm64" \
+            || { echo "the uninstaller bundle carries binaries it cannot need"; exit 1; }
+          test "$(du -sk "$UNAPP" | cut -f1)" -lt 512 \
+            || { echo "the uninstaller bundle is unexpectedly large"; exit 1; }
           test -x "$APP/Contents/MacOS/dispatchrelay" || { echo "no executable in the bundle"; exit 1; }
           plutil -lint "$APP/Contents/Info.plist" || exit 1
           # It is a control panel, not a Dock app: without LSUIElement a menu bar extra also grows a Dock
@@ -841,12 +850,38 @@ jobs:
             || { echo "launchd is not supervising the daemon the app installed"; exit 1; }
           echo "OK: installing through DispatchRelay.app's own path produced a running, launchd-supervised service"
 
-          # And the Remove button's, which prefers the root-owned copy on disk.
-          sudo test -x /opt/dispatch/install.sh || { echo "the app's install left no /opt/dispatch/install.sh"; exit 1; }
-          sudo /opt/dispatch/install.sh --uninstall >/dev/null || { echo "the app's uninstall command failed"; exit 1; }
-          sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 && { echo "daemon survived uninstall"; exit 1; }
-          sudo test -d /var/db/dispatch || { echo "uninstall deleted the data dir"; exit 1; }
-          echo "OK: DispatchRelay.app installs and removes the background service, and leaves the data alone"
+          # Put the app where a user's copy would be, so "uninstall" has an /Applications entry to remove and
+          # the assertion below means something rather than passing vacuously.
+          sudo mkdir -p /Applications
+          sudo cp -R "$APP" /Applications/
+          test -d "/Applications/DispatchRelay.app" || { echo "could not stage the app in /Applications"; exit 1; }
+
+          # The uninstaller as its OWN BINARY, not a transcription of the command it would run. As root it
+          # takes the direct-exec branch in Privileged.run - the same branch a sudo user gets - which is the
+          # only way any of this is testable without a human at a password prompt.
+          sudo "$UNAPP/Contents/MacOS/dispatchrelay-uninstall" --yes \
+            || { echo "the uninstaller binary failed"; sudo rm -rf /Applications/DispatchRelay.app; exit 1; }
+          sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 \
+            && { echo "the daemon survived the uninstaller"; exit 1; }
+          test -e "/Applications/DispatchRelay.app" \
+            && { echo "the uninstaller left the app in /Applications"; exit 1; }
+          sudo test ! -e /opt/dispatch || { echo "the uninstaller left /opt/dispatch behind"; exit 1; }
+          sudo test -d /var/db/dispatch || { echo "the uninstaller deleted the operator's data"; exit 1; }
+          echo "OK: Uninstall DispatchRelay.app removed service and app, kept the data, run as a binary"
+
+          # And the control panel's "Uninstall completely..." item, through the flag that runs the identical
+          # script from its own compiled code.
+          case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
+          sudo "staging/dispatch-ci-macos-$A/install.sh" --prebuilt "staging/dispatch-ci-macos-$A/bin-$A" \
+               --admin-password "Ci-Smoke-Passw0rd!" >/dev/null || { echo "reinstall failed"; exit 1; }
+          sudo cp -R "$APP" /Applications/
+          sudo "/Applications/DispatchRelay.app/Contents/MacOS/dispatchrelay" --uninstall-completely \
+            || { echo "the app's uninstall-completely path failed"; exit 1; }
+          sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 \
+            && { echo "the daemon survived uninstall-completely"; exit 1; }
+          test -e "/Applications/DispatchRelay.app" && { echo "uninstall-completely left the app behind"; exit 1; }
+          sudo test -d /var/db/dispatch || { echo "uninstall-completely deleted the data dir"; exit 1; }
+          echo "OK: both uninstall routes remove the service and the app, and preserve the data"
           hdiutil detach /tmp/appimg >/dev/null 2>&1 || true
 
       # Everything above validates the bundle as DATA. None of it has ever RUN the binary, which means a
@@ -879,7 +914,9 @@ jobs:
             exit 1
           fi
           echo "OK: the app launches and stays running ($(ps -o %cpu,rss -p "$pid" | tail -1 | tr -s ' '))"
-          kill "$pid" 2>/dev/null || true
+          # kill -9, not -TERM: SIGTERM now routes through applicationShouldTerminate, which raises a
+          # confirmation dialog, and a modal alert in CI is a hung runner rather than a failed test.
+          kill -9 "$pid" 2>/dev/null || true
           wait "$pid" 2>/dev/null || true
           # It should also have said nothing on the way up. An app that "works" while printing dyld warnings
           # is one macOS update away from not working.

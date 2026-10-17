@@ -12,8 +12,9 @@ install, and the cryptographic behaviour is identical on both platforms.
 
 ## What ships
 
-**One file:** `dispatch-<version>-macos.dmg`, containing `DispatchRelay.app` (Apple Silicon, self-contained -
-no .NET SDK, no Node, no database server needed on the box). The bundle carries `install.sh`,
+**One file:** `dispatch-<version>-macos.dmg`, containing `DispatchRelay.app` and
+`Uninstall DispatchRelay.app` (Apple Silicon, self-contained - no .NET SDK, no Node, no database server
+needed on the box). The bundle carries `install.sh`,
 `dispatch-update.sh`, the two LaunchDaemon property lists and the arm64 binaries inside it, so the app's
 Install button and the command-line route run the same script rather than two implementations of it.
 Both `install.sh` and `dispatch-update.sh` are written for the macOS userland: BSD tools (`dscl`, `plutil`,
@@ -157,6 +158,23 @@ sudo pfctl -s Anchors
 pf rules are *not* removed by `--uninstall` (same policy as Linux's firewalld permanent rules). To drop them:
 `sudo pfctl -a /anchor/com.dispatchrelay/anchor -F all`.
 
+## Managing it without the app
+
+The menu bar app is a convenience wrapper, not the management surface - a `.app` can be dragged to the Trash,
+moved to another volume, or deleted by a storage-cleanup prompt, and none of those actions should leave a root
+process bound to SMTP 25 that nobody can name. So the machine carries its own controls, and always has since
+install: `/opt/dispatch/install.sh` is the script the installer itself uses.
+
+```bash
+sudo /opt/dispatch/install.sh --status    # daemon state, pid, dashboard, listening SMTP ports, spool counts
+sudo /opt/dispatch/install.sh --stop      # boot the daemon out (a KeepAlive job ignores launchctl stop)
+sudo /opt/dispatch/install.sh --start     # enable + bootstrap, clearing any persisted disabled override
+sudo /opt/dispatch/install.sh --help      # the flag list, read out of the script's own header
+```
+
+`--status` is the command to reach for when the question is "is this thing even running" and the answer must
+not come from a GUI.
+
 ## Uninstall
 
 Every route leaves the same on-disk uninstaller, and it is the one to use:
@@ -171,8 +189,20 @@ operator's mail history is not a side effect someone should get from the word "u
 the bundle's own copy is equivalent: `sudo "/Applications/DispatchRelay.app/Contents/Resources/payload/
 install.sh" --uninstall`.
 
-Installing through `DispatchRelay.app`? Its "Remove background service..." item calls the same script; you can
-then drag the app itself to the Trash.
+Three GUI-equivalent routes, all of which run that same script:
+
+- **The app's menu** - "Remove background service..." leaves the app in place, "Uninstall completely..." also
+  deletes `/Applications/DispatchRelay.app`. Quitting the app while the daemon is still installed now says so
+  out loud, because "I moved it to the Trash and mail kept flowing" is a real and frightening thing to
+  discover.
+- **`Uninstall DispatchRelay.app`**, the second icon in the disk image. It exists for the case the app cannot
+  cover: the app is already gone, or you do not trust a menu item inside the thing you are removing. It
+  carries `install.sh` and nothing else, so it is a few hundred KB, and it works whether or not
+  `DispatchRelay.app` is anywhere on the machine.
+- **The command line**, above.
+
+Dragging `DispatchRelay.app` to the Trash removes none of that, and that is by design: the relay is a system
+service that happens to have a control panel, not an app with a helper.
 
 No package format has an uninstaller, so `sudo pkgutil --forget app.dispatchrelay.dispatch` only clears the
 installer receipt and touches no files. `pf` rules and Application Firewall entries added by the installer are

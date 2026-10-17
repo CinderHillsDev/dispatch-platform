@@ -493,13 +493,24 @@ jobs:
             Dashboard:   https://localhost:8420
             Updates:     the dashboard's Updates page takes dispatch-upgrade-<version>.tar.gz
 
+          MANAGING IT WITHOUT THE APP
+
+          The menu bar app is a convenience wrapper, not the management surface. The machine carries its own
+          controls, installed alongside the service:
+
+            sudo /opt/dispatch/install.sh --status
+            sudo /opt/dispatch/install.sh --stop        # boots the daemon out; KeepAlive ignores stop
+            sudo /opt/dispatch/install.sh --start
+
           UNINSTALL
 
             sudo /opt/dispatch/install.sh --uninstall
 
           That removes the daemons and the program files and KEEPS your database, config and encryption key
-          on purpose - deleting an operator's mail history is not a side effect "uninstall" should have. Then
-          drag DispatchRelay.app to the Trash. Wipe the data too, only once you are sure:
+          on purpose - deleting an operator's mail history is not a side effect "uninstall" should have. The
+          disk image also carries Uninstall DispatchRelay.app, which does the same job from a dialog and also
+          deletes DispatchRelay.app; use it if you already trashed the app, which on its own removes nothing -
+          the relay is a system daemon, not a process the app owns. Wipe the data too, only once you are sure:
 
             sudo rm -rf /var/db/dispatch /var/log/dispatch
 

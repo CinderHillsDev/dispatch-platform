@@ -30,6 +30,7 @@ command -v codesign >/dev/null 2>&1 || { echo "codesign not found" >&2; exit 1; 
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 APP_NAME="DispatchRelay.app"
+UNAPP_NAME="Uninstall DispatchRelay.app"
 WORK="$(mktemp -d /tmp/dispatch-app.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -54,7 +55,7 @@ done
 /bin/cp -R "$STAGED/bin-arm64" "$RES_DIR/payload/bin-arm64"
 chmod 755 "$RES_DIR/payload" "$RES_DIR/payload/install.sh" "$RES_DIR/payload/dispatch-update.sh" 2>/dev/null || true
 
-# ---- executable ------------------------------------------------------------------------------
+# ---- the main app's executable ---------------------------------------------------------------
 # One source file, no package manager, no Xcode project. The deployment target is the bundle's
 # LSMinimumSystemVersion so a newer SDK on the runner cannot quietly produce a binary that will not
 # launch on an older Mac.
@@ -69,7 +70,21 @@ xcrun swiftc -O -target arm64-apple-macos13.0 \
   "$SCRIPT_DIR/app/Sources/main.swift"
 chmod 755 "$BIN_DIR/dispatchrelay"
 
-# ---- Info.plist, version-stamped -------------------------------------------------------------
+# ---- the uninstaller bundle ------------------------------------------------------------------
+# Same source, second entry point (see the #if UNINSTALLER in main.swift), so the two cannot disagree about
+# what gets deleted. It carries install.sh only: the uninstall path never touches a binary, and shipping a
+# second ~55 MB runtime to delete files would be absurd.
+UNAPP="$WORK/$UNAPP_NAME"
+mkdir -p "$UNAPP/Contents/MacOS" "$UNAPP/Contents/Resources/payload"
+xcrun swiftc -O -target arm64-apple-macos13.0 \
+  -module-name dispatchrelayuninstall -D UNINSTALLER -framework AppKit \
+  -o "$UNAPP/Contents/MacOS/dispatchrelay-uninstall" \
+  "$SCRIPT_DIR/app/Sources/main.swift"
+chmod 755 "$UNAPP/Contents/MacOS/dispatchrelay-uninstall"
+/bin/cp "$STAGED/install.sh" "$UNAPP/Contents/Resources/payload/install.sh"
+chmod 755 "$UNAPP/Contents/Resources/payload/install.sh"
+
+# ---- Info.plist files, version-stamped -------------------------------------------------------
 /bin/cp "$SCRIPT_DIR/app/Info.plist" "$APP/Contents/Info.plist"
 # Set only rewrites keys that exist, and Info.plist declares no CFBundleIconFile on purpose (the icon is
 # conditional, see below), so the icon key is added here rather than set. Failing to notice that is how the
@@ -77,6 +92,10 @@ chmod 755 "$BIN_DIR/dispatchrelay"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" \
                         -c "Set :CFBundleVersion $VER" "$APP/Contents/Info.plist" >/dev/null
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+/bin/cp "$SCRIPT_DIR/app/Info-uninstall.plist" "$UNAPP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" \
+                        -c "Set :CFBundleVersion $VER" "$UNAPP/Contents/Info.plist" >/dev/null
+printf 'APPL????' > "$UNAPP/Contents/PkgInfo"
 
 # An icon is what makes an app findable in /Applications, and a menu bar app with a generic icon reads as a
 # half-finished tool. If the source PNG is present, build an .icns with the stock tools and add the
@@ -123,12 +142,16 @@ OPTS=""
 [[ "$IDENTITY" != "-" ]] && OPTS="--options runtime"
 codesign --force --sign "$IDENTITY" --timestamp=none $OPTS "$BIN_DIR/dispatchrelay" >/dev/null
 codesign --force --sign "$IDENTITY" --timestamp=none $OPTS "$APP" >/dev/null
-codesign --verify --verbose=2 "$APP" 2>&1 | tail -3
+codesign --force --sign "$IDENTITY" --timestamp=none $OPTS \
+  "$UNAPP/Contents/MacOS/dispatchrelay-uninstall" >/dev/null
+codesign --force --sign "$IDENTITY" --timestamp=none $OPTS "$UNAPP" >/dev/null
+codesign --verify --verbose=2 "$APP" 2>&1 | tail -2
+codesign --verify --verbose=2 "$UNAPP" 2>&1 | tail -2
 
 # ---- dmg: the app plus an Applications shortcut, so the install really is a drag --------------
 DMG_ROOT="$WORK/image"
 mkdir -p "$DMG_ROOT"
-mv "$APP" "$DMG_ROOT/"
+mv "$APP" "$UNAPP" "$DMG_ROOT/"
 ln -s /Applications "$DMG_ROOT/Applications"
 if [[ -f "$RES_DIR/payload/README.txt" ]]; then cp "$RES_DIR/payload/README.txt" "$WORK/README.txt"; fi
 
@@ -136,6 +159,7 @@ hdiutil create -volname "Dispatch Relay $VER" -srcfolder "$DMG_ROOT" -ov -format
 chmod 644 "$OUT"
 
 echo "built: $OUT"
-echo "  app:      $APP_NAME ($(du -sh "$DMG_ROOT/$APP_NAME" | cut -f1 | tr -d ' ') on disk, arm64 only)"
-echo "  payload:  install.sh + bin-arm64 ($(find "$DMG_ROOT/$APP_NAME/Contents/Resources/payload" -type f | wc -l | tr -d ' ') files)"
+echo "  app:          $APP_NAME ($(du -sh "$DMG_ROOT/$APP_NAME" | cut -f1 | tr -d ' ') on disk, arm64 only)"
+echo "  uninstaller:  $UNAPP_NAME ($(du -sh "$DMG_ROOT/$UNAPP_NAME" | cut -f1 | tr -d ' ') - install.sh, no runtime)"
+echo "  payload:      $(find "$DMG_ROOT/$APP_NAME/Contents/Resources/payload" -type f | wc -l | tr -d ' ') files"
 echo "  signed:   ad-hoc (notarization needs a Developer ID this project does not have)"

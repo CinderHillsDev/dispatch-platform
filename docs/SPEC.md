@@ -3217,12 +3217,12 @@ load-bearing rather than cosmetic, so they are stated here as well as in
   `launchd` restart returns immediately, so `dispatch-update.sh` polls `/health` itself before deciding the
   update succeeded, and rolls the symlink back if it never passes.
 
-macOS ships **one file**: `dispatch-{version}-macos.dmg`, containing `DispatchRelay.app` (Apple Silicon).
-The bundle carries the `install.sh` described above inside it, and its menu bar item runs that script through
-one administrator prompt, so there is one install logic whatever route a machine takes. The app is not the
-service - the service is the `LaunchDaemon` - but it is the part a Mac user can see, which matters when the
-question is "did it install". Signing is ad-hoc because CI holds no Developer ID identity, so the first launch
-of a downloaded bundle needs right-click > Open ([`docs/macos.md`](macos.md)).
+macOS ships **one file**: `dispatch-<version>-macos.dmg`, containing `DispatchRelay.app` (Apple Silicon) and
+`Uninstall DispatchRelay.app`. Management does not depend on either: `/opt/dispatch/install.sh` is installed
+beside the service and doubles as a lifecycle CLI - `--status`, `--stop`, `--start`, `--uninstall`, `--help` -
+because an `.app` in `/Applications` is something a user can delete at any moment, and the daemon has to stay
+controllable after that. The two bundles share one `install.sh` and one uninstall script, so they cannot
+disagree about what gets removed and what is kept.
 
 ---
 

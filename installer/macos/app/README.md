@@ -23,7 +23,11 @@ run the service - it finds it, reports on it, and installs or removes it.
   probe accepts whatever the local server offers rather than evaluating trust - a liveness check that needs
   a CA is a liveness check that reports "stopped" on every Mac.
 - **Open Dashboard.** `NSWorkspace.open`, nothing more.
-- **Install / Remove background service.** One `Authorization Services` prompt, then root runs a script.
+- **Install / Remove background service / Uninstall completely.** One `Authorization Services` prompt each,
+  then root runs a script. "Uninstall completely" also deletes `/Applications/DispatchRelay.app`, and quitting
+  the app while the daemon is still running now asks what you meant, because "I moved it to the Trash and mail
+  kept flowing" is a real thing to discover. There is also `Uninstall DispatchRelay.app` in the disk image, for
+  when the app is already gone - see [Uninstall](../../../docs/macos.md#uninstall).
   `SMAppService` and `SMJobBless` are the modern alternatives and both want a Developer ID signature this
   project does not have; `do shell script ... with administrator privileges` needs no entitlement, no helper
   target, and no Xcode project.

@@ -56,6 +56,18 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
 
 ### Added
 
+- **macOS finally has a way out, and a way to ask what is running.** Three things that should have shipped
+  with the platform and did not:
+  `/opt/dispatch/install.sh` is now a lifecycle CLI - `--status` (daemon state, pid, dashboard, listening SMTP
+  ports, spool counts), `--stop`, `--start` and `--help` - so the machine carries its own controls instead of
+  depending on a `.app` in `/Applications` that anyone can drag to the Trash. The disk image also carries
+  **`Uninstall DispatchRelay.app`** beside the control panel: a few hundred KB, `install.sh` and no runtime,
+  for the case where the app is already gone. And the control panel grew **Uninstall completely...**, plus a
+  prompt on quit while the daemon is still running, because "I deleted the app and mail kept flowing" is not
+  something a person should discover on their own. All three routes run the *same* uninstall script, and CI
+  now executes the compiled binaries as root rather than a transcription of what they would shell out to -
+  which is only possible because the apps now detect that they are already privileged and skip the password
+  prompt instead of hanging on it.
 - **Emailit is now a relay provider.** Structured JSON sends to their v2 Emails API with a Bearer key, which
   fits alongside Resend, SMTP2GO and Maileroo - the shape theirs most resembles. To/Cc/Bcc are split from the
   envelope so a blind copy stays out of the visible headers, the From display name and any Reply-To are carried
