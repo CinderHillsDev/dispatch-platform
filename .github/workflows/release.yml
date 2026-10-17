@@ -8,7 +8,9 @@ name: Release
 #   - DispatchSetup.exe          the single-file Windows installer (embeds the signed MSI; installs the
 #                                self-contained service, which defaults to bundled SQLite)
 #   - dispatch-<ver>-linux.tar.gz       universal Linux bundle (x64 + arm64, self-contained)
-#   - dispatch-<ver>-macos.tar.gz       universal macOS bundle (arm64 + Intel, self-contained)
+#   - dispatch-<ver>-macos.dmg          ONE file for macOS: DispatchRelay.app, a menu bar control panel that
+#                                installs the launchd daemon for you (Apple Silicon, self-contained; no .NET
+#                                SDK and no Node required on the box)
 #   - SHA256SUMS                 checksums for all of the above
 #
 # Code signing is OPT-IN and dormant until you provision Azure Artifact Signing (renamed from Trusted
@@ -268,7 +270,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      # The macOS job runs on Apple hardware (for codesign), so its two payloads arrive as an artifact.
+      # The macOS job runs on Apple hardware (for codesign), so its payload arrives as an artifact.
       - name: Download macOS payloads
         uses: actions/download-artifact@v8
         with:
@@ -276,7 +278,7 @@ jobs:
           path: pkg
 
       # ONE cross-platform upgrade package for web-UI self-update: every platform's self-contained payload
-      # (linux-x64, linux-arm64, osx-arm64, osx-x64, win-x64) plus a single signed manifest, in one .tar.gz.
+      # (linux-x64, linux-arm64, osx-arm64, win-x64) plus a single signed manifest, in one .tar.gz.
       # A host uploads this one file; the updater picks + applies the payload matching its arch and verifies
       # its sha256. The arch keys must match UpdateService.CurrentArch.
       # The manifest signature is checked against the embedded public key. Signing is gated on the secret;
@@ -296,9 +298,8 @@ jobs:
           sha="$(sha256sum pkg/linux-arm64.tar.gz | awk '{print $1}')"
           shw="$(sha256sum pkg/win-x64.zip        | awk '{print $1}')"
           sha_osx_arm="$(sha256sum pkg/osx-arm64.tar.gz | awk '{print $1}')"
-          sha_osx_x64="$(sha256sum pkg/osx-x64.tar.gz   | awk '{print $1}')"
-          printf '{"name":"dispatch","version":"%s","minFromVersion":"0.0.0","builtAt":"%s","notesUrl":"%s","artifacts":{"linux-x64":{"file":"linux-x64.tar.gz","sha256":"%s"},"linux-arm64":{"file":"linux-arm64.tar.gz","sha256":"%s"},"osx-arm64":{"file":"osx-arm64.tar.gz","sha256":"%s"},"osx-x64":{"file":"osx-x64.tar.gz","sha256":"%s"},"win-x64":{"file":"win-x64.zip","sha256":"%s"}}}\n' \
-            "$ver" "$built" "$notes" "$shx" "$sha" "$sha_osx_arm" "$sha_osx_x64" "$shw" > pkg/manifest.json
+          printf '{"name":"dispatch","version":"%s","minFromVersion":"0.0.0","builtAt":"%s","notesUrl":"%s","artifacts":{"linux-x64":{"file":"linux-x64.tar.gz","sha256":"%s"},"linux-arm64":{"file":"linux-arm64.tar.gz","sha256":"%s"},"osx-arm64":{"file":"osx-arm64.tar.gz","sha256":"%s"},"win-x64":{"file":"win-x64.zip","sha256":"%s"}}}\n' \
+            "$ver" "$built" "$notes" "$shx" "$sha" "$sha_osx_arm" "$shw" > pkg/manifest.json
           if [ -n "$SIGNING_KEY" ]; then
             keyfile="$(mktemp)"; printf '%s' "$SIGNING_KEY" > "$keyfile"
             openssl dgst -sha256 -sign "$keyfile" -out pkg/manifest.json.sig pkg/manifest.json
@@ -310,7 +311,7 @@ jobs:
             exit 1
           fi
           tar -czf "dispatch-upgrade-${ver}.tar.gz" -C pkg manifest.json manifest.json.sig \
-            linux-x64.tar.gz linux-arm64.tar.gz osx-arm64.tar.gz osx-x64.tar.gz win-x64.zip
+            linux-x64.tar.gz linux-arm64.tar.gz osx-arm64.tar.gz win-x64.zip
 
           # The manifest is a promise; prove the package keeps it. Every arch key must match what
           # UpdateService.CurrentArch will ask for, the file it names must exist in the tarball, and its
@@ -319,7 +320,7 @@ jobs:
           # nothing else in this pipeline would notice.
           verify="$(mktemp -d)"
           tar -xzf "dispatch-upgrade-${ver}.tar.gz" -C "$verify"
-          for arch in linux-x64 linux-arm64 osx-arm64 osx-x64 win-x64; do
+          for arch in linux-x64 linux-arm64 osx-arm64 win-x64; do
             entry="$(tr -d ' \n' < "$verify/manifest.json" | grep -o "\"$arch\":{[^}]*}")"
             [ -n "$entry" ] || { echo "::error::manifest has no $arch entry"; exit 1; }
             file="$(printf '%s' "$entry" | grep -o '"file":"[^"]*"' | cut -d'"' -f4)"
@@ -340,7 +341,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  # macOS bundle: one universal tarball (Apple Silicon + Intel), self-contained, run as a launchd
+  # macOS bundle: the one file a Mac user downloads, self-contained and Apple Silicon only, run as a launchd
   # LaunchDaemon. Built on a macOS runner rather than cross-published from Linux for one reason: the code
   # signature. Apple Silicon will not exec an unsigned Mach-O, and the apphost is the one binary the build
   # patches after the runtime pack was signed, so the seal has to be checked (and if necessary re-made
@@ -379,21 +380,24 @@ jobs:
           cp -R src/Dispatch.UI/dist/. src/Dispatch.Web/wwwroot/
           test -f src/Dispatch.Web/wwwroot/index.html || { echo "embedded UI missing index.html"; exit 1; }
 
-      - name: Publish self-contained (osx-arm64 + osx-x64)
+      - name: Publish self-contained (osx-arm64)
         shell: bash
         run: |
           v=${{ steps.ver.outputs.version }}
+          # Apple Silicon only, which is now a product decision rather than a packaging shortcut: one macOS
+          # file, and no "which bin-<arch> does this Mac want" branch left in the install path. An Intel Mac
+          # asks the updater for osx-x64, finds no such manifest key, and is refused by name - a better
+          # outcome than a silent wrong-architecture install, and the reason the manifest and the package
+          # contents are asserted against each other in the linux job.
           dotnet publish src/Dispatch.Service -c Release -r osx-arm64 --self-contained true -p:Version=$v -o publish/arm64
-          # Intel Macs. Cross-published from the arm64 runner (a publish is a file copy, not an exec).
-          dotnet publish src/Dispatch.Service -c Release -r osx-x64  --self-contained true -p:Version=$v -o publish/x64
           # Stamp the version so install.sh names the release dir (/opt/dispatch/releases/<ver>).
-          for d in arm64 x64; do echo "$v" > "publish/$d/.dispatch-version"; done
+          echo "$v" > publish/arm64/.dispatch-version
 
       - name: Assert self-contained, and signed on every binary we ship
         shell: bash
         run: |
           set -uo pipefail
-          for d in arm64 x64; do
+          for d in arm64; do
             # A framework-dependent regression would still "work" on a runner that has the SDK installed,
             # so assert the runtime is actually bundled (this is what a customer's clean Mac gets).
             for f in libcoreclr.dylib libhostfxr.dylib System.Private.CoreLib.dll libe_sqlite3.dylib; do
@@ -414,91 +418,132 @@ jobs:
         shell: bash
         run: |
           tar -czf osx-arm64.tar.gz -C publish/arm64 .
-          tar -czf osx-x64.tar.gz   -C publish/x64 .
           ls -lh osx-*.tar.gz
 
-      - name: Assemble the universal macOS tarball
+      # Everything the .app needs, staged in the layout build-app.sh expects. There is deliberately no
+      # tarball and no .pkg any more: one macOS file, like every other Mac product. The staging directory
+      # still exists because it is what CI installs on (and what the app embeds), and because the headless
+      # route people want over SSH is mounting the dmg and running the install.sh inside it - documented in
+      # the README the bundle carries, which is written here rather than committed so it can name the
+      # version.
+      - name: Stage the macOS payload
         shell: bash
         run: |
           ver="${{ steps.ver.outputs.version }}"
           stage="dispatch-${ver}-macos"
-          mkdir -p "staging/${stage}/bin-arm64" "staging/${stage}/bin-x64"
+          mkdir -p "staging/${stage}/bin-arm64"
           cp -R publish/arm64/. "staging/${stage}/bin-arm64/"
-          cp -R publish/x64/.   "staging/${stage}/bin-x64/"
           cp installer/macos/install.sh installer/macos/dispatch-update.sh \
              installer/macos/app.dispatchrelay.dispatch.plist \
              installer/macos/app.dispatchrelay.dispatch-update.plist "staging/${stage}/"
           cp src/Dispatch.Core/Updates/dispatch-update-public.pem "staging/${stage}/"
           chmod +x "staging/${stage}/install.sh" "staging/${stage}/dispatch-update.sh" \
-            "staging/${stage}/bin-arm64/Dispatch.Service" "staging/${stage}/bin-x64/Dispatch.Service"
+            "staging/${stage}/bin-arm64/Dispatch.Service"
           cat > "staging/${stage}/README.txt" <<EOF
-          Dispatch SMTP Relay ${ver} - macOS (universal: Apple Silicon arm64 + Intel x64, self-contained;
-          no .NET SDK and no Node required on the box).
+          Dispatch SMTP Relay ${ver} - macOS (Apple Silicon, self-contained: no .NET SDK, no Node, and no
+          database server needed on the box).
 
-          install.sh auto-detects your CPU arch, installs a launchd daemon, and starts it - no flags needed:
-            sudo ./install.sh --admin-password '<DashboardPassword!>'
+          THE NORMAL WAY
 
-          Or use an existing PostgreSQL server:
-            sudo ./install.sh --sql-connection 'Host=...;Port=5432;Database=DispatchLog;Username=...;Password=...' --admin-password '<DashboardPassword!>'
+          1. Open dispatch-${ver}-macos.dmg and drag DispatchRelay.app to Applications.
+          2. Launch it once. It is signed ad-hoc rather than notarized with an Apple Developer ID, so a
+             download from a browser is quarantined and Gatekeeper refuses the first open: right-click the
+             app, choose Open, then confirm. (From a terminal: xattr -dr com.apple.quarantine
+             "/Applications/DispatchRelay.app")
+          3. Click the menu bar item and choose "Install background service". Enter your password once.
+          4. Choose "Open Dashboard" (https://localhost:8420, self-signed cert) and set the admin password
+             on the first-run screen.
 
-          Then open https://localhost:8420 (self-signed cert) and log in with the admin password you set.
+          The app is not the relay. The relay is a launchd daemon that starts at boot, before anyone logs in,
+          and runs as root because macOS has no way to let an ordinary process bind SMTP port 25. The app is
+          the part you can see: whether the daemon is running, a way to open the dashboard, and
+          Install/Remove buttons. Quitting it does not stop mail. Launch it again from the menu bar any time;
+          there is no Dock icon.
 
-          Two things worth knowing before you install:
+          THE HEADLESS WAY (over SSH, or a Mac with no logged-in user)
 
-          1. The daemon runs as ROOT by default, and only so it can bind SMTP 25/587 - macOS has no
-             per-process capability grant (the Linux installer runs unprivileged with CAP_NET_BIND_SERVICE).
-             If you would rather it ran unprivileged, create an account and pass it:
-               sudo dscl . -create /Users/_dispatch UniqueID 451
-               sudo dscl . -create /Users/_dispatch PrimaryGroupID -2
-               sudo dscl . -create /Users/_dispatch Shell /usr/bin/false
-               sudo dscl . -create /Users/_dispatch IsHidden 1
-               sudo ./install.sh --user _dispatch --admin-password '<DashboardPassword!>'
-             An unprivileged daemon cannot bind 25/587, so the SMTP listener falls back to 2525 (the same
-             fallback it uses on Linux when the capability is missing). Nothing else changes.
+          Mount the same file and run the installer inside it directly:
 
-          2. These binaries are NOT notarized with an Apple Developer ID. If you download this tarball in a
-             browser, macOS marks it quarantined and refuses the first run; install.sh strips that flag from
-             what it installs. If you extracted it somewhere else and see "cannot be opened because the
-             developer cannot be verified", run:
-               xattr -dr com.apple.quarantine <folder>
-             Nothing about Dispatch needs Screen Recording, Full Disk Access or any other privacy permission
-             - it is a launchd daemon, not an app.
+            hdiutil attach dispatch-${ver}-macos.dmg -nobrowse
+            sudo /Volumes/Dispatch*/DispatchRelay.app/Contents/Resources/payload/install.sh \
+                 --admin-password '<DashboardPassword!>'
+            hdiutil detach "/Volumes/Dispatch*"
 
-          Checksums: SHA256SUMS next to this file, or:  shasum -a 256 -c SHA256SUMS
-          Status:    sudo launchctl print system/app.dispatchrelay.dispatch
-          Logs:      /var/log/dispatch
-          Uninstall:
-            sudo launchctl bootout system/app.dispatchrelay.dispatch
-            sudo launchctl bootout system/app.dispatchrelay.dispatch-update
-            sudo rm -rf /opt/dispatch /var/db/dispatch /var/log/dispatch
-            sudo rm -f /Library/LaunchDaemons/app.dispatchrelay.dispatch*.plist
+          Against an existing PostgreSQL/MariaDB/SQL Server instead of the bundled SQLite:
+
+            sudo .../install.sh --sql-connection 'Host=...;Database=DispatchLog;Username=...;Password=...' \
+                 --admin-password '<DashboardPassword!>'
+
+          To run the daemon unprivileged, create a service account and pass it:
+
+            sudo dscl . -create /Users/_dispatch UniqueID 451
+            sudo dscl . -create /Users/_dispatch PrimaryGroupID -2
+            sudo dscl . -create /Users/_dispatch Shell /usr/bin/false
+            sudo dscl . -create /Users/_dispatch IsHidden 1
+            sudo .../install.sh --user _dispatch --admin-password '<DashboardPassword!>'
+
+          An unprivileged daemon cannot bind 25/587, so SMTP listens on 2525 instead - the same fallback it
+          uses on Linux when CAP_NET_BIND_SERVICE is missing. Nothing else changes, and the updater helper
+          still runs as root because it has to write under /opt/dispatch.
+
+          CHECKING ON IT
+
+            Status:      sudo launchctl print system/app.dispatchrelay.dispatch
+            Logs:        /var/log/dispatch
+            Dashboard:   https://localhost:8420
+            Updates:     the dashboard's Updates page takes dispatch-upgrade-<version>.tar.gz
+
+          MANAGING IT WITHOUT THE APP
+
+          The menu bar app is a convenience wrapper, not the management surface. The machine carries its own
+          controls, installed alongside the service:
+
+            sudo /opt/dispatch/install.sh --status
+            sudo /opt/dispatch/install.sh --stop        # boots the daemon out; KeepAlive ignores stop
+            sudo /opt/dispatch/install.sh --start
+
+          UNINSTALL
+
+            sudo /opt/dispatch/install.sh --uninstall
+
+          That removes the daemons and the program files and KEEPS your database, config and encryption key
+          on purpose - deleting an operator's mail history is not a side effect "uninstall" should have. The
+          disk image also carries Uninstall DispatchRelay.app, which does the same job from a dialog and also
+          deletes DispatchRelay.app; use it if you already trashed the app, which on its own removes nothing -
+          the relay is a system daemon, not a process the app owns. Wipe the data too, only once you are sure:
+
+            sudo rm -rf /var/db/dispatch /var/log/dispatch
+
+          Keep /var/db/dispatch/.dispatch-key if you ever plan to reinstall: the stored provider secrets are
+          encrypted with it and cannot be read without it.
+
+          Checksums: SHA256SUMS next to this file, or: shasum -a 256 -c SHA256SUMS
+
+          Intel Macs are not supported by this build. An Intel host will be refused by name rather than sent
+          the wrong binaries; the command-line installer still works there, but nothing is published for it.
+          Docs: https://docs.dispatchrelay.app
           EOF
-          tar -czf "${stage}.tar.gz" -C staging "${stage}"
-          ls -lh "${stage}.tar.gz"
 
-      # The .pkg is built by the same script the Installers workflow installs on every push (macos-tarball),
-      # so the artifact attached to a release is an artifact CI has actually booted a service with. Building a
-      # second copy of this recipe here is how a release ships a .pkg nobody ever ran.
-      - name: Build the macOS .pkg
+      # Built by the same script the Installers workflow installs for real on every push, so the file
+      # attached to a release is a file CI has actually booted a service with.
+      - name: Build the macOS .app and .dmg
         shell: bash
         run: |
           set -uo pipefail
           ver="${{ steps.ver.outputs.version }}"
-          bash installer/macos/build-pkg.sh "staging/dispatch-${ver}-macos" "$ver" "dispatch-${ver}-macos.pkg"
-          ls -lh dispatch-*-macos.pkg
-          # The runners have no Developer ID identity, so "no signature" is the honest state of this artifact
-          # on every release, and docs/macos.md carries the matching instruction. || true because pkgutil
-          # reports an unsigned package by exiting non-zero, and bash -e would fail the release on a status
-          # line - the same trap that aborted the CI install step.
-          pkgutil --check-signature "dispatch-${ver}-macos.pkg" 2>&1 | head -3 || true
+          bash installer/macos/build-app.sh "staging/dispatch-${ver}-macos" "$ver" "dispatch-${ver}-macos.dmg"
+          ls -lh dispatch-*-macos.dmg
+          # Ad-hoc, not notarized: the runners have no Developer ID identity, so this is the honest state of
+          # the artifact on every release and the README above carries the matching instruction. || true
+          # because codesign reports an ad-hoc signature by exiting non-zero on --check-notarization, and
+          # GitHub runs the step under bash -e.
+          codesign -dv "dispatch-${ver}-macos.dmg" 2>&1 | grep -i "signature" | head -2 || true
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
         with:
           name: macos
-          path: |
-            dispatch-*-macos.tar.gz
-            dispatch-*-macos.pkg
+          path: dispatch-*-macos.dmg
           if-no-files-found: error
           retention-days: 3
 
@@ -572,8 +617,7 @@ jobs:
           # (the Linux tarball already carries the version). Names match the README.
           cp "dist/windows/DispatchSetup.exe" "release/DispatchSetup-${VER}-x64.exe"
           cp dist/linux/dispatch-*-linux.tar.gz release/
-          cp dist/macos/dispatch-*-macos.tar.gz release/
-          cp dist/macos/dispatch-*-macos.pkg release/
+          cp dist/macos/dispatch-*-macos.dmg release/
           cp dist/upgrade-package/* release/          # the single cross-platform upgrade package
           ( cd release && sha256sum * > SHA256SUMS && cat SHA256SUMS )
 
@@ -586,10 +630,9 @@ jobs:
           prerelease: ${{ contains(needs.windows.outputs.version, '-') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+          # Everything the staging step put in release/, rather than a second list of artifact names. The
+          # explicit list is how dispatch-<ver>-macos.dmg got built, checksummed into SHA256SUMS, and then
+          # silently left out of the release: fail_on_unmatched_files only complains when a PATTERN matches
+          # nothing, so a pattern that was never written down is invisible. The staging step is the manifest.
           files: |
-            release/DispatchSetup-*-x64.exe
-            release/dispatch-*-linux.tar.gz
-            release/dispatch-*-macos.tar.gz
-            release/dispatch-*-macos.pkg
-            release/dispatch-upgrade-*
-            release/SHA256SUMS
+            release/*

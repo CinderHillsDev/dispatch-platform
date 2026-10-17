@@ -18,11 +18,11 @@ That triggers the **Release** workflow, which:
    Authenticode-signs both (engine detached, signed, reattached, then the bundle is signed).
 3. Builds the **universal Linux tarball** (`dispatch-<ver>-linux.tar.gz`, x64 + arm64, self-contained) -
    `install.sh` auto-detects the arch; no .NET SDK needed on the box.
-4. Builds the **universal macOS tarball** (`dispatch-<ver>-macos.tar.gz`, arm64 + Intel, self-contained) on a
-   macOS runner, and asserts both payloads are self-contained and carry a valid code signature. The same step
-   wraps the staged tree in **`dispatch-<ver>-macos.pkg`** with `installer/macos/build-pkg.sh`; the `.pkg`'s
-   postinstall runs the tarball's own `install.sh`, so neither artifact can drift from the other, and the
-   macOS smoke in `installers.yml` installs through the `.pkg` too, on every push that touches `installer/**`.
+4. Builds the **macOS bundle** on a macOS runner - **one file**, `dispatch-<ver>-macos.dmg`, containing
+   `DispatchRelay.app` (Apple Silicon, self-contained) - and asserts the payload is self-contained and every
+   binary in it carries a valid code signature. The app carries the repo's `install.sh` inside it rather than
+   reimplementing the install, and `installers.yml` installs through that same path for real on every push
+   touching `installer/**`.
 5. Builds the **upgrade package** (`dispatch-upgrade-<ver>.tar.gz`) - one cross-platform file with every
    platform's payload (linux-x64, linux-arm64, osx-arm64, osx-x64, win-x64) and a signed manifest - for the
    dashboard's "upload an upgrade package" self-update flow (see [Upgrading](https://docs.dispatchrelay.app/deployment/upgrading/)).
@@ -46,8 +46,7 @@ and publishes a **draft** release you can inspect and delete - nothing goes publ
 |----------|-------|-------|
 | Windows  | **`DispatchSetup-<ver>-x64.exe`** | The single file. Installs the self-contained service, which defaults to bundled SQLite - no database server required. To use an existing PostgreSQL/MariaDB/SQL Server, pass its connection string at install time (see [database.md](database.md)). The MSI is embedded in this bundle, not published separately. |
 | Linux    | `dispatch-<ver>-linux.tar.gz` | Universal (x64 + arm64). Extract, then `sudo ./install.sh --admin-password ...` (auto-detects arch). |
-| macOS    | `dispatch-<ver>-macos.tar.gz` | Universal (Apple Silicon + Intel). Extract, then `sudo ./install.sh --admin-password ...` (auto-detects arch). Not notarized - see [Code signing](#code-signing-azure-artifact-signing). |
-| macOS    | `dispatch-<ver>-macos.pkg` | Same payload, as a package installer: `sudo installer -pkg dispatch-<ver>-macos.pkg -target /`. Unsigned, so Finder refuses to open it - see [`macos.md`](macos.md#install-with-the-pkg). |
+| macOS    | **`dispatch-<ver>-macos.dmg`** | The one file for macOS (Apple Silicon). Drag `DispatchRelay.app` to Applications and install the background service from its menu bar item; headless/SSH installs mount the dmg and run the `install.sh` inside it. Ad-hoc signed, not notarized - see [Code signing](#code-signing-azure-artifact-signing). |
 | Upgrade  | `dispatch-upgrade-<ver>.tar.gz` | One cross-platform package for the **dashboard self-update** (Updates page). Upload it on any appliance/Linux/macOS/Windows install. |
 | Any      | `ghcr.io/cinderhillsdev/dispatch-platform:<ver>` | Multi-arch (amd64+arm64) container image; pushed to GHCR by the `docker` job. |
 | All      | `SHA256SUMS` | Verify downloads: `sha256sum -c SHA256SUMS`. |
@@ -100,14 +99,18 @@ hosted runners settled what CI can do: `security find-identity -v -p codesigning
 identities**, so `productbuild --sign` fails there and a release workflow could never sign a package even if
 it asked - `notarytool` is present, there is just nothing to sign with.
 
-So the `.pkg` ships unsigned, and is installed with
-`sudo installer -pkg dispatch-<ver>-macos.pkg -target /` rather than by opening it: Gatekeeper judges
-downloads, and a download through a browser carries quarantine, so `spctl` rejects the package while
-`installer(8)` from a terminal runs it. Everything needed to make it double-clickable is already in place -
-`build-pkg.sh` honours `DISPATCH_PKG_SIGN_IDENTITY`, so a "Developer ID Installer: ..." identity in the
-runners' keychain would be used by the same step that builds the artifact, and a Notary API key + issuer ID
-would let `notarytool submit` + `stapler staple` follow it. Until someone decides to pay for and configure
-that, macOS distribution is the tarball + Terminal flow documented in [`macos.md`](macos.md), plus the `.pkg`
+So `DispatchRelay.app` ships ad-hoc signed, and a browser download is quarantined: Gatekeeper refuses the
+first open and the user needs right-click > Open. What is in place already: `build-app.sh` honours
+`DISPATCH_APP_SIGN_IDENTITY` (and adds `--options runtime` when it is set), and a Notary API key + issuer ID
+would let `notarytool submit` + `stapler staple` follow it on the `.dmg`. That is the whole gap between the
+current first-run friction and a link you can hand to anyone.
+
+A notarized `.pkg` is the other thing an account would unlock - the right shape for MDM fleets, and dropped
+rather than deprecated, because with nothing to sign it offered a worse version of the double-clickable
+installer the `.dmg` already provides. To bring it back: a `pkgbuild` step over the staging directory plus a
+postinstall that execs the bundled `install.sh`.
+`git log --diff-filter=D -- installer/macos/build-pkg.sh` recovers the script and
+`installer/macos/pkg/postinstall` with it.
 for scripted installs, and the notary step belongs in the `macos` job right after assembly.
 
 ## Upgrade-package signing key (one-time)

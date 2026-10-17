@@ -31,7 +31,7 @@
 #   # Or point at a database server you already run (PostgreSQL, MariaDB/MySQL, SQL Server):
 #   sudo ./install.sh --sql-connection "Host=...;Database=DispatchLog;Username=...;Password=..." --admin-password "<pw>"
 #
-#   # From a release tarball (self-contained binaries for both Mac CPU types; no .NET SDK / Node required):
+#   # From the release bundle (self-contained Apple Silicon binaries; no .NET SDK / Node required):
 #   sudo ./install.sh --prebuilt ./bin-arm64 --admin-password "<pw>"
 #
 #   # Run unprivileged (SMTP lands on 2525 because 25/587 need root):
@@ -57,12 +57,17 @@
 #                          2525). The updater still runs as root - it has to swap files under /opt.
 #   --source <path>        Repo source root (default: two levels up from this script). Build-from-source mode.
 #   --prebuilt <dir>       Install pre-published self-contained binaries from <dir> instead of building from
-#                          source. Used by the release tarball; needs neither the .NET SDK nor Node.
+#                          source. Used by the release bundle; needs neither the .NET SDK nor Node.
 #   --no-firewall          Skip the best-effort Application Firewall rules.
 #   --no-start             Stage the install (binaries + LaunchDaemons installed) without starting anything.
 #                          launchd loads both jobs at the next boot.
 #   --uninstall            Boot out both daemons, remove the property lists and /opt/dispatch, then exit.
 #                          /var/db/dispatch and /var/log/dispatch are left in place (say so at the end).
+#   --status               Report the daemon state, the dashboard, the listening SMTP ports, the spool
+#                          counts and the active release. Needs no install, no app, no browser.
+#   --stop                 Boot the daemon out (a KeepAlive job ignores `launchctl stop`). The update
+#                          watcher stays loaded; mail then queues at the sender until --start.
+#   --start                Enable + bootstrap the daemon, clearing any persisted disabled override.
 #
 set -euo pipefail
 
@@ -89,6 +94,7 @@ TLS_CERT_PATH=""
 TLS_CERT_PASSWORD=""
 NO_FIREWALL="0"
 NO_START="0"
+ACTION=""
 UNINSTALL="0"
 
 while [[ $# -gt 0 ]]; do
@@ -108,6 +114,13 @@ while [[ $# -gt 0 ]]; do
     # at the next boot). Used when baking an image, where the service should start on first boot.
     --no-start) NO_START="1"; shift;;
     --uninstall) UNINSTALL="1"; shift;;
+    --status) ACTION="status"; shift;;
+    --start) ACTION="start"; shift;;
+    --stop) ACTION="stop"; shift;;
+    --help|-h)
+      # Print this file's own flag list rather than a second copy of it, which is how help text drifts.
+      sed -n '/^# Flags:/,/^#$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      exit 0;;
     *) echo "Unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -137,6 +150,77 @@ if [[ "$UNINSTALL" == "1" ]]; then
   echo "Dispatch is uninstalled. Kept on disk (remove them yourself if you are sure):"
   echo "  $DATA_DIR   - config, database, spool, .dispatch-key"
   echo "  $LOG_DIR          - logs"
+  exit 0
+fi
+
+# Lifecycle control, here so the machine always carries its own on/off switch.
+#
+# This script is copied to /opt/dispatch/install.sh at install time, so `--status`, `--start` and `--stop`
+# work from the box, over SSH, from a cron job, or from a Recovery terminal - with no browser, and with no
+# dependency on anything in /Applications. That dependency is the thing to avoid: a menu bar app can be
+# dragged to the Trash, moved to another volume, or deleted by the next macOS cleanup prompt, and none of
+# those actions should leave a root process listening on SMTP 25 that nobody can name. The app wraps exactly
+# these operations; it is not the management surface.
+if [[ -n "$ACTION" ]]; then
+  jval() { printf '%s' "$1" | tr -d ' \n' | grep -o "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4; }
+  jnum() { printf '%s' "$1" | tr -d ' \n' | grep -o "\"$2\":[0-9]*"  | head -1 | cut -d':' -f2; }
+  # The port the applier was told to poll, which is the port the dashboard answers on. Read back from the
+  # installed watcher plist rather than trusting this invocation's default: an operator who moved the
+  # dashboard with --http-port at install time would otherwise be told "nothing is listening on 8420".
+  HEALTH_PORT="$(plutil -extract EnvironmentVariables.DISPATCH_HEALTH_PORT raw \
+      "$DAEMON_DIR/$UPDATE_LABEL.plist" 2>/dev/null || true)"
+  [[ -n "$HEALTH_PORT" ]] || HEALTH_PORT="$HTTP_PORT"
+
+  case "$ACTION" in
+    status)
+      if [[ ! -f "$DAEMON_DIR/$LABEL.plist" ]]; then
+        echo "Dispatch: not installed (no $DAEMON_DIR/$LABEL.plist)"
+        exit 3
+      fi
+      lp="system/$LABEL"
+      # launchctl prints these as "key = value" with the delimiter as its own field, so $2 is "=" and a
+      # naive awk '{print $2}' renders pid as "pid==". "last exit code = (never exited)" also has a space
+      # in it, so take everything after the delimiter rather than a single field.
+      launchd_dump="$(launchctl print "$lp" 2>/dev/null || true)"
+      state="$(printf '%s\n' "$launchd_dump" | awk '/^[[:space:]]*state = /{sub(/^[^=]*= /,""); print; exit}')"
+      pid="$(printf '%s\n' "$launchd_dump" | awk '/^[[:space:]]*pid = /{sub(/^[^=]*= /,""); print; exit}')"
+      xcode="$(printf '%s\n' "$launchd_dump" | awk '/last exit code =/{sub(/^[^=]*= /,""); print; exit}')"
+      printf 'Dispatch: state=%s' "${state:-not loaded}"
+      [[ -n "$pid" && "$pid" != "0" ]] && printf ' pid=%s' "$pid"
+      [[ -n "$xcode" ]] && printf ' last-exit=%s' "$xcode"
+      printf '\n'
+      if [[ -n "$xcode" && "$xcode" != "(never exited)" && "${xcode%% *}" != "0" ]]; then
+        echo "           the last run exited with $xcode - read $LOG_DIR/launchd.err.log"
+      fi
+      if json="$(curl -fsSk -m 4 "https://localhost:${HEALTH_PORT}/health" 2>/dev/null)"; then
+        echo "  dashboard  https://localhost:${HEALTH_PORT} ($(jval "$json" status))"
+        echo "  version    $(jval "$json" version)"
+        echo "  smtp       listening on $(printf '%s' "$json" | tr -d ' \n' \
+              | grep -o '"listeningPorts":\[[^]]*\]' | sed 's/.*\[//; s/\]//' | tr -d '"')"
+        echo "  spool      incoming=$(jnum "$json" incoming) processing=$(jnum "$json" processing) failed=$(jnum "$json" failed)"
+      else
+        echo "  dashboard  https://localhost:${HEALTH_PORT} is not answering /health"
+        echo "             last daemon errors: ${LOG_DIR}/launchd.err.log"
+      fi
+      rel="$(cd "$INSTALL_DIR/current" 2>/dev/null && pwd -P)"
+      echo "  release    ${rel:-(no current symlink under $INSTALL_DIR)}"
+      echo "  data       $DATA_DIR"
+      ;;
+    stop)
+      # bootout, not `launchctl stop`: a KeepAlive job is restarted immediately by anything short of that.
+      # The update watcher is deliberately left loaded - it does nothing without an apply.request, and
+      # stopping it would silently disable staged updates until the next start.
+      launchctl bootout "system/$LABEL" >/dev/null 2>&1 || true
+      echo "Dispatch stopped. It starts again at the next boot, or with: sudo $0 --start"
+      echo "  Mail sent to 25/587 meanwhile is refused, so senders queue and retry."
+      ;;
+    start)
+      launchctl enable "system/$LABEL" >/dev/null 2>&1 || true
+      launchctl bootstrap system "$DAEMON_DIR/$LABEL.plist" >/dev/null 2>&1 \
+        || launchctl kickstart -k "system/$LABEL" >/dev/null 2>&1 || true
+      echo "Dispatch started. Status: sudo $0 --status"
+      ;;
+  esac
   exit 0
 fi
 
@@ -213,9 +297,10 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Auto-select prebuilt binaries by CPU arch when --prebuilt wasn't given, so one tarball + one command works
-# on any Mac (Apple Silicon or Intel). Prefer a per-arch dir (bin-arm64 / bin-x64) shipped in a universal
-# tarball, then a plain bin/ (single-arch tarball). If none are found we fall through to build-from-source.
+# Auto-select prebuilt binaries by CPU arch when --prebuilt wasn't given, so one command works whether this
+# script is being run out of the release bundle, a mounted .dmg, or a source tree. Releases ship bin-arm64
+# only; a machine that lands on bin-x64 has no artifact to find, so the per-arch lookup stays for anyone
+# publishing their own payload. If nothing matches we fall through to build-from-source.
 if [[ -z "$PREBUILT_DIR" ]]; then
   case "$(uname -m)" in
     arm64|aarch64) _arch=arm64 ;;
@@ -237,7 +322,7 @@ launchctl bootout "system/${LABEL}" >/dev/null 2>&1 || true
 mkdir -p "$INSTALL_DIR/releases"
 REL_VER="base"
 if [[ -n "$PREBUILT_DIR" ]]; then
-  # Release-tarball mode: copy the self-contained publish output as-is (no SDK / Node build).
+  # Prebuilt mode: copy the self-contained publish output as-is (no SDK / Node build).
   # A relative --prebuilt is resolved against the current dir, then against the script's own dir, so
   # `--prebuilt ./bin-arm64` works whether you run it from inside the extracted folder or by path.
   if [[ ! -d "$PREBUILT_DIR" && -d "$SCRIPT_DIR/$PREBUILT_DIR" ]]; then PREBUILT_DIR="$SCRIPT_DIR/$PREBUILT_DIR"; fi
@@ -273,12 +358,76 @@ rm -f "$INSTALL_DIR/Dispatch.Service" 2>/dev/null || true
 find "$INSTALL_DIR" -maxdepth 1 -type f -name '*.dll' -delete 2>/dev/null || true
 
 # Arm64 macOS refuses to execute an unsigned Mach-O, and every binary we ship has to carry at least an
-# ad-hoc signature. Release tarballs are signed at build time; a from-source build is signed by the SDK on
+# ad-hoc signature. Release payloads are signed at build time; a from-source build is signed by the SDK on
 # the machine. Re-signing the apphost here is cheap, idempotent insurance against a copy that lost it (and
 # against a payload that was downloaded and had its signature invalidated by any byte change).
 if command -v codesign >/dev/null 2>&1; then
-  codesign --force --sign - "$REL_DIR/Dispatch.Service" >/dev/null 2>&1 || \
-    echo "WARN: could not ad-hoc sign the apphost - if the service is killed on start, run: sudo codesign --force --sign - $REL_DIR/Dispatch.Service" >&2
+  # This has to be fatal, not a warning. On Apple Silicon an apphost that ends up unsigned or with a
+  # signature that does not cover its bytes is not "at risk of being killed on start" - it IS killed by
+  # the kernel at exec, every time, with no output: launchd reports the job as spawned, the daemon never
+  # writes a log line, and the operator sees a silent nothing-happening. The first version of this line
+  # sent the failure to a WARN in a log file nobody opens, and that is how a Mac shipped dead.
+  seal="$(codesign --force --sign - "$REL_DIR/Dispatch.Service" 2>&1)" \
+    || { echo "ERROR: could not ad-hoc sign $REL_DIR/Dispatch.Service." >&2
+         printf '%s\n' "$seal" | sed 's/^/         /' >&2
+         echo "         The daemon would be killed at exec on Apple Silicon without a valid signature." >&2
+         echo "         Try manually: sudo codesign --force --sign - \"$REL_DIR/Dispatch.Service\"" >&2
+         exit 1; }
+  # Confirming is not redundant: --force can succeed while the result is still not verifiable (a read-only
+  # mount, a copy that truncated the file, a resource fork in the way), and a signature that does not
+  # verify is exactly as fatal as no signature.
+  if ! codesign --verify --verbose=2 "$REL_DIR/Dispatch.Service" >/dev/null 2>&1; then
+    echo "ERROR: $REL_DIR/Dispatch.Service is signed but the signature does not verify:" >&2
+    codesign --verify --verbose=4 "$REL_DIR/Dispatch.Service" 2>&1 | sed 's/^/         /' >&2
+    exit 1
+  fi
+  # Every Mach-O in the release must verify, not just the apphost. dyld checks each image as it maps it,
+  # and one dylib whose signature no longer covers its bytes gives the identical symptom as an unsigned
+  # apphost: launchd spawns, the kernel kills, no stderr, no application log. A self-contained .NET payload
+  # has ~420 files, of which the Mach-O ones are the dylibs, createdump and the apphost - so that is the
+  # set, rather than running `file` four hundred times.
+  unverified="$(mktemp)"
+  checked=0
+  # Which files to check, and how this got it wrong once: a self-contained publish is ~420 files and the
+  # Mach-O ones are the dylibs, createdump and the apphost. Selecting by mode instead of name matched the
+  # managed .dll assemblies too (they carry +111 from the publish), and codesign correctly reported 381 PE
+  # files as "not signed at all" - which would have aborted every install on a true statement about the
+  # wrong file type. So the candidates are named, and `file` arbitrates: only Mach-O gets judged.
+  while IFS= read -r f; do
+    case "$(file -b "$f" 2>/dev/null)" in
+      *Mach-O*) ;;
+      *) continue ;;
+    esac
+    checked=$((checked + 1))
+    codesign --verify "$f" >/dev/null 2>&1 || printf '%s\n' "$f" >>"$unverified"
+  done < <(find "$REL_DIR" -type f \( -name '*.dylib' -o -name createdump -o -name 'Dispatch.Service' \) 2>/dev/null | sort)
+  bad="$(wc -l < "$unverified" | tr -d ' ')"
+  # An empty sweep is not a pass. A self-contained macOS publish always has dozens of dylibs, so finding
+  # one image means the candidate list or the layout changed under this check - and a check that silently
+  # inspects nothing is how a green CI coexisted with a dead Mac for two releases.
+  if [ "$checked" -lt 5 ]; then
+    echo "ERROR: the signature sweep found only $checked Mach-O file(s) under $REL_DIR;" >&2
+    echo "       a self-contained payload has dozens of dylibs. Refusing to call that a pass." >&2
+    rm -f "$unverified"
+    exit 1
+  fi
+  echo "==> Signature sweep: $checked Mach-O images, $bad unsigned"
+  if [ "$bad" != "0" ]; then
+    echo "ERROR: $bad of $checked Mach-O images under $REL_DIR do not carry a valid signature:" >&2
+    sed -n '1,8p' "$unverified" | sed 's/^/     /' >&2
+    if [ "$bad" -gt 8 ]; then echo "     ... and $((bad - 8)) more" >&2; fi
+    echo "     The daemon would be killed at exec on Apple Silicon. The payload was damaged in transit or" >&2
+    echo "     in copying - re-download the .dmg and run the installer again." >&2
+    rm -f "$unverified"
+    exit 1
+  fi
+  rm -f "$unverified"
+
+else
+  # No codesign means no way to make the payload executable on arm64. Say so instead of installing a
+  # binary that cannot run - this is the Command Line Tools being missing, not a Dispatch problem.
+  echo "ERROR: codesign not found; install the Xcode Command Line Tools (xcode-select --install) and re-run." >&2
+  exit 1
 fi
 
 # Strip the browser's quarantine flag from the installed payload, or the first exec is blocked.
@@ -342,7 +491,7 @@ chown -R "$OWNER:$OWNER_GROUP" "$DATA_DIR/.dispatch-spool"
 chmod 700 "$DATA_DIR/.dispatch-spool" "$DATA_DIR/.dispatch-spool/incoming" "$DATA_DIR/.dispatch-spool/processing" "$DATA_DIR/.dispatch-spool/failed"
 
 echo "==> Installing the launchd daemons + the web-UI updater"
-# The plists and the applier live next to this script, in both the release tarball and the source tree
+# The plists and the applier live next to this script, in both the release bundle and the source tree
 # (installer/macos/). Check rather than guess: a missing file here means launchd never gets a job and the
 # symptom shows up much later as "the update did nothing".
 PLIST_SRC="$SCRIPT_DIR"
@@ -367,6 +516,11 @@ install -m 644 "$TMP_PLISTS/$LABEL.plist"        "$DAEMON_DIR/$LABEL.plist"
 install -m 644 "$TMP_PLISTS/$UPDATE_LABEL.plist" "$DAEMON_DIR/$UPDATE_LABEL.plist"
 rm -rf "$TMP_PLISTS"
 install -m 755 "$PLIST_SRC/dispatch-update.sh"   "$INSTALL_DIR/dispatch-update.sh"
+# Keep a copy of this script outside the release symlink, so the machine carries its own uninstaller and
+# re-configurer. Before this, a command-line install left
+# nothing: after the download folder was deleted there was no command to run and no way to find out the
+# service was even installed (it has no /Applications entry - it is a LaunchDaemon, not an app).
+install -m 755 "$SCRIPT_DIR/install.sh" "$INSTALL_DIR/install.sh"
 # Release public key for the updater's independent signature re-verify (defense-in-depth over the app check).
 PUBKEY_SRC="$PLIST_SRC/dispatch-update-public.pem"
 [[ -f "$PUBKEY_SRC" ]] || PUBKEY_SRC="$SOURCE_DIR/src/Dispatch.Core/Updates/dispatch-update-public.pem"
@@ -383,6 +537,15 @@ if [[ "$NO_START" == "1" ]]; then
   echo "      sudo launchctl bootstrap system $DAEMON_DIR/$LABEL.plist)"
   exit 0
 fi
+# Clear any persisted "disabled" override before loading. `launchctl disable` writes an override keyed by the
+# service LABEL into launchd's own database, and it survives deleting the plist and reinstalling the product.
+# Since this script's own --uninstall calls disable, a machine that was ever uninstalled and then reinstalled
+# would bootstrap with exit status 0, print a success banner, and never start anything - launchd honors the
+# stale override over RunAtLoad and KeepAlive alike. enable + bootstrap is the documented pairing.
+for _l in "$LABEL" "$UPDATE_LABEL"; do
+  launchctl enable "system/${_l}" >/dev/null 2>&1 || true
+done
+
 if ! launchctl bootstrap system "$DAEMON_DIR/$LABEL.plist" 2>/dev/null; then
   launchctl load -w "$DAEMON_DIR/$LABEL.plist" 2>/dev/null \
     || { echo "ERROR: launchd refused to load $DAEMON_DIR/$LABEL.plist (plutil -lint says: $(plutil -lint "$DAEMON_DIR/$LABEL.plist" 2>&1))" >&2; exit 1; }
@@ -402,12 +565,48 @@ if [[ "$NO_FIREWALL" != "1" ]] && [[ -x /usr/libexec/ApplicationFirewall/socketf
   fi
 fi
 
+# Prove it came up. Everything above can succeed while nothing is actually running - a stale launchd
+# override, a signature the kernel refuses to exec, a dashboard port already held by something else. Until
+# now this script asserted success regardless, which on the app path (where install.sh's stdout goes to a
+# log file nobody opens) leaves the operator with "I installed it and nothing happened" and no lead. So poll
+# /health, and if it never answers, print what launchd and the daemon say and exit non-zero - that turns a
+# silently dead install into a FAILED one in Installer.app, which is the honest outcome.
+echo "==> Waiting for the dashboard on https://localhost:$HTTP_PORT"
+up=""
+for _i in $(seq 1 30); do
+  if curl -fsSk -m 3 "https://localhost:$HTTP_PORT/health" >/dev/null 2>&1; then up=1; break; fi
+  sleep 2
+done
+if [[ -z "$up" ]]; then
+  echo "ERROR: Dispatch is not answering https://localhost:$HTTP_PORT after 60s." >&2
+  echo "       launchd's view of the job:" >&2
+  launchctl print "system/$LABEL" 2>&1 \
+    | { grep -E "^[[:space:]]*(state|pid|last exit code|exit reason|runs|run type|program)" || echo "         (launchd has no such job loaded)"; } \
+    | sed 's/^/         /' >&2
+  echo "       last lines of $LOG_DIR/launchd.err.log:" >&2
+  { tail -5 "$LOG_DIR/launchd.err.log" 2>/dev/null | sed 's/^/         /' >&2 \
+      || echo "         (no such file - which usually means launchd never exec'd the binary at all)"; } >&2
+  # The single most useful line when launchd keeps spawning something the kernel kills: is it executable
+  # at all? A silent "killed" with no stderr below is a signature problem, not a Dispatch problem.
+  echo "       signature of the binary launchd is running:" >&2
+  codesign --verify --verbose=2 "$REL_DIR/Dispatch.Service" 2>&1 | sed 's/^/         /' >&2 || true
+  ls -l@ "$REL_DIR/Dispatch.Service" 2>&1 | sed 's/^/         /' >&2 || true
+  echo "       last lines of $LOG_DIR/dispatch.jsonl:" >&2
+  { tail -3 "$LOG_DIR/dispatch.jsonl" 2>/dev/null | cut -c1-400 | sed 's/^/         /' >&2 \
+    || echo "         (no application log yet)"; } >&2
+  echo "       Port in use by something else? sudo lsof -nP -iTCP:$HTTP_PORT -sTCP:LISTEN" >&2
+  echo "       Everything install.sh printed: cat /tmp/dispatch-pkg-postinstall.log (pkg) or the terminal above." >&2
+  exit 1
+fi
+
 echo
 echo "Dispatch is installed and running."
 echo "  Dashboard: https://localhost:$HTTP_PORT  (self-signed cert; log in with the admin password you set)"
 echo "  SMTP:      25 and 587, falling back to 2525 when 25 cannot be bound (in use, or unprivileged)"
 echo "  Ports, retention and other settings are managed in the dashboard."
-echo "  Status:    sudo launchctl print system/${LABEL}"
+echo "  Status:    sudo $INSTALL_DIR/install.sh --status"
+echo "  Stop/Start: sudo $INSTALL_DIR/install.sh --stop | --start"
+echo "  Uninstall: sudo $INSTALL_DIR/install.sh --uninstall"
 echo "  Logs:      $LOG_DIR  (and: log show --last 10m --predicate 'process == \"Dispatch.Service\"')"
 if [[ -z "$SERVICE_USER" ]]; then
   echo "  The daemon runs as root so it can bind SMTP 25/587 (macOS has no CAP_NET_BIND_SERVICE)."

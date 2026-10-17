@@ -77,16 +77,28 @@ let `install.sh` pick the arch payload out of the tarball it shipped in.
 (the service) and `app.dispatchrelay.dispatch-update.plist` (the `WatchPaths` job that applies staged
 updates as root).
 
+Most people should not run this script at all: open the release `.dmg`, drag `DispatchRelay.app` to
+Applications, and its menu bar item runs this exact script through one administrator prompt
+(see `macos/app/README.md`). The terminal route is for headless machines and SSH.
+
 ```bash
-# From the release tarball - no SDK, no Node, arch auto-detected (Apple Silicon or Intel):
-sudo ./install.sh --admin-password "<dashboard admin password>"
+# Mount the release file and install from the copy inside it (no SDK, no Node, Apple Silicon):
+hdiutil attach dispatch-<ver>-macos.dmg -nobrowse
+sudo "/Volumes/Dispatch"*/DispatchRelay.app/Contents/Resources/payload/install.sh \
+     --admin-password "<dashboard admin password>"
+hdiutil detach "/Volumes/Dispatch"*
 
-# Existing database server, or an unprivileged service account:
-sudo ./install.sh --sql-connection "Host=...;Database=DispatchLog;Username=...;Password=..." --admin-password "<pw>"
-sudo ./install.sh --user _dispatch --admin-password "<pw>"      # SMTP then listens on 2525
+# Against an existing database server, or as an unprivileged service account:
+sudo .../install.sh --sql-connection "Host=...;Database=DispatchLog;Username=...;Password=..." --admin-password "<pw>"
+sudo .../install.sh --user _dispatch --admin-password "<pw>"     # SMTP then listens on 2525
 
-sudo ./install.sh --uninstall                                  # daemons + binaries removed, data kept
+sudo /opt/dispatch/install.sh --uninstall                        # daemons + binaries removed, data kept
 ```
+
+`build-app.sh` packages that directory as `DispatchRelay.app` inside a `.dmg`, which is the only macOS file
+a release ships. The bundle carries `install.sh` rather than reimplementing it, because a second copy of the
+install logic is how two installers for one product start to disagree - and a `.pkg` used to exist here for
+exactly that reason; see `docs/macos.md` for why it was dropped.
 
 Two differences from Linux worth knowing before you read the flags again:
 
@@ -95,8 +107,9 @@ Two differences from Linux worth knowing before you read the flags again:
 - **`launchctl stop` does not stop it.** `KeepAlive` brings it straight back. Use
   `sudo launchctl bootout system/app.dispatchrelay.dispatch`.
 
-The binaries are ad-hoc signed, not notarized: if you extracted the tarball somewhere other than through
-`install.sh`, clear the quarantine flag with `xattr -dr com.apple.quarantine <dir>`. See
+The binaries and the app are ad-hoc signed, not notarized. `install.sh` clears the quarantine flag from what
+it installs; if you copied the payload by hand, or Gatekeeper refused the app's first launch, clear it with
+`xattr -dr com.apple.quarantine <dir-or-.app>` (or right-click the app, Open). See
 [docs/macos.md](../docs/macos.md) for the full picture.
 
 ## Validation status
@@ -104,6 +117,7 @@ The binaries are ad-hoc signed, not notarized: if you extracted the tarball some
 The Windows artifacts (PowerShell bootstrap, WiX MSI/bundle, the net472 launcher) and the Linux and macOS
 installer scripts were authored on a different OS than they target, so **CI runs them on the target OS** -
 that is what [`installers.yml`](../.github/workflows/installers.yml) is for: a full tarball install + /health
-smoke on Ubuntu, and plist linting with `plutil` plus a real `launchd` install, update-applier no-op check
-and uninstall on a macOS runner. The Linux `install.sh` also passes `bash -n` syntax checks. Anything not
+smoke on Ubuntu, and plist linting with `plutil` plus a real `launchd` install driven through the app's own
+privileged path, an update-applier test that verifies, refuses and rolls back, and an uninstall, on a macOS
+runner. The Linux `install.sh` also passes `bash -n` syntax checks. Anything not
 covered by those jobs (notably the Windows upgrade smoke) still needs a manual check on the target.

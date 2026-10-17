@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Uninstall DispatchRelay - the second icon in the macOS disk image.
+
+  A control panel that can be dragged to the Trash must not be the only way to stop what it installed. This
+  bundle carries install.sh (and nothing else - no runtime, no binaries), so it can remove the daemon, both
+  launchd jobs, /opt/dispatch and DispatchRelay.app even when the main app is already gone, from a volume the
+  user has never ejected, or non-interactively from a script (its yes flag).
+
+  The executable is compiled from the same main.swift as the control panel, with -D UNINSTALLER selecting the
+  dialog-driven entry point, so both bundles share one implementation of what "uninstall" deletes and keeps.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Dispatch Relay</string>
+    <key>CFBundleExecutable</key>
+    <string>dispatchrelay-uninstall</string>
+    <key>CFBundleIdentifier</key>
+    <string>app.dispatchrelay.uninstall</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Uninstall DispatchRelay</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>0.0.0</string>
+    <!-- The release job rewrites CFBundleShortVersionString/CFBundleVersion with the tag version. -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <!-- Not LSUIElement: this one has no menu bar presence. It is a dialog that runs once. -->
+    <key>NSHumanReadableCopyright</key>
+    <string>Dispatch SMTP Relay - https://docs.dispatchrelay.app</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <!-- No network client entitlement: this app talks to localhost only, and an ad-hoc signature cannot
+         carry entitlements anyway. See installer/macos/app/README.md. -->
+</dict>
+</plist>

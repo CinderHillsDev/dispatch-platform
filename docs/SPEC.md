@@ -3217,12 +3217,12 @@ load-bearing rather than cosmetic, so they are stated here as well as in
   `launchd` restart returns immediately, so `dispatch-update.sh` polls `/health` itself before deciding the
   update succeeded, and rolls the symlink back if it never passes.
 
-macOS ships two artifacts: the tarball whose `install.sh` is described above, and
-`dispatch-{version}-macos.pkg` - a flat package whose payload is the same staged tree and whose postinstall
-execs that same `install.sh`, so there is one install logic rather than a third copy to keep in sync. The
-package is unsigned because CI holds no Developer ID identity, which is why
-[`docs/macos.md`](macos.md#install-with-the-pkg) installs it with `installer -pkg` from a terminal instead of
-by opening it.
+macOS ships **one file**: `dispatch-<version>-macos.dmg`, containing `DispatchRelay.app` (Apple Silicon) and
+`Uninstall DispatchRelay.app`. Management does not depend on either: `/opt/dispatch/install.sh` is installed
+beside the service and doubles as a lifecycle CLI - `--status`, `--stop`, `--start`, `--uninstall`, `--help` -
+because an `.app` in `/Applications` is something a user can delete at any moment, and the daemon has to stay
+controllable after that. The two bundles share one `install.sh` and one uninstall script, so they cannot
+disagree about what gets removed and what is kept.
 
 ---
 
@@ -3546,13 +3546,13 @@ GitHub Actions handles all CI/CD automation.
 | Publish Windows x64 service | `dotnet publish -r win-x64 --self-contained` |
 | Publish Windows bootstrap EXE | `dotnet publish Dispatch.Bootstrap.Windows -r win-x64 --self-contained` |
 | Publish Linux x64 | `dotnet publish -r linux-x64 --self-contained` |
-| Publish macOS arm64 / x64 | `dotnet publish -r osx-arm64 --self-contained` (and `osx-x64`, cross-published) |
+| Publish macOS arm64 | `dotnet publish -r osx-arm64 --self-contained` (Apple Silicon only; no `osx-x64` artifact or manifest key) |
 | Ad-hoc sign the macOS apphost | `codesign --force --sign -` on a macOS runner (Apple Silicon will not exec an unsigned Mach-O) |
 | Build MSI | `dotnet build installer/windows` (WiX v6 MSBuild integration) |
 | Bundle bootstrap + MSI → Setup.exe | WiX Burn bootstrapper chain |
 | Build Linux tarball | `tar` packaging of binary + `install.sh` |
-| Build macOS tarball | `tar` packaging of both arch payloads + `install.sh` + the two LaunchDaemons |
-| Build macOS .pkg | `pkgbuild` of the same staged tree + a postinstall that execs its `install.sh` (`installer/macos/build-pkg.sh`) |
+| Stage macOS payload | the arm64 publish + `install.sh` + the two LaunchDaemons + the update applier, in the layout the bundle embeds |
+| Build macOS .dmg | `build-app.sh` compiles the menu bar app, embeds the staged `install.sh` + arm64 payload, ad-hoc signs, and wraps it as one `.dmg` |
 | GitHub Release | Triggered on version tag push (`v*`) |
 
 ### 18.2 Release Artefacts
@@ -3560,8 +3560,7 @@ GitHub Actions handles all CI/CD automation.
 - `DispatchSetup-{version}-x64.exe` - **Windows bootstrap installer** (run this; bundles the MSI internally)
 - `Dispatch-{version}-x64.msi` - Windows MSI (for IT admins doing scripted/silent deploys after manual DB setup)
 - `Dispatch-{version}-linux-x64.tar.gz` - Linux self-contained archive (binary + `install.sh`)
-- `dispatch-{version}-macos.tar.gz` - universal macOS archive (arm64 + Intel payloads, `install.sh`, the launchd property lists + the update applier)
-- `dispatch-{version}-macos.pkg` - universal macOS package installer: the same payloads and the same `install.sh`, driven by a postinstall instead of a shell. Unsigned, so `sudo installer -pkg <file> -target /` rather than a double-click ([`docs/macos.md`](macos.md#install-with-the-pkg))
+- `dispatch-{version}-macos.dmg` - **the macOS release file.** `DispatchRelay.app` inside it: menu bar control panel + the arm64 self-contained payload + `install.sh` + the two LaunchDaemons + the update applier. Ad-hoc signed, so Gatekeeper asks once ([`docs/macos.md`](macos.md))
 - `install.sh` - Linux bootstrap script (also available standalone for `curl | bash` installs)
 - `SHA256SUMS` - checksums for all release files
 

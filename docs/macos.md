@@ -12,104 +12,81 @@ install, and the cryptographic behaviour is identical on both platforms.
 
 ## What ships
 
-Two artifacts, one install logic:
+**One file:** `dispatch-<version>-macos.dmg`, containing `DispatchRelay.app` and
+`Uninstall DispatchRelay.app` (Apple Silicon, self-contained - no .NET SDK, no Node, no database server
+needed on the box). The bundle carries `install.sh`,
+`dispatch-update.sh`, the two LaunchDaemon property lists and the arm64 binaries inside it, so the app's
+Install button and the command-line route run the same script rather than two implementations of it.
+Both `install.sh` and `dispatch-update.sh` are written for the macOS userland: BSD tools (`dscl`, `plutil`,
+`pfctl`, `socketfilterfw`, `shasum`, `codesign`, `xattr`) and no GNU-only flags.
 
-- `dispatch-<version>-macos.tar.gz` - one universal tarball containing both Apple Silicon (`bin-arm64`) and
-  Intel (`bin-x64`) self-contained payloads, plus the installer and the launchd property lists. No .NET SDK,
-  no Node, no database server needed on the target machine. The installer picks the payload matching the
-  machine's architecture. `install.sh` and `dispatch-update.sh` are written for the macOS userland: BSD tools
-  (`dscl`, `plutil`, `pfctl`, `socketfilterfw`, `shasum`, `codesign`, `xattr`) and no GNU-only flags.
-- `dispatch-<version>-macos.pkg` - the same files in a flat package installer, for someone who would rather
-  run an installer than read a README. It adds no install logic of its own: `installer(8)` runs a postinstall
-  that execs the tarball's `install.sh` from the payload directory. See
-  [Install with the .pkg](#install-with-the-pkg), and note that it is **unsigned**, which changes how you can
-  launch it.
+`release.yml` stages that directory once and `installer/macos/build-app.sh` packages it; CI installs through
+both routes for real on every push touching `installer/**`, so a release never attaches a file nobody booted
+a service with.
 
-Both are staged by the same step in `release.yml`, and the `.pkg` is assembled by
-`installer/macos/build-pkg.sh` - the same script CI installs for real on every push touching `installer/**`,
-so a release never attaches a package nobody has installed.
+Two things this choice costs, stated so nobody rediscovers them:
+
+- **No Intel.** There is no `bin-x64` payload and no `osx-x64` key in the upgrade manifest. An Intel Mac that
+  asks for an update is refused by name rather than sent the wrong binaries.
+- **No `.pkg`.** A package installer is the right shape for MDM fleets and was dropped, not deprecated: its
+  only advantage over the `.dmg` is a double-clickable GUI installer, and with no Developer ID to sign and
+  notarize with, Gatekeeper blocks exactly that. `docs/RELEASING.md` says how to bring it back if a Developer
+  account ever gets bought.
 
 ## Install
 
+Open the `.dmg`, drag `DispatchRelay.app` to Applications, launch it (see
+[Gatekeeper and signing](#gatekeeper-and-signing) for the one-time right-click > Open), then click the menu
+bar item and choose **Install background service**. Enter your password once. Then **Open Dashboard** -
+`https://localhost:8420`, self-signed cert - and set the admin password on the first-run screen.
+
+### Headless, or over SSH
+
+The same installer is inside the bundle, and that is the route for a Mac mini with no logged-in user:
+
 ```bash
-sudo ./install.sh --admin-password '<DashboardPassword!>'
+hdiutil attach dispatch-<version>-macos.dmg -nobrowse
+sudo "/Volumes/Dispatch"*/DispatchRelay.app/Contents/Resources/payload/install.sh \
+     --admin-password '<DashboardPassword!>'
+hdiutil detach "/Volumes/Dispatch"*
 ```
 
-Then open `https://localhost:8420` and log in as `admin` with that password. The script installs a
-LaunchDaemon at `/Library/LaunchDaemons/app.dispatchrelay.dispatch.plist`, bootstraps it, waits for
-`/health`, and reports the listening ports. An existing PostgreSQL server is still supported:
+It installs the LaunchDaemon at `/Library/LaunchDaemons/app.dispatchrelay.dispatch.plist`, bootstraps it,
+waits for `/health`, and reports the listening ports. Against an existing PostgreSQL/MariaDB/SQL Server
+instead of the bundled SQLite:
 
 ```bash
-sudo ./install.sh --sql-connection 'Host=...;Port=5432;Database=DispatchLog;Username=...;Password=...' \
+sudo .../payload/install.sh \
+     --sql-connection 'Host=...;Port=5432;Database=DispatchLog;Username=...;Password=...' \
      --admin-password '<DashboardPassword!>'
 ```
 
-Two things about `launchd` are worth knowing before you install, because both surprise people coming from
-systemd:
-
-- **`launchctl stop` will not stop Dispatch.** A job with `KeepAlive` is restarted the moment it exits, so
-  `stop` looks like it worked and the process comes straight back. To really stop it:
-
-  ```bash
-  sudo launchctl bootout system/app.dispatchrelay.dispatch
-  ```
-
-- **`launchctl print` is the status command.** `sudo launchctl print system/app.dispatchrelay.dispatch`
-  shows the PID, the last exit code, and the standard-output / standard-error paths. The service log is
-  still JSONL at `/var/log/dispatch/dispatch.jsonl` (see [`SPEC.md` §13.4](SPEC.md#134-log-file-locations));
-  macOS unified logging
-  carries little beyond crashes, since the service writes to files by design.
-
-## Install with the .pkg
+## Install with DispatchRelay.app (the .dmg)
 
 ```bash
-sudo installer -pkg dispatch-<version>-macos.pkg -target /
+# drag DispatchRelay.app into /Applications, then launch it once
+open /Applications/DispatchRelay.app
+# click the menu bar item -> Install background service...
+# then Open Dashboard (https://localhost:8420) and set the admin password on first run
 ```
 
-That is the command to type, and the reason this section leads with a command instead of a double-click is
-[Gatekeeper](#gatekeeper-and-signing): the `.pkg` is built by CI, CI has no Apple Developer ID identity, so
-the artifact is unsigned and Finder refuses to open it. `installer(8)` run from a terminal is not Gatekeeper,
-and on a server it is what you would use anyway.
+The app is not the relay. It is a menu bar control panel for the `LaunchDaemon` - the relay has to start at
+boot before anyone logs in and run as root to bind SMTP 25, neither of which an app launched from the Dock
+can do ([why](../installer/macos/app/README.md#why-the-daemon-is-not-an-app)). Install it and the daemon is
+the thing that runs; quit the app and mail keeps flowing.
 
-What the package does is small enough to state exactly. `installer(8)` copies the payload to
-`/opt/dispatch/pkg` and runs `installer/macos/pkg/postinstall` as **root**, which execs that directory's
-`install.sh`. Nothing else decides anything - layout, plist substitution, service account, firewall and CPU
-architecture are all `install.sh`'s existing behaviour - so the `.pkg` and the tarball cannot drift. After a
-successful install the postinstall deletes `/opt/dispatch/pkg/bin-arm64` and `bin-x64`, because `install.sh`
-had already copied this machine's binaries into `/opt/dispatch/releases/<version>` and a self-contained
-runtime is not something to keep twice, and it leaves the scripts behind so the same file still handles
-reconfiguration and uninstall.
-
-Two consequences of driving a terminal installer from a package:
-
-- **No password is collected.** A `.pkg` has no tty to prompt on, and the distribution-style JavaScript prompt
-  that would fix that is only worth its complexity once the installer is signed and notarized. So the admin
-  password seed is left empty, which is a supported state rather than an accident: the dashboard shows a
-  one-time first-run setup screen, and that screen is reachable without authentication *only* while no
-  password hash exists. Everything under `/api/` stays 401 until you set it, so the machine is never left
-  serving an open admin UI. Open `https://localhost:8420` once the package finishes and set the password.
-- **To pass flags, leave a `pkg.conf`.** The postinstall sources `/opt/dispatch/pkg/pkg.conf` if it exists and
-  forwards `DISPATCH_PKG_ARGS` to `install.sh`, which is how an unattended package install points at a
-  database server or an unprivileged service account:
-
-  ```bash
-  printf 'DISPATCH_PKG_ARGS="--sql-connection %s"\n' "'Host=db.internal;Database=DispatchLog;Username=dispatch;Password=...'" \
-    | sudo tee /opt/dispatch/pkg/pkg.conf
-  ```
-
-  Write that file *before* installing (or install, then re-run
-  `sudo /opt/dispatch/pkg/install.sh <flags>` - it is idempotent and preserves the database).
-
-Re-installing the `.pkg` over an existing host is the upgrade path for a machine that was installed with it:
-`install.sh` boots the daemon out first, writes a new `releases/<version>` directory and re-points `current`.
-The in-app Updates page stays the other route, and is the one that verifies a signed manifest.
+"Install background service" copies the payload bundled inside the app into a `0700` root-owned directory and
+runs `install.sh` from there - so root never executes a script out of a folder your user account can rewrite.
+If a dashboard password was set previously it is kept; a fresh machine gets the first-run setup screen,
+because `install.sh` only prompts for a password when it has a terminal, and neither the app's privileged
+helper nor a double-clicked installer supplies one.
 
 ## Gatekeeper and signing
 
 The binaries are **ad-hoc signed, not notarized** - the project has no Apple Developer ID. Apple Silicon
-requires *a* signature to execute a Mach-O, and the cross-compiled payload carries an ad-hoc one, but a
-tarball downloaded through a browser is quarantined and macOS refuses the first launch. `install.sh` strips
-the quarantine attribute from what it installs (it cannot strip it from the archive you extracted, which was
+requires *a* signature to execute a Mach-O, and the payload carries an ad-hoc one, but a `.dmg` downloaded
+through a browser is quarantined and macOS refuses the first launch. `install.sh` strips
+the quarantine attribute from what it installs (it cannot strip it from the disk image you mounted, which was
 downloaded by your browser); if you moved the payload by hand and see *"cannot be opened because the
 developer cannot be verified"*, run:
 
@@ -118,23 +95,19 @@ xattr -dr com.apple.quarantine <the folder>
 ```
 
 `dispatch-update.sh` re-seals the apphost ad-hoc after extracting an upgrade payload, because extraction is
-allowed to move bytes and a stale signature kills the process on exec. The `.pkg` inherits the same gap: it is
-built unsigned, because `security find-identity -v -p codesigning` reports 0 valid identities on the hosted
-macOS runners and the repository has no certificate to hand them. Nothing about Dispatch needs Screen
-Recording, Full Disk Access or any other privacy permission - it is a daemon, not an app.
+allowed to move bytes and a stale signature kills the process on exec.
 
-Wiring a Developer ID would be a small change and a real improvement, in this order: an Installer identity
-available to CI (`pkgbuild --sign`, which `installer/macos/build-pkg.sh` already honours through
-`DISPATCH_PKG_SIGN_IDENTITY`), then `xcrun notarytool submit` followed by `stapler staple` on the product. Only
-the certificate and the notary credentials are missing - `pkgbuild`, `productbuild`, `hdiutil` and `notarytool`
-are all present on the runners.
+The `.dmg` and the app inside it are **ad-hoc signed, not notarized**:
+`security find-identity -v -p codesigning` reports 0 valid identities on the hosted macOS runners, and the
+repository has no certificate to hand them. Nothing about Dispatch needs Screen Recording, Full Disk Access
+or any other privacy permission - the relay is a daemon, and the app is a menu bar item that shells out.
 
 ## Paths
 
 | Path | Purpose |
 |---|---|
 | `/opt/dispatch/` | install root, like Linux. `current` is a symlink to the active release under `releases/<version>`; `dispatch-update.sh` + the public key live here |
-| `/opt/dispatch/pkg/` | only after a `.pkg` install: the payload `install.sh` ran from. Kept so reconfiguration and `--uninstall` work without the original download; its `bin-*` directories are removed once the install succeeds |
+| `/Applications/DispatchRelay.app/Contents/Resources/payload/` | the bundle's copy of `install.sh` + the arm64 binaries. The app installs from here, so it is the file to reach for if `/opt/dispatch/install.sh` is ever missing |
 | `/var/db/dispatch/` | config + data, like Linux's `/var/lib/dispatch`: `appsettings.json`, the SQLite database, the spool, the `.dispatch-key` key file, and `updates/` (staging) |
 | `/var/db/dispatch/updates/` | what the service stages (`staged/<version>/`, `apply.request`) and the applier's `status.json`, which the Updates page reads |
 | `/var/log/dispatch/` | `dispatch.jsonl` plus the `launchd` stdout / stderr sinks |
@@ -185,20 +158,58 @@ sudo pfctl -s Anchors
 pf rules are *not* removed by `--uninstall` (same policy as Linux's firewalld permanent rules). To drop them:
 `sudo pfctl -a /anchor/com.dispatchrelay/anchor -F all`.
 
+## Managing it without the app
+
+The menu bar app is a convenience wrapper, not the management surface - a `.app` can be dragged to the Trash,
+moved to another volume, or deleted by a storage-cleanup prompt, and none of those actions should leave a root
+process bound to SMTP 25 that nobody can name. So the machine carries its own controls, and always has since
+install: `/opt/dispatch/install.sh` is the script the installer itself uses.
+
+```bash
+sudo /opt/dispatch/install.sh --status    # daemon state, pid, dashboard, listening SMTP ports, spool counts
+sudo /opt/dispatch/install.sh --stop      # boot the daemon out (a KeepAlive job ignores launchctl stop)
+sudo /opt/dispatch/install.sh --start     # enable + bootstrap, clearing any persisted disabled override
+sudo /opt/dispatch/install.sh --help      # the flag list, read out of the script's own header
+```
+
+`--status` is the command to reach for when the question is "is this thing even running" and the answer must
+not come from a GUI.
+
 ## Uninstall
 
-```bash
-sudo ./install.sh --uninstall
-```
-
-Boots out both daemons, removes the property lists and the install root. `/var/db/dispatch` (database,
-config, spool, keys) and `/var/log/dispatch` are left in place. A `.pkg` has no uninstaller of its own - no
-package format does; `pkgutil --forget` deletes the receipt and touches no files - so use the copy the payload
-left behind:
+Every route leaves the same on-disk uninstaller, and it is the one to use:
 
 ```bash
-sudo /opt/dispatch/pkg/install.sh --uninstall
+sudo /opt/dispatch/install.sh --uninstall
 ```
+
+It boots out both launchd jobs, removes both property lists and `/opt/dispatch`, and deliberately keeps
+`/var/db/dispatch` (database, config, spool, `.dispatch-key`) and `/var/log/dispatch` - deleting an
+operator's mail history is not a side effect someone should get from the word "uninstall". If you installed
+the bundle's own copy is equivalent: `sudo "/Applications/DispatchRelay.app/Contents/Resources/payload/
+install.sh" --uninstall`.
+
+Three GUI-equivalent routes, all of which run that same script:
+
+- **The app's menu** - "Remove background service..." leaves the app in place, "Uninstall completely..." also
+  deletes `/Applications/DispatchRelay.app`. Quitting the app while the daemon is still installed now says so
+  out loud, because "I moved it to the Trash and mail kept flowing" is a real and frightening thing to
+  discover.
+- **`Uninstall DispatchRelay.app`**, the second icon in the disk image. It exists for the case the app cannot
+  cover: the app is already gone, or you do not trust a menu item inside the thing you are removing. It
+  carries `install.sh` and nothing else, so it is a few hundred KB, and it works whether or not
+  `DispatchRelay.app` is anywhere on the machine.
+- **The command line**, above.
+
+Dragging `DispatchRelay.app` to the Trash removes none of that, and that is by design: the relay is a system
+service that happens to have a control panel, not an app with a helper.
+
+No package format has an uninstaller, so `sudo pkgutil --forget app.dispatchrelay.dispatch` only clears the
+installer receipt and touches no files. `pf` rules and Application Firewall entries added by the installer are
+not removed (same policy as Linux's permanent firewalld rules); see [Firewall](#firewall).
+
+To wipe the data too, once you are sure: `sudo rm -rf /var/db/dispatch /var/log/dispatch`. Deleting
+`.dispatch-key` makes the stored provider secrets unrecoverable, so keep it if you mean to reinstall.
 
 ## Self-update
 
@@ -232,8 +243,13 @@ On a machine where you have not installed via `install.sh` yet, the first instal
   key directory is available, but if you hit it: macOS has no `/etc/machine-id`, so the key is stretched from
   the *machine name* and a security warning is logged. The installer pins `DISPATCH_KEY_DIR`, so this only
   affects someone running the binaries by hand.
-- **No notarized installer.** Neither the tarball nor the `.pkg` is signed; see "Gatekeeper and signing".
-  Install the `.pkg` with `installer -pkg` from a terminal rather than by opening it.
+- **No notarized installer.** `DispatchRelay.app` is ad-hoc signed, so a browser download is quarantined and
+  Gatekeeper refuses the first open; right-click > Open, or `xattr -dr com.apple.quarantine`. Wiring a
+  Developer ID is small and worth it: set `DISPATCH_APP_SIGN_IDENTITY` (which `build-app.sh` already honours)
+  to a "Developer ID Application: ..." identity in the runner keychain, add `--options runtime`, then
+  `xcrun notarytool submit` + `stapler staple` the `.dmg`. The tools are all present - only the certificate
+  and the notary credentials are missing. A notarized `.pkg` for MDM fleets is the other thing an account
+  would unlock; see `docs/RELEASING.md`.
 - **Inbound SMTP is not enabled by default.** The service binds `::` (which includes IPv4), so no sysctl or
   IPv6-only wrinkle is involved; it is simply the same "opening an inbound SMTP relay on a workstation is a
   choice, not a default" policy as on Windows.
@@ -243,5 +259,5 @@ On a machine where you have not installed via `install.sh` yet, the first instal
 - [`SPEC.md` §16](SPEC.md#16-linux-installation) - the Linux install this one mirrors, and the §16.7 note
   pointing here
 - [`../installer/README.md`](../installer/README.md) - installer flags and troubleshooting
-- [`RELEASING.md`](RELEASING.md) - how the macOS tarball and its upgrade payloads are built
+- [`RELEASING.md`](RELEASING.md) - how the macOS `.dmg` and its upgrade payload are built
 - [`database.md`](database.md) - the bundled SQLite default, and pointing at an existing server

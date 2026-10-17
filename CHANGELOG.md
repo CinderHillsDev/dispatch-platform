@@ -56,6 +56,18 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
 
 ### Added
 
+- **macOS finally has a way out, and a way to ask what is running.** Three things that should have shipped
+  with the platform and did not:
+  `/opt/dispatch/install.sh` is now a lifecycle CLI - `--status` (daemon state, pid, dashboard, listening SMTP
+  ports, spool counts), `--stop`, `--start` and `--help` - so the machine carries its own controls instead of
+  depending on a `.app` in `/Applications` that anyone can drag to the Trash. The disk image also carries
+  **`Uninstall DispatchRelay.app`** beside the control panel: a few hundred KB, `install.sh` and no runtime,
+  for the case where the app is already gone. And the control panel grew **Uninstall completely...**, plus a
+  prompt on quit while the daemon is still running, because "I deleted the app and mail kept flowing" is not
+  something a person should discover on their own. All three routes run the *same* uninstall script, and CI
+  now executes the compiled binaries as root rather than a transcription of what they would shell out to -
+  which is only possible because the apps now detect that they are already privileged and skip the password
+  prompt instead of hanging on it.
 - **Emailit is now a relay provider.** Structured JSON sends to their v2 Emails API with a Bearer key, which
   fits alongside Resend, SMTP2GO and Maileroo - the shape theirs most resembles. To/Cc/Bcc are split from the
   envelope so a blind copy stays out of the visible headers, the From display name and any Reply-To are carried
@@ -64,23 +76,45 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
   retries the same message, and Emailit replays the stored success instead of delivering it twice (a failed send
   releases the key, so retrying after a fix still sends). Their 429/500/503 responses land on Dispatch's
   transient retry path, every other 4xx is permanent. Closes #26.
-- **macOS is now a supported install target.** A release ships `dispatch-<ver>-macos.tar.gz` - one universal,
-  self-contained bundle for Apple Silicon and Intel - installed by `installer/macos/install.sh` as a launchd
-  LaunchDaemon, with the same flags and on-disk shape as Linux (`/opt/dispatch` + `/var/db/dispatch`) and the
-  same bundled-SQLite default. The dashboard's upgrade package gained `osx-arm64` and `osx-x64` payloads, so
+- **macOS now installs like a Mac app.** The release ships `dispatch-<ver>-macos.dmg` containing
+  `DispatchRelay.app` - a menu bar control panel for Apple Silicon that shows whether the relay is running, opens
+  the dashboard, and installs or removes the background service through one administrator prompt. The daemon
+  stays a `LaunchDaemon`, because nothing that has to bind SMTP 25 before anyone logs in can be a Dock app;
+  what changed is that the product is now *visible* - an icon in `/Applications`, and an uninstaller that
+  works without reading a README. The app carries the same `install.sh` inside it, so there is one install
+  path rather than three implementations of it.
+- **The macOS installer can no longer report success over a service that never started.** `install.sh` now
+  clears the `launchctl disable` override before bootstrapping (it persists by label across uninstalls, so
+  every install *after* an uninstall used to load the job and never run it), waits on `/health` before
+  claiming anything, prints launchd's own verdict plus the log tails if it never comes up, and exits
+  non-zero - which turns a silent nothing-happened into a failed install you can act on. It also leaves a
+  copy of itself at `/opt/dispatch/install.sh`, so the tarball path has an uninstaller too
+  ([`docs/macos.md`](docs/macos.md)).
+- **macOS is now a supported platform.** The relay installs as a `launchd` `LaunchDaemon` with the same flags
+  and on-disk shape as Linux (`/opt/dispatch` + `/var/db/dispatch`) and the same bundled-SQLite default,
+  installed by `installer/macos/install.sh` - which lives inside the `.dmg` (see the next entry), so the
+  command-line and GUI routes are the same script. The dashboard's upgrade package gained `osx-arm64` and `osx-x64` payloads, so
   a Mac can stage *and* apply an update: a `WatchPaths` job runs a root applier that re-verifies the manifest
   signature, swaps the release symlink, polls `/health`, and rolls back if the new version never comes up.
   The daemon runs as root by default because macOS, unlike Linux, has no way to let an unprivileged process
   bind port 25; `--user <name>` opts out and SMTP falls back to 2525 as it does wherever 25 cannot be bound.
-  Binaries are ad-hoc signed, not notarized. A release also ships `dispatch-<ver>-macos.pkg` - the same staged
-  payload in a package installer, whose postinstall execs that `install.sh` from the payload directory so the
-  two artifacts cannot drift; it is built unsigned, because GitHub's macOS runners have no Developer ID
-  identity, so it is installed with `sudo installer -pkg dispatch-<ver>-macos.pkg -target /` rather than by
-  opening it. See [`docs/macos.md`](docs/macos.md); a macOS runner now lints the property lists with `plutil`
-  and runs a real install through both the tarball and the `.pkg`, plus the update-applier and uninstall
+  Binaries are ad-hoc signed, not notarized, so a downloaded bundle needs right-click > Open once.
+  See [`docs/macos.md`](docs/macos.md); a macOS runner lints the property lists with `plutil`, installs for
+  real through both the app's privileged path and the headless one, and runs the update-applier and uninstall
   smokes.
 
 ### Changed
+
+- **The macOS release is one file, and Apple Silicon only.** `dispatch-<ver>-macos.tar.gz` and
+  `dispatch-<ver>-macos.pkg` are no longer published; `dispatch-<ver>-macos.dmg` is. Dropping the `.pkg` was
+  the deliberate call: a package installer is the right shape for MDM fleets, but its only advantage over the
+  `.dmg` is a double-clickable GUI installer, and with no Developer ID to sign and notarize with, Gatekeeper
+  blocks exactly that - so it was a worse version of the artifact we now ship, with a CI install path and a
+  docs section of its own to keep honest. Dropping the tarball was the cheaper half of the same decision,
+  though the headless route it served survives: mount the `.dmg` and run the `install.sh` inside it, which is
+  now documented and CI-exercised. There is also no `osx-x64` payload in the upgrade package any more, which
+  means Intel Macs are unsupported and are refused by name rather than sent the wrong binaries.
+  `docs/RELEASING.md` says what to restore, and from where, if a Developer account ever gets bought.
 
 - Dependabot no longer proposes EF Core majors (`Microsoft.EntityFrameworkCore*`,
   `Npgsql.EntityFrameworkCore.PostgreSQL` ≥ 10): the MySQL provider is still built against EF Core 9 and

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Dispatch - the menu bar face of the Dispatch SMTP relay daemon.
+
+  There is nothing else to see here. The product is a LaunchDaemon that listens on SMTP 25/587 and serves a
+  dashboard over HTTPS; it is deliberately not an app, because it has to run at boot, before anyone logs in,
+  as root, because macOS cannot let an unprivileged process bind a port below 1024. What this bundle adds is
+  the part a daemon cannot provide on its own: something in /Applications that says the product is installed,
+  shows whether it is running, opens the dashboard, and installs or removes the background service through one
+  administrator prompt.
+
+  LSUIElement means no Dock icon and no app switcher entry - a control panel, not a document app.
+
+  The executable is dispatchrelay, not Dispatch: "Dispatch" is already the name of Apple's libdispatch
+  module, which Foundation imports, so a target named after it fails to compile with a circular-dependency
+  error. It also happens to match the project's domain and the app.dispatchrelay.* launchd labels.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Dispatch Relay</string>
+    <key>CFBundleExecutable</key>
+    <string>dispatchrelay</string>
+    <key>CFBundleIdentifier</key>
+    <string>app.dispatchrelay.console</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>DispatchRelay</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>0.0.0</string>
+    <!-- The release job rewrites CFBundleShortVersionString/CFBundleVersion with the tag version. -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Dispatch SMTP Relay - https://docs.dispatchrelay.app</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <!-- No network client entitlement: this app talks to localhost only, and an ad-hoc signature cannot
+         carry entitlements anyway. See installer/macos/app/README.md. -->
+</dict>
+</plist>
