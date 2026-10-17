@@ -388,15 +388,24 @@ if command -v codesign >/dev/null 2>&1; then
   # set, rather than running `file` four hundred times.
   unverified="$(mktemp)"
   checked=0
+  # Which files to check, and how this got it wrong once: a self-contained publish is ~420 files and the
+  # Mach-O ones are the dylibs, createdump and the apphost. Selecting by mode instead of name matched the
+  # managed .dll assemblies too (they carry +111 from the publish), and codesign correctly reported 381 PE
+  # files as "not signed at all" - which would have aborted every install on a true statement about the
+  # wrong file type. So the candidates are named, and `file` arbitrates: only Mach-O gets judged.
   while IFS= read -r f; do
+    case "$(file -b "$f" 2>/dev/null)" in
+      *Mach-O*) ;;
+      *) continue ;;
+    esac
     checked=$((checked + 1))
     codesign --verify "$f" >/dev/null 2>&1 || printf '%s\n' "$f" >>"$unverified"
-  done < <(find "$REL_DIR" -type f \( -name '*.dylib' -o -name createdump -o -perm +111 \) 2>/dev/null | sort)
+  done < <(find "$REL_DIR" -type f \( -name '*.dylib' -o -name createdump -o -name 'Dispatch.Service' \) 2>/dev/null | sort)
   bad="$(wc -l < "$unverified" | tr -d ' ')"
   if [ "$bad" != "0" ]; then
     echo "ERROR: $bad of $checked Mach-O images under $REL_DIR do not carry a valid signature:" >&2
     sed -n '1,8p' "$unverified" | sed 's/^/     /' >&2
-    [ "$bad" -gt 8 ] && echo "     ... and $((bad - 8)) more" >&2
+    if [ "$bad" -gt 8 ]; then echo "     ... and $((bad - 8)) more" >&2; fi
     echo "     The daemon would be killed at exec on Apple Silicon. The payload was damaged in transit or" >&2
     echo "     in copying - re-download the .dmg and run the installer again." >&2
     rm -f "$unverified"
