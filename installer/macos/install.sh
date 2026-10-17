@@ -362,8 +362,30 @@ find "$INSTALL_DIR" -maxdepth 1 -type f -name '*.dll' -delete 2>/dev/null || tru
 # the machine. Re-signing the apphost here is cheap, idempotent insurance against a copy that lost it (and
 # against a payload that was downloaded and had its signature invalidated by any byte change).
 if command -v codesign >/dev/null 2>&1; then
-  codesign --force --sign - "$REL_DIR/Dispatch.Service" >/dev/null 2>&1 || \
-    echo "WARN: could not ad-hoc sign the apphost - if the service is killed on start, run: sudo codesign --force --sign - $REL_DIR/Dispatch.Service" >&2
+  # This has to be fatal, not a warning. On Apple Silicon an apphost that ends up unsigned or with a
+  # signature that does not cover its bytes is not "at risk of being killed on start" - it IS killed by
+  # the kernel at exec, every time, with no output: launchd reports the job as spawned, the daemon never
+  # writes a log line, and the operator sees a silent nothing-happening. The first version of this line
+  # sent the failure to a WARN in a log file nobody opens, and that is how a Mac shipped dead.
+  seal="$(codesign --force --sign - "$REL_DIR/Dispatch.Service" 2>&1)" \
+    || { echo "ERROR: could not ad-hoc sign $REL_DIR/Dispatch.Service." >&2
+         printf '%s\n' "$seal" | sed 's/^/         /' >&2
+         echo "         The daemon would be killed at exec on Apple Silicon without a valid signature." >&2
+         echo "         Try manually: sudo codesign --force --sign - \"$REL_DIR/Dispatch.Service\"" >&2
+         exit 1; }
+  # Confirming is not redundant: --force can succeed while the result is still not verifiable (a read-only
+  # mount, a copy that truncated the file, a resource fork in the way), and a signature that does not
+  # verify is exactly as fatal as no signature.
+  if ! codesign --verify --verbose=2 "$REL_DIR/Dispatch.Service" >/dev/null 2>&1; then
+    echo "ERROR: $REL_DIR/Dispatch.Service is signed but the signature does not verify:" >&2
+    codesign --verify --verbose=4 "$REL_DIR/Dispatch.Service" 2>&1 | sed 's/^/         /' >&2
+    exit 1
+  fi
+else
+  # No codesign means no way to make the payload executable on arm64. Say so instead of installing a
+  # binary that cannot run - this is the Command Line Tools being missing, not a Dispatch problem.
+  echo "ERROR: codesign not found; install the Xcode Command Line Tools (xcode-select --install) and re-run." >&2
+  exit 1
 fi
 
 # Strip the browser's quarantine flag from the installed payload, or the first exec is blocked.
@@ -522,6 +544,11 @@ if [[ -z "$up" ]]; then
   echo "       last lines of $LOG_DIR/launchd.err.log:" >&2
   { tail -5 "$LOG_DIR/launchd.err.log" 2>/dev/null | sed 's/^/         /' >&2 \
       || echo "         (no such file - which usually means launchd never exec'd the binary at all)"; } >&2
+  # The single most useful line when launchd keeps spawning something the kernel kills: is it executable
+  # at all? A silent "killed" with no stderr below is a signature problem, not a Dispatch problem.
+  echo "       signature of the binary launchd is running:" >&2
+  codesign --verify --verbose=2 "$REL_DIR/Dispatch.Service" 2>&1 | sed 's/^/         /' >&2 || true
+  ls -l@ "$REL_DIR/Dispatch.Service" 2>&1 | sed 's/^/         /' >&2 || true
   echo "       last lines of $LOG_DIR/dispatch.jsonl:" >&2
   { tail -3 "$LOG_DIR/dispatch.jsonl" 2>/dev/null | cut -c1-400 | sed 's/^/         /' >&2 \
     || echo "         (no application log yet)"; } >&2
