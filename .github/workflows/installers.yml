@@ -889,6 +889,56 @@ jobs:
       # AppKit symbol, an arch mismatch dyld would refuse - would sail through every assertion here and ship
       # an app that quits instantly on the customer's menu bar. So: launch it, and require it to still be
       # alive a few seconds later.
+      # The lifecycle CLI is the management surface that does not depend on anything in /Applications, which
+      # makes it the most important thing here to have actually run. --status parses launchctl and the health
+      # JSON with grep/tr, so it needs pinning rather than eyeballing.
+      - name: Lifecycle CLI (status, stop, start)
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        run: |
+          set -uo pipefail
+          case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
+          dir="staging/dispatch-ci-macos-$A"
+          cli="sudo $dir/install.sh"
+
+          out="$($cli --status 2>&1)"; rc=$?
+          echo "$out"
+          [ $rc -eq 0 ] || { echo "--status failed on an installed, running service"; exit 1; }
+          echo "$out" | grep -q "state=running" || { echo "--status did not read launchd's state"; exit 1; }
+          echo "$out" | grep -Eq "smtp +listening on .*25" || { echo "--status did not report the SMTP ports"; exit 1; }
+          echo "$out" | grep -q "dashboard  https://localhost:8420 (healthy)" \
+            || { echo "--status did not read /health correctly"; exit 1; }
+          echo "$out" | grep -Eq "release +/opt/dispatch/releases/" || { echo "--status lost the release path"; exit 1; }
+
+          # --stop must actually stop a KeepAlive job (bootout, not launchctl stop), and --start must bring it
+          # back without a reboot - which is also the persisted-disabled-override path from #52.
+          $cli --stop | tail -2
+          for _ in $(seq 1 20); do
+            curl -fsSk -m 4 https://localhost:8420/health >/dev/null 2>&1 || break
+            sleep 2
+          done
+          curl -fsSk -m 4 https://localhost:8420/health >/dev/null 2>&1 \
+            && { echo "the daemon is still serving after --stop"; exit 1; }
+          sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 \
+            && { echo "--stop left the job loaded"; exit 1; }
+          echo "OK: --stop took the daemon down and /health stopped answering"
+
+          $cli --start | tail -1
+          ok=0
+          for _ in $(seq 1 30); do
+            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          [ $ok = 1 ] || { echo "--start did not bring the daemon back"; exit 1; }
+          sudo launchctl print system/app.dispatchrelay.dispatch | grep -q "state = running" \
+            || { echo "--start loaded the job but launchd is not running it"; exit 1; }
+          echo "OK: --start brought it back, supervised and healthy"
+
+          # --help must not install anything. It prints this file's own flag list rather than a copy.
+          $cli --help | grep -q -- "--status" || { echo "--help does not document the lifecycle flags"; exit 1; }
+          curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1 \
+            || { echo "--help changed the install state - it must be read-only"; exit 1; }
+          echo "OK: the lifecycle CLI behaves, and --help stays out of the install"
+
       - name: Launch the app binary
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
         run: |
