@@ -402,6 +402,16 @@ if command -v codesign >/dev/null 2>&1; then
     codesign --verify "$f" >/dev/null 2>&1 || printf '%s\n' "$f" >>"$unverified"
   done < <(find "$REL_DIR" -type f \( -name '*.dylib' -o -name createdump -o -name 'Dispatch.Service' \) 2>/dev/null | sort)
   bad="$(wc -l < "$unverified" | tr -d ' ')"
+  # An empty sweep is not a pass. A self-contained macOS publish always has dozens of dylibs, so finding
+  # one image means the candidate list or the layout changed under this check - and a check that silently
+  # inspects nothing is how a green CI coexisted with a dead Mac for two releases.
+  if [ "$checked" -lt 5 ]; then
+    echo "ERROR: the signature sweep found only $checked Mach-O file(s) under $REL_DIR;" >&2
+    echo "       a self-contained payload has dozens of dylibs. Refusing to call that a pass." >&2
+    rm -f "$unverified"
+    exit 1
+  fi
+  echo "==> Signature sweep: $checked Mach-O images, $bad unsigned"
   if [ "$bad" != "0" ]; then
     echo "ERROR: $bad of $checked Mach-O images under $REL_DIR do not carry a valid signature:" >&2
     sed -n '1,8p' "$unverified" | sed 's/^/     /' >&2
