@@ -381,6 +381,29 @@ if command -v codesign >/dev/null 2>&1; then
     codesign --verify --verbose=4 "$REL_DIR/Dispatch.Service" 2>&1 | sed 's/^/         /' >&2
     exit 1
   fi
+  # Every Mach-O in the release must verify, not just the apphost. dyld checks each image as it maps it,
+  # and one dylib whose signature no longer covers its bytes gives the identical symptom as an unsigned
+  # apphost: launchd spawns, the kernel kills, no stderr, no application log. A self-contained .NET payload
+  # has ~420 files, of which the Mach-O ones are the dylibs, createdump and the apphost - so that is the
+  # set, rather than running `file` four hundred times.
+  unverified="$(mktemp)"
+  checked=0
+  while IFS= read -r f; do
+    checked=$((checked + 1))
+    codesign --verify "$f" >/dev/null 2>&1 || printf '%s\n' "$f" >>"$unverified"
+  done < <(find "$REL_DIR" -type f \( -name '*.dylib' -o -name createdump -o -perm +111 \) 2>/dev/null | sort)
+  bad="$(wc -l < "$unverified" | tr -d ' ')"
+  if [ "$bad" != "0" ]; then
+    echo "ERROR: $bad of $checked Mach-O images under $REL_DIR do not carry a valid signature:" >&2
+    sed -n '1,8p' "$unverified" | sed 's/^/     /' >&2
+    [ "$bad" -gt 8 ] && echo "     ... and $((bad - 8)) more" >&2
+    echo "     The daemon would be killed at exec on Apple Silicon. The payload was damaged in transit or" >&2
+    echo "     in copying - re-download the .dmg and run the installer again." >&2
+    rm -f "$unverified"
+    exit 1
+  fi
+  rm -f "$unverified"
+
 else
   # No codesign means no way to make the payload executable on arm64. Say so instead of installing a
   # binary that cannot run - this is the Command Line Tools being missing, not a Dispatch problem.
