@@ -116,43 +116,45 @@ private enum Privileged {
     }
 
     private static func run(_ exe: URL, arguments: [String], handler: @escaping (Bool, String) -> Void) {
-            let dir = FileManager.default.temporaryDirectory
-            let outURL = dir.appendingPathComponent("dispatch-out-\(UUID().uuidString).txt")
-            let errURL = dir.appendingPathComponent("dispatch-err-\(UUID().uuidString).txt")
-            FileManager.default.createFile(atPath: outURL.path, contents: nil)
-            FileManager.default.createFile(atPath: errURL.path, contents: nil)
-            defer { try? FileManager.default.removeItem(at: outURL); try? FileManager.default.removeItem(at: errURL) }
+        // Output goes to files, not Pipes. A Pipe plus waitUntilExit() deadlocks once the child writes more
+        // than the 64 KB buffer, and install.sh printing its launchctl dump can get there; a
+        // readabilityHandler would fix that and introduce a data race on the accumulating Data.
+        let dir = FileManager.default.temporaryDirectory
+        let outURL = dir.appendingPathComponent("dispatch-out-\(UUID().uuidString).txt")
+        let errURL = dir.appendingPathComponent("dispatch-err-\(UUID().uuidString).txt")
+        FileManager.default.createFile(atPath: outURL.path, contents: nil)
+        FileManager.default.createFile(atPath: errURL.path, contents: nil)
+        defer { try? FileManager.default.removeItem(at: outURL); try? FileManager.default.removeItem(at: errURL) }
 
-            let proc = Process()
-            proc.executableURL = exe
-            proc.arguments = arguments
-            guard let outFH = FileHandle(forWritingAtPath: outURL.path),
-                  let errFH = FileHandle(forWritingAtPath: errURL.path) else {
-                handler(false, "could not open temporary files to capture the installer's output")
-                return
+        let proc = Process()
+        proc.executableURL = exe
+        proc.arguments = arguments
+        guard let outFH = FileHandle(forWritingAtPath: outURL.path),
+              let errFH = FileHandle(forWritingAtPath: errURL.path) else {
+            handler(false, "could not open temporary files to capture the installer's output")
+            return
+        }
+        proc.standardOutput = outFH
+        proc.standardError = errFH
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            outFH.closeFile()
+            errFH.closeFile()
+            let body = (try? Data(contentsOf: outURL)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            if proc.terminationStatus == 0 {
+                handler(true, body)
+            } else {
+                let problems = (try? Data(contentsOf: errURL)).flatMap { String(data: $0, encoding: .utf8) }?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                // osascript prefixes "Command failed." with no detail; the script's own stderr is the part
+                // worth showing, and install.sh writes a real diagnosis there since #52.
+                handler(false, problems.isEmpty
+                    ? "the privileged command exited \(proc.terminationStatus) with no output. Details: /var/log/dispatch and the log named by --status"
+                    : problems)
             }
-            proc.standardOutput = outFH
-            proc.standardError = errFH
-            do {
-                try proc.run()
-                proc.waitUntilExit()
-                outFH.closeFile()
-                errFH.closeFile()
-                let body = (try? Data(contentsOf: outURL)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
-                if proc.terminationStatus == 0 {
-                    handler(true, body)
-                } else {
-                    let problems = (try? Data(contentsOf: errURL)).flatMap { String(data: $0, encoding: .utf8) }?
-                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    // osascript prefixes "Command failed." with no detail; the script's own stderr is the
-                    // part worth showing, and install.sh writes a real diagnosis there since #52.
-                    handler(false, problems.isEmpty
-                        ? "the privileged command exited \(proc.terminationStatus) with no output. Details: /var/log/dispatch and /tmp/dispatch-pkg-postinstall.log"
-                        : problems)
-                }
-            } catch {
-                handler(false, "could not run \(exe.lastPathComponent): \(error)")
-            }
+        } catch {
+            handler(false, "could not run \(exe.lastPathComponent): \(error)")
         }
     }
 }
@@ -188,7 +190,7 @@ enum Lifecycle {
         fi
         """
         if alsoDeleteApp {
-            script += "\n/bin/rm -rf "\(mainAppPath)""
+            script += "\n/bin/rm -rf \"\(mainAppPath)\""
         }
         return script
     }
@@ -295,10 +297,6 @@ private final class Controller: NSObject, NSMenuDelegate {
         "$d/install.sh" --prebuilt "$d/bin-arm64"
         """, doing: "Installing the background service")
     }
-
-    /// For the quit dialog, which cannot route through a menu item's target.
-    func removeServiceNow() { removeTapped() }
-    func uninstallEverythingNow() { uninstallEverythingTapped() }
 
     @objc private func removeTapped() {
         // The same script the standalone uninstaller and the CLI run, minus deleting the app bundle: someone
@@ -448,15 +446,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ask.addButton(withTitle: "Quit (relay keeps running)")
         ask.addButton(withTitle: "Remove background service")
         ask.addButton(withTitle: "Uninstall everything")
+        // Both destructive choices run SYNCHRONOUSLY here. The menu-item versions are async because they
+        // can report progress in the menu, but this one is about to terminate the process: returning
+        // .terminateNow after starting an async privileged call would kill the uninstall halfway through and
+        // leave a half-removed install, which is worse than the confusion this dialog exists to prevent.
         switch ask.runModal() {
-        case .alertSecondButtonReturn: controller.removeServiceNow()
-        case .alertThirdButtonReturn:  controller.uninstallEverythingNow()
-        default: break
+        case .alertSecondButtonReturn:
+            report(runPrivilegedSync(Lifecycle.uninstallScript(alsoDeleteApp: false)), "the background service")
+        case .alertThirdButtonReturn:
+            report(runPrivilegedSync(Lifecycle.uninstallScript(alsoDeleteApp: true)), "Dispatch")
+        default:
+            break
         }
         return .terminateNow
     }
 
     // Without this, macOS logs a secure-coding warning for state restoration on an accessory app.
+    private func report(_ result: (Bool, String), _ what: String) {
+        guard result.0 else {
+            let bad = NSAlert()
+            bad.alertStyle = .critical
+            bad.messageText = "Could not remove \(what)"
+            bad.informativeText = result.1
+            bad.runModal()
+            return
+        }
+        let done = NSAlert()
+        done.messageText = "\(what) removed"
+        done.informativeText = Lifecycle.keptOnDisk
+        done.runModal()
+    }
+
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 }
 
