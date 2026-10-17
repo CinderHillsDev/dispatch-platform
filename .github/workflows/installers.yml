@@ -900,17 +900,31 @@ jobs:
           dir="staging/dispatch-ci-macos-$A"
           cli="sudo $dir/install.sh"
 
-          out="$($cli --status 2>&1)"; rc=$?
+          # Install it first. The step before this one ENDS by uninstalling everything, so the honest state
+          # on entry is a clean machine - the same wrong-assumption class as an earlier step here that
+          # presumed the .pkg had left a service behind.
+          sudo "$dir/install.sh" --prebuilt "$dir/bin-$A" --admin-password "Ci-Smoke-Passw0rd!" \
+            > /tmp/cli-install.log 2>&1 || { echo "install for the CLI test failed"; tail -20 /tmp/cli-install.log; exit 1; }
+          ok=0
+          for _ in $(seq 1 30); do
+            if curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1; then ok=1; break; fi
+            sleep 2
+          done
+          [ $ok = 1 ] || { echo "the CLI test could not get a running service to inspect"; exit 1; }
+
+          # `out="$(cmd)"; rc=$?` is a trap under the step's default bash -e: the assignment takes the exit
+          # status and aborts before rc is ever read, which is how a failing --status printed nothing at all.
+          out="$($cli --status 2>&1)" && rc=0 || rc=$?
           echo "$out"
-          [ $rc -eq 0 ] || { echo "--status failed on an installed, running service"; exit 1; }
+          [ $rc -eq 0 ] || { echo "--status failed on an installed, running service (exit $rc)"; exit 1; }
           echo "$out" | grep -q "state=running" || { echo "--status did not read launchd's state"; exit 1; }
           echo "$out" | grep -Eq "smtp +listening on .*25" || { echo "--status did not report the SMTP ports"; exit 1; }
           echo "$out" | grep -q "dashboard  https://localhost:8420 (healthy)" \
             || { echo "--status did not read /health correctly"; exit 1; }
           echo "$out" | grep -Eq "release +/opt/dispatch/releases/" || { echo "--status lost the release path"; exit 1; }
+          echo "$out" | grep -Eq "spool +incoming=" || { echo "--status lost the spool counts"; exit 1; }
+          echo "OK: --status reports launchd, the dashboard, the SMTP ports and the release"
 
-          # --stop must actually stop a KeepAlive job (bootout, not launchctl stop), and --start must bring it
-          # back without a reboot - which is also the persisted-disabled-override path from #52.
           $cli --stop | tail -2
           for _ in $(seq 1 20); do
             curl -fsSk -m 4 https://localhost:8420/health >/dev/null 2>&1 || break
@@ -920,7 +934,7 @@ jobs:
             && { echo "the daemon is still serving after --stop"; exit 1; }
           sudo launchctl print system/app.dispatchrelay.dispatch >/dev/null 2>&1 \
             && { echo "--stop left the job loaded"; exit 1; }
-          echo "OK: --stop took the daemon down and /health stopped answering"
+          echo "OK: --stop took a KeepAlive daemon down (bootout, not launchctl stop)"
 
           $cli --start | tail -1
           ok=0
@@ -933,11 +947,16 @@ jobs:
             || { echo "--start loaded the job but launchd is not running it"; exit 1; }
           echo "OK: --start brought it back, supervised and healthy"
 
-          # --help must not install anything. It prints this file's own flag list rather than a copy.
+          # --help must be read-only. It prints this file's own flag list rather than a second copy of it.
           $cli --help | grep -q -- "--status" || { echo "--help does not document the lifecycle flags"; exit 1; }
           curl -fsSk -m 5 https://localhost:8420/health >/dev/null 2>&1 \
-            || { echo "--help changed the install state - it must be read-only"; exit 1; }
-          echo "OK: the lifecycle CLI behaves, and --help stays out of the install"
+            || { echo "--help disturbed the running service"; exit 1; }
+
+          # An uninstalled box must say so with a distinct exit code, or scripts cannot branch on it.
+          sudo "$dir/install.sh" --uninstall >/dev/null 2>&1
+          out="$($cli --status 2>&1)" && rc=0 || rc=$?
+          [ $rc -eq 3 ] || { echo "--status on an uninstalled box exited $rc, want 3"; echo "$out"; exit 1; }
+          echo "OK: --status distinguishes installed-from-not, and --help changes nothing"
 
       - name: Launch the app binary
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
