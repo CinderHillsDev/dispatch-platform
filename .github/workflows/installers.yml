@@ -849,6 +849,45 @@ jobs:
           echo "OK: DispatchRelay.app installs and removes the background service, and leaves the data alone"
           hdiutil detach /tmp/appimg >/dev/null 2>&1 || true
 
+      # Everything above validates the bundle as DATA. None of it has ever RUN the binary, which means a
+      # Swift app that aborts on launch - a nil force-unwrap in applicationDidFinishLaunching, a missing
+      # AppKit symbol, an arch mismatch dyld would refuse - would sail through every assertion here and ship
+      # an app that quits instantly on the customer's menu bar. So: launch it, and require it to still be
+      # alive a few seconds later.
+      - name: Launch the app binary
+        if: ${{ github.event_name == 'push' || inputs.full_install == true }}
+        run: |
+          set -uo pipefail
+          hdiutil attach -nobrowse -readonly -mountpoint /tmp/appl dispatch-ci-macos.dmg >/dev/null 2>&1 ||
+            hdiutil attach -nobrowse -mountpoint /tmp/appl dispatch-ci-macos.dmg >/dev/null
+          BIN=/tmp/appl/DispatchRelay.app/Contents/MacOS/dispatchrelay
+          test -x "$BIN" || { echo "no executable in the mounted bundle"; exit 1; }
+
+          # An LSUIElement app has no window and no Dock tile; its whole UI is a status item, so "did a
+          # window appear" is not observable. Liveness is the honest signal: NSStatusBar creation happens
+          # during launch, and if it fails or the runtime aborts, the process dies inside a second or two.
+          "$BIN" >/tmp/app-out.txt 2>/tmp/app-err.txt &
+          pid=$!
+          sleep 8
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::the app binary exited immediately; it would not appear in the menu bar at all"
+            echo "--- stdout ---"; cat /tmp/app-out.txt
+            echo "--- stderr ---"; cat /tmp/app-err.txt
+            echo "--- crash reports ---"
+            ls -t ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i dispatch | head -3 || echo "  (none)"
+            log show --last 2m --predicate 'process == "dispatchrelay"' --style compact 2>/dev/null | tail -15 || true
+            exit 1
+          fi
+          echo "OK: the app launches and stays running ($(ps -o %cpu,rss -p "$pid" | tail -1 | tr -s ' '))"
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          # It should also have said nothing on the way up. An app that "works" while printing dyld warnings
+          # is one macOS update away from not working.
+          if [ -s /tmp/app-err.txt ]; then
+            echo "--- stderr (informational) ---"; head -10 /tmp/app-err.txt
+          fi
+          hdiutil detach /tmp/appl >/dev/null 2>&1 || true
+
       - name: Upload macOS app artifact
         if: ${{ github.event_name == 'push' || inputs.full_install == true }}
         uses: actions/upload-artifact@v7
