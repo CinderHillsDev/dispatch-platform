@@ -588,7 +588,23 @@ jobs:
           set -uo pipefail
           case "$(uname -m)" in arm64) A=arm64;; *) A=x64;; esac
           dir="staging/dispatch-ci-macos-$A"
+
+          # Tag the payload with an arbitrary extended attribute and require it NOT to reappear in the
+          # installed copy. CI cannot forge com.apple.provenance (the system writes it, and even root cannot
+          # set it), but provenance, quarantine and any other attribute travel the same way - through a
+          # cp -R that propagates them - so a copy that sheds this one sheds that one. That propagation is
+          # what got the daemon killed by Gatekeeper on a real Mac, with launchd reporting nothing but a
+          # job that repeatedly failed to start.
+          xattr -w com.example.probe present "$dir/bin-$A/Dispatch.Service" \
+            || { echo "could not set the probe xattr on the staged payload"; exit 1; }
+
           sudo "$dir/install.sh" --admin-password "$ADMIN_PW" || { echo "install.sh FAILED"; exit 1; }
+
+          if xattr -l "/opt/dispatch/current/Dispatch.Service" 2>/dev/null | grep -q "com.example.probe"; then
+            echo "the installer PROPAGATED extended attributes into /opt/dispatch - Gatekeeper kills this daemon"
+            exit 1
+          fi
+          echo "OK: the installed binary carries no extended attributes from the payload"
 
           ok=0
           for _ in $(seq 1 36); do
