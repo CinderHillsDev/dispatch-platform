@@ -319,6 +319,23 @@ launchctl bootout "system/${LABEL}" >/dev/null 2>&1 || true
 
 # Binaries live under /opt/dispatch/releases/<ver> with /opt/dispatch/current symlinked to the active one,
 # so the web-UI updater can swap releases atomically by re-pointing 'current' (and roll back the same way).
+# Copying a payload the BSD way propagates its extended attributes, and on a Mac that is not cosmetic:
+# anything that arrived through a browser (or a mounted .dmg) carries com.apple.provenance, which cannot be
+# deleted by ANYONE - not the user, not root; `xattr -d` answers "Operation not permitted" forever. Gatekeeper
+# then assesses the copy on first exec, finds an ad-hoc-signed bundle-less Mach-O with no team and no
+# identifier, and the kernel kills it: "Terminating process due to Gatekeeper rejection", with no stderr and
+# no application log, so launchd just reports a job that keeps failing to start. The fix is not to strip it -
+# it is to never let it land. ditto --noextattr creates the copy without the attributes at all.
+copy_payload() {  # $1 = source directory, $2 = destination directory
+  if command -v ditto >/dev/null 2>&1; then
+    ditto --norsrc --noextattr "$1" "$2"
+  else
+    # No ditto means no way to shed provenance; say so instead of installing a binary Gatekeeper will kill.
+    echo "WARN: ditto not found; falling back to cp, which carries quarantine/provenance forward" >&2
+    cp -R "$1/." "$2/"
+  fi
+}
+
 mkdir -p "$INSTALL_DIR/releases"
 REL_VER="base"
 if [[ -n "$PREBUILT_DIR" ]]; then
@@ -334,7 +351,7 @@ if [[ -n "$PREBUILT_DIR" ]]; then
   REL_DIR="$INSTALL_DIR/releases/$REL_VER"
   echo "==> Installing pre-built binaries from $PREBUILT_DIR to $REL_DIR"
   rm -rf "$REL_DIR"; mkdir -p "$REL_DIR"
-  cp -R "$PREBUILT_DIR/." "$REL_DIR/"
+  copy_payload "$PREBUILT_DIR" "$REL_DIR"
   chmod +x "$REL_DIR/Dispatch.Service"
 else
   # Build-from-source mode: needs the .NET SDK + Node.
@@ -430,7 +447,10 @@ else
   exit 1
 fi
 
-# Strip the browser's quarantine flag from the installed payload, or the first exec is blocked.
+# Belt to the copy above: clear com.apple.quarantine if anything still carries it. This is best-effort by
+# nature - xattr exits non-zero when a file simply has no such attribute - and it can NEVER touch
+# com.apple.provenance, which is exactly why the copy is done with ditto --noextattr rather than copied and
+# cleaned afterwards.
 xattr -dr com.apple.quarantine "$REL_DIR" >/dev/null 2>&1 || true
 
 echo "==> Creating directories (owner: $OWNER)"
@@ -595,6 +615,11 @@ if [[ -z "$up" ]]; then
   { tail -3 "$LOG_DIR/dispatch.jsonl" 2>/dev/null | cut -c1-400 | sed 's/^/         /' >&2 \
     || echo "         (no application log yet)"; } >&2
   echo "       Port in use by something else? sudo lsof -nP -iTCP:$HTTP_PORT -sTCP:LISTEN" >&2
+  # Empty stderr + empty app log + launchd retrying is the signature of the kernel refusing to exec, and
+  # only one log says so out loud. Ask it directly rather than leaving the operator to guess.
+  echo "       If nothing logged at all, ask Gatekeeper (a 'Gatekeeper rejection' line means the payload" >&2
+  echo "       arrived with download provenance and needs the .dmg re-downloaded, or a Developer ID):" >&2
+  echo "         sudo log show --last 5m --predicate 'subsystem == \"com.apple.syspolicy.exec\"' | tail -20" >&2
   echo "       Everything install.sh printed: cat /tmp/dispatch-pkg-postinstall.log (pkg) or the terminal above." >&2
   exit 1
 fi

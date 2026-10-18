@@ -183,7 +183,11 @@ enum Lifecycle {
           set -e
           d="$(/usr/bin/mktemp -d /var/tmp/dispatch-uninstall.XXXXXX)"
           /bin/chmod 700 "$d"
-          /bin/cp -R "\(bundlePayload)/." "$d/"
+          # ditto, not cp: the copy must not inherit the dmg's quarantine or provenance. Provenance cannot be
+          # removed by anyone including root, and Gatekeeper kills an ad-hoc-signed Mach-O that carries it -
+          # which surfaces as a launchd job that keeps "spawning" and never writes a log line.
+
+          /usr/bin/ditto --norsrc --noextattr "\(bundlePayload)" "$d/"
           /bin/chmod -R go-rwx "$d"
           trap '/bin/chmod -R u+rwX "$d" 2>/dev/null; /bin/rm -rf "$d"' EXIT
           "$d/install.sh" --uninstall
@@ -291,7 +295,11 @@ private final class Controller: NSObject, NSMenuDelegate {
         set -e
         d="$(/usr/bin/mktemp -d /var/tmp/dispatch-install.XXXXXX)"
         /bin/chmod 700 "$d"
-        /bin/cp -R "\(payload)/." "$d/"
+        # ditto, not cp: the copy must not inherit the dmg's quarantine or provenance. Provenance cannot be
+        # removed by anyone including root, and Gatekeeper kills an ad-hoc-signed Mach-O that carries it -
+        # which surfaces as a launchd job that keeps "spawning" and never writes a log line.
+
+        /usr/bin/ditto --norsrc --noextattr "\(payload)" "$d/"
         /bin/chmod -R go-rwx "$d"
         trap '/bin/chmod -R u+rwX "$d" 2>/dev/null; /bin/rm -rf "$d"' EXIT
         "$d/install.sh" --prebuilt "$d/bin-arm64"
