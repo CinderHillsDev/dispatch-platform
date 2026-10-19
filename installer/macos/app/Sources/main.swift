@@ -216,6 +216,9 @@ private final class Controller: NSObject, NSMenuDelegate {
     private var removeItem: NSMenuItem!
     private var uninstallItem: NSMenuItem!
     private var busy = false
+    private var quitting = false
+    private var tick: Timer?
+    private var elapsed = 0
 
     func start() {
         if let button = status.button {
@@ -340,11 +343,29 @@ private final class Controller: NSObject, NSMenuDelegate {
 
     private func perform(_ script: String, doing verb: String) {
         busy = true
-        stateItem.title = "\(verb)..."
+        // install.sh waits up to 60s on /health before it can report anything, and an un-ticked "Installing
+        // the background service..." is indistinguishable from the freeze users assume it is. Say that time
+        // is passing, and say how much.
+        stateItem.title = "\(verb)... 0s"
+        tick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
+            guard let self = self, self.busy else { t.invalidate(); return }
+            self.elapsed += 1
+            self.stateItem.title = verb + "... \(self.elapsed)s"
+            if self.elapsed == 20 { self.stateItem.title += " (the installer waits on /health)" }
+        }
         openItem.isEnabled = false; installItem.isEnabled = false; removeItem.isEnabled = false
         Privileged.run(script) { ok, text in
             DispatchQueue.main.async {
                 self.busy = false
+                self.tick?.invalidate()
+                self.tick = nil
+                if self.quitting {
+                    // Show the reason if it failed, then finish the quit that started all this.
+                    self.quitting = false
+                    if !ok { self.fail(verb, text) }
+                    NSApp.reply(toApplicationShouldTerminate: true)
+                    return
+                }
                 self.refresh()
                 if !ok { self.fail(verb, text) }
             }
@@ -454,19 +475,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ask.addButton(withTitle: "Quit (relay keeps running)")
         ask.addButton(withTitle: "Remove background service")
         ask.addButton(withTitle: "Uninstall everything")
-        // Both destructive choices run SYNCHRONOUSLY here. The menu-item versions are async because they
-        // can report progress in the menu, but this one is about to terminate the process: returning
-        // .terminateNow after starting an async privileged call would kill the uninstall halfway through and
-        // leave a half-removed install, which is worse than the confusion this dialog exists to prevent.
+        // Both destructive choices stay ASYNCHRONOUS, and the app says .terminateLater.
+        //
+        // The synchronous version of this - which is what was here - is a freeze, not a fix: calling
+        // runPrivilegedSync from applicationShouldTerminate parks the main run loop, and Authorization
+        // Services presents the password prompt on the main run loop. So the prompt never appeared, nothing
+        // was ever reported, and the dialog just sat there for up to 30 seconds short of the AppleScript
+        // timeout. Returning .terminateNow after starting the async call was also wrong - it cancels the
+        // uninstall halfway through. terminateLater + reply when the work actually finishes is the only
+        // ordering that is neither a hang nor a half-removed install.
         switch ask.runModal() {
         case .alertSecondButtonReturn:
-            report(runPrivilegedSync(Lifecycle.uninstallScript(alsoDeleteApp: false)), "the background service")
+            quitting = true
+            perform(Lifecycle.uninstallScript(alsoDeleteApp: false), doing: "Removing the background service")
+            return .terminateLater
         case .alertThirdButtonReturn:
-            report(runPrivilegedSync(Lifecycle.uninstallScript(alsoDeleteApp: true)), "Dispatch")
+            quitting = true
+            perform(Lifecycle.uninstallScript(alsoDeleteApp: true), doing: "Uninstalling Dispatch")
+            return .terminateLater
         default:
-            break
+            return .terminateNow
         }
-        return .terminateNow
     }
 
     // Without this, macOS logs a secure-coding warning for state restoration on an accessory app.
