@@ -10,7 +10,7 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
 > database layer was rebuilt; it was never tagged or published. The public sequence goes **0.5 → 0.7**. A
 > 0.5 install upgrades directly to 0.7 - see the upgrade notes below.
 
-## [Unreleased]
+## [0.7.3] - 2026-10-16
 
 ### Fixed
 
@@ -178,5 +178,7 @@ default is a file, not a server.
 First public release line. See the
 [0.5.0 release notes](https://github.com/CinderHillsDev/dispatch-platform/releases/tag/v0.5.0).
 
+[0.7.3]: https://github.com/CinderHillsDev/dispatch-platform/compare/v0.7.2...v0.7.3
+[0.7.2]: https://github.com/CinderHillsDev/dispatch-platform/releases/tag/v0.7.2
 [0.7.0]: https://github.com/CinderHillsDev/dispatch-platform/releases/tag/v0.7.0
 [0.5.0]: https://github.com/CinderHillsDev/dispatch-platform/releases/tag/v0.5.0
