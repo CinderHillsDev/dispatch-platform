@@ -356,7 +356,8 @@ public sealed class UpdateService(IWebHostEnvironment env, IConfigRepository con
     }
 
     // Linux: the systemd dispatch-update.path watcher picks up apply.request - nothing to do. macOS: the
-    // same idea, a launchd WatchPaths job (installer/macos/app.dispatchrelay.dispatch-update.plist).
+    // same idea, a launchd WatchPaths job - but macOS has no released installer, so the job it would start
+    // lives on the macos/support branch, not in this tree (see SPEC 16.7 for why).
     // Windows: there is no path watcher, so write the embedded updater script to the data dir and launch it
     // DECOUPLED as SYSTEM via Task Scheduler, so it survives the service restart it performs.
     private void TriggerPlatformApply()

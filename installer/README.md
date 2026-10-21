@@ -69,35 +69,15 @@ PFX and serves the dashboard over HTTPS (spec §17.2). Prerequisites: the .NET 1
 builds the embedded UI and publishes). From a release tarball neither is needed - pass `--prebuilt <dir>`, or
 let `install.sh` pick the arch payload out of the tarball it shipped in.
 
-## macOS (`macos/`)
+## macOS
 
-`install.sh` is the same script with the systemd parts replaced by `launchd`: it lays out `/opt/dispatch`
-(release symlink + binaries), `/var/db/dispatch` (`appsettings.json` mode 600, the SQLite database, the spool,
-`.dispatch-key`), `/var/log/dispatch`, and installs two LaunchDaemons - `app.dispatchrelay.dispatch.plist`
-(the service) and `app.dispatchrelay.dispatch-update.plist` (the `WatchPaths` job that applies staged
-updates as root).
+Not here. `installer/macos/` - the `launchd` property lists, `install.sh`, the update applier, the `.app` and
+`.pkg` builders - was removed from this branch after #48 shipped a macOS artifact that was killed at exec by
+Gatekeeper on real hardware and could not fail that way in CI. The work continues on the **`macos/support`**
+branch; [`docs/SPEC.md` §16.7](../docs/SPEC.md) explains what has to be true before it comes back.
 
-```bash
-# From the release tarball - no SDK, no Node, arch auto-detected (Apple Silicon or Intel):
-sudo ./install.sh --admin-password "<dashboard admin password>"
-
-# Existing database server, or an unprivileged service account:
-sudo ./install.sh --sql-connection "Host=...;Database=DispatchLog;Username=...;Password=..." --admin-password "<pw>"
-sudo ./install.sh --user _dispatch --admin-password "<pw>"      # SMTP then listens on 2525
-
-sudo ./install.sh --uninstall                                  # daemons + binaries removed, data kept
-```
-
-Two differences from Linux worth knowing before you read the flags again:
-
-- **Root by default.** macOS has no `CAP_NET_BIND_SERVICE`, so binding 25/587 needs root; `--user` opts out
-  and the listener falls back to 2525. The updater daemon stays root either way.
-- **`launchctl stop` does not stop it.** `KeepAlive` brings it straight back. Use
-  `sudo launchctl bootout system/app.dispatchrelay.dispatch`.
-
-The binaries are ad-hoc signed, not notarized: if you extracted the tarball somewhere other than through
-`install.sh`, clear the quarantine flag with `xattr -dr com.apple.quarantine <dir>`. See
-[docs/macos.md](../docs/macos.md) for the full picture.
+The runtime itself works on macOS - `dotnet publish -r osx-arm64 --self-contained` produces something that
+runs - but there is no packaged, tested, distributable install path for it here, and none is claimed.
 
 ## Validation status
 
