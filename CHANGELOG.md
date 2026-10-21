@@ -64,27 +64,26 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
   retries the same message, and Emailit replays the stored success instead of delivering it twice (a failed send
   releases the key, so retrying after a fix still sends). Their 429/500/503 responses land on Dispatch's
   transient retry path, every other 4xx is permanent. Closes #26.
-- **macOS is now a supported install target.** A release ships `dispatch-<ver>-macos.tar.gz` - one universal,
-  self-contained bundle for Apple Silicon and Intel - installed by `installer/macos/install.sh` as a launchd
-  LaunchDaemon, with the same flags and on-disk shape as Linux (`/opt/dispatch` + `/var/db/dispatch`) and the
-  same bundled-SQLite default. The dashboard's upgrade package gained `osx-arm64` and `osx-x64` payloads, so
-  a Mac can stage *and* apply an update: a `WatchPaths` job runs a root applier that re-verifies the manifest
-  signature, swaps the release symlink, polls `/health`, and rolls back if the new version never comes up.
-  The daemon runs as root by default because macOS, unlike Linux, has no way to let an unprivileged process
-  bind port 25; `--user <name>` opts out and SMTP falls back to 2525 as it does wherever 25 cannot be bound.
-  Binaries are ad-hoc signed, not notarized. A release also ships `dispatch-<ver>-macos.pkg` - the same staged
-  payload in a package installer, whose postinstall execs that `install.sh` from the payload directory so the
-  two artifacts cannot drift; it is built unsigned, because GitHub's macOS runners have no Developer ID
-  identity, so it is installed with `sudo installer -pkg dispatch-<ver>-macos.pkg -target /` rather than by
-  opening it. See [`docs/macos.md`](docs/macos.md); a macOS runner now lints the property lists with `plutil`
-  and runs a real install through both the tarball and the `.pkg`, plus the update-applier and uninstall
-  smokes.
-
 ### Changed
 
 - Dependabot no longer proposes EF Core majors (`Microsoft.EntityFrameworkCore*`,
   `Npgsql.EntityFrameworkCore.PostgreSQL` ≥ 10): the MySQL provider is still built against EF Core 9 and
   the bump fails at runtime with a `MissingMethodException`, not just in CI.
+
+### Removed
+
+- **macOS packaging is out of the release until it works on real hardware.** #48 shipped
+  `dispatch-<ver>-macos.tar.gz`, a `.pkg`, a `launchd` installer, an update applier and a macOS CI job, and
+  labelled the platform supported. It was not: on an actual Apple Silicon Mac the daemon is killed at exec by
+  Gatekeeper, because the installed payload inherits the download's `com.apple.provenance` attribute - and
+  that attribute cannot be removed by any user, including root, so it also cannot be tested by a CI runner,
+  which never downloads anything. Four separate bugs of that kind reached a human rather than CI, which is the
+  definition of a verification gap rather than a coding one. The whole pipeline - `installer/macos/`, the two
+  LaunchDaemon property lists, the applier, the `.app`/`.pkg` builders, the runner smokes, `docs/macos.md` -
+  now lives on the `macos/support` branch, where the remaining work is recorded honestly. The .NET runtime
+  itself still runs fine on macOS from source; what is withdrawn is the claim and the artifacts. This returns
+  when there is an Apple Developer ID to sign and notarize with, because without one the failure is silent,
+  platform-side, and invisible to everything we can automate.
 
 ## [0.7.2] - 2026-08-16
 

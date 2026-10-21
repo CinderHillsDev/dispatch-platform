@@ -44,7 +44,7 @@ A small embedded web UI - served directly from the process on port 8420 - lets a
 - Embedded ASP.NET Core web UI for configuration, log inspection, and API key management
 - Windows: installs as a Windows Service via MSI
 - Linux: runs as a systemd unit
-- macOS: runs as a launchd LaunchDaemon ([`docs/macos.md`](macos.md))
+- macOS: the runtime works there (see §16.7), but there is **no released installer** for it
 - Provider-agnostic relay - swap between Mailgun, SendGrid, SMTP, Azure Communication Services, or others through the UI without restarting
 - Free and open source - released under the Apache License 2.0; no license key required to run
 
@@ -3202,28 +3202,28 @@ curl -sSL https://github.com/yourorg/dispatch/releases/download/v1.1.0/install.s
   sudo bash -s -- --upgrade --silent
 ```
 
-### 16.7 macOS
+### 16.7 macOS - not released
 
-macOS installs the same way (`install.sh`, same flags, same bundled-SQLite default) but with `launchd` where
-section 16.3 uses systemd, and `/var/db/dispatch` where it uses `/var/lib/dispatch`. Two differences are
-load-bearing rather than cosmetic, so they are stated here as well as in
-[`docs/macos.md`](macos.md):
+macOS is a supported *runtime* target: `dotnet publish -r osx-arm64` produces a self-contained bundle that
+runs, the SMTP listener binds 25/587 under `launchd`, and the dashboard, API and SQLite default behave as
+described for Linux. What is **not** released is any of it: no installer artifact, no upgrade payload, and no
+`launchd` property lists in this repository.
 
-- **The daemon runs as root by default.** macOS has no `CAP_NET_BIND_SERVICE`, so an unprivileged process
-  cannot bind 25/587 at all. `--user <name>` opts into an unprivileged service, and the SMTP listener then
-  falls back to 2525 - the same fallback it already uses on Linux when the capability is absent.
-- **The update applier is a `WatchPaths` job, not a `Type=notify` service.** systemd's `Type=notify` makes
-  `systemctl restart` return only when the new version is ready, so Linux gets its health gate for free. A
-  `launchd` restart returns immediately, so `dispatch-update.sh` polls `/health` itself before deciding the
-  update succeeded, and rolls the symlink back if it never passes.
+#48 shipped all three, and was withdrawn. The platform-specific design behind them - a root LaunchDaemon
+because macOS has no `CAP_NET_BIND_SERVICE` and port 25 needs privilege; an update applier driven by a
+`WatchPaths` job rather than systemd's `Type=notify`, because a `launchd` restart returns before the new
+version is ready; release symlinks under `/opt/dispatch` mirroring the Linux layout; a menu-bar control panel
+that installs and removes the service - is recorded on the `macos/support` branch, together with
+`installer/macos/` and `docs/macos.md`.
 
-macOS ships two artifacts: the tarball whose `install.sh` is described above, and
-`dispatch-{version}-macos.pkg` - a flat package whose payload is the same staged tree and whose postinstall
-execs that same `install.sh`, so there is one install logic rather than a third copy to keep in sync. The
-package is unsigned because CI holds no Developer ID identity, which is why
-[`docs/macos.md`](macos.md#install-with-the-pkg) installs it with `installer -pkg` from a terminal instead of
-by opening it.
-
+The reason it stays there is a specific failure, not general immaturity. On a real Apple Silicon Mac the
+daemon is killed at `exec` by Gatekeeper, because the installed payload inherits the
+`com.apple.provenance` extended attribute from the browser download - and that attribute cannot be removed by
+any user, including root. It is also impossible to reproduce on a CI runner, whose binaries are built locally
+and therefore never acquire it. Four macOS bugs of that shape - invisible to CI, fatal on a Mac - reached a
+human before the claim was retracted. That is the bar to clear before this section describes a shipping
+artifact: an Apple Developer ID for signing and notarization, plus a verification pass on real hardware from a
+real download. Until then the macOS rows in §13.4 and §14.5 describe a source install, not a product.
 ---
 
 ## 17. Security Considerations
@@ -3546,13 +3546,9 @@ GitHub Actions handles all CI/CD automation.
 | Publish Windows x64 service | `dotnet publish -r win-x64 --self-contained` |
 | Publish Windows bootstrap EXE | `dotnet publish Dispatch.Bootstrap.Windows -r win-x64 --self-contained` |
 | Publish Linux x64 | `dotnet publish -r linux-x64 --self-contained` |
-| Publish macOS arm64 / x64 | `dotnet publish -r osx-arm64 --self-contained` (and `osx-x64`, cross-published) |
-| Ad-hoc sign the macOS apphost | `codesign --force --sign -` on a macOS runner (Apple Silicon will not exec an unsigned Mach-O) |
 | Build MSI | `dotnet build installer/windows` (WiX v6 MSBuild integration) |
 | Bundle bootstrap + MSI → Setup.exe | WiX Burn bootstrapper chain |
 | Build Linux tarball | `tar` packaging of binary + `install.sh` |
-| Build macOS tarball | `tar` packaging of both arch payloads + `install.sh` + the two LaunchDaemons |
-| Build macOS .pkg | `pkgbuild` of the same staged tree + a postinstall that execs its `install.sh` (`installer/macos/build-pkg.sh`) |
 | GitHub Release | Triggered on version tag push (`v*`) |
 
 ### 18.2 Release Artefacts
@@ -3560,8 +3556,6 @@ GitHub Actions handles all CI/CD automation.
 - `DispatchSetup-{version}-x64.exe` - **Windows bootstrap installer** (run this; bundles the MSI internally)
 - `Dispatch-{version}-x64.msi` - Windows MSI (for IT admins doing scripted/silent deploys after manual DB setup)
 - `Dispatch-{version}-linux-x64.tar.gz` - Linux self-contained archive (binary + `install.sh`)
-- `dispatch-{version}-macos.tar.gz` - universal macOS archive (arm64 + Intel payloads, `install.sh`, the launchd property lists + the update applier)
-- `dispatch-{version}-macos.pkg` - universal macOS package installer: the same payloads and the same `install.sh`, driven by a postinstall instead of a shell. Unsigned, so `sudo installer -pkg <file> -target /` rather than a double-click ([`docs/macos.md`](macos.md#install-with-the-pkg))
 - `install.sh` - Linux bootstrap script (also available standalone for `curl | bash` installs)
 - `SHA256SUMS` - checksums for all release files
 
