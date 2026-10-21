@@ -66,6 +66,19 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
   transient retry path, every other 4xx is permanent. Closes #26.
 ### Changed
 
+- **The dashboard password policy is now 8 characters plus a blacklist, with no character-class rule.**
+  It was 12 characters *and* upper/lower/digit. The composition rule was the part worth dropping: once
+  there is a length floor and a common-password check, forcing one of each class just moves people from
+  `correctbatteryhorse` to `Correct1battery` - same guessability, more friction, on the credential you
+  type every day. Length is a proxy for entropy, and what was actually protecting this account all along
+  is elsewhere: bcrypt cost 12, the hash now encrypted at rest (§17.5), the private-ranges-by-default
+  source allow-list, and the login throttle at 10 failures per 5 minutes per IP, which caps online guessing
+  near 2,900 attempts a day regardless of the floor. The common-password and common-token checks were
+  promoted to load-bearing and are pinned by tests at exactly 8 characters (`letmein1`, `qwerty12`,
+  `welcome8` are all rejected), because that is the case where a lower floor could have quietly loosened
+  something. `reset-admin-password` and the first-run wizard enforce the same function, so they moved with
+  it.
+
 - Dependabot no longer proposes EF Core majors (`Microsoft.EntityFrameworkCore*`,
   `Npgsql.EntityFrameworkCore.PostgreSQL` ≥ 10): the MySQL provider is still built against EF Core 9 and
   the bump fails at runtime with a `MissingMethodException`, not just in CI.
