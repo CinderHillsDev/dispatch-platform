@@ -82,6 +82,73 @@ jobs:
         # separately-installed .NET 10 runtime (the bundle does not chain one). Matches the Linux build.
         run: dotnet publish src/Dispatch.Service -c Release -r win-x64 --self-contained true -p:Version=${{ steps.ver.outputs.version }} -o installer/windows/publish
 
+      # An MSI is a container: signing it proves who packed it, not who wrote what it installs. Without this
+      # step the service binary lands on disk with no Authenticode at all, so an on-disk scan or a right-click
+      # Properties -> Digital signatures shows nothing for the file that actually runs as SYSTEM. Sign the
+      # payload before light.exe packs it, and the chain reads: payload signed, package signed, bundle signed.
+      #
+      # createdump.exe is excluded on purpose - it is a Microsoft-signed crash-dump helper from the runtime
+      # pack, and re-signing it with our certificate replaces the MS signature with ours for no benefit.
+      - name: Assert signing configuration
+        shell: bash
+        run: |
+          if [ -z "${{ vars.AZURE_SIGNING_ACCOUNT }}" ]; then
+            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              echo "::error::This is a release tag but AZURE_SIGNING_ACCOUNT is not set. Refusing to publish an"
+              echo "::error::unsigned Windows installer under a version tag - the alternative is shipping a build"
+              echo "::error::whose provenance nobody can check. Set the six signing variables and secrets, or"
+              echo "::error::delete the tag and use a dry run (workflow_dispatch) for unsigned rehearsal builds."
+              exit 1
+            fi
+            echo "::warning::Rehearsal build, not a release tag: skipping Authenticode signing. These artifacts"
+            echo "::warning::must not be published. Only the tag path proves the signing chain works."
+          fi
+
+      - name: Azure login (signing)
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Copy the payload executables into a folder holding nothing else and sign that folder, which is the
+      # pattern every other sign step here already uses: the action signs everything it finds under
+      # files-folder, and installer/windows/publish also contains createdump.exe, a Microsoft-signed
+      # crash-dump helper we do not want to re-sign with our identity.
+      - name: Stage the payload executables for signing
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        id: payload
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force payloadsign | Out-Null
+          Get-ChildItem payloadsign -File -ErrorAction SilentlyContinue | Remove-Item -Force
+          $exes = @(Get-ChildItem publish -Filter *.exe -File | Where-Object { $_.Name -ne 'createdump.exe' })
+          if ($exes.Count -eq 0) { Write-Error "no executables under installer/windows/publish - signing nothing is not a pass"; exit 1 }
+          $exes | ForEach-Object { Copy-Item $_.FullName payloadsign/ }
+          Write-Host "Staging $($exes.Count) payload executable(s) for signing:"
+          $exes | ForEach-Object { Write-Host "  $($_.Name)" }
+
+      - name: Sign the service payload
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}/installer/windows/payloadsign
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Put the signed payload back
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        working-directory: installer/windows
+        shell: pwsh
+        run: Copy-Item -Force payloadsign/*.exe publish/
+
       - name: Install the WiX toolset
         shell: pwsh
         env:
@@ -97,14 +164,6 @@ jobs:
         run: wix build Dispatch.wxs -arch x64 -d PublishDir=publish -d Version=${{ steps.ver.outputs.version }} -ext WixToolset.Firewall.wixext -o Dispatch.msi
 
       # --- Sign the MSI (opt-in) ----------------------------------------------------------------
-      - name: Azure login (signing)
-        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
-        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
       - name: Sign the MSI
         if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
         uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
@@ -179,6 +238,38 @@ jobs:
         working-directory: installer/windows
         shell: pwsh
         run: Copy-Item -Force bundlesign/DispatchSetup.exe DispatchSetup.exe
+
+      # Everything above is "we asked for a signature". This is "the artifact carries one that validates".
+      # The distinction is the whole lesson of the macOS withdrawal: release.yml documented "signed with
+      # Authenticode" for months, nothing ever checked, and the answer - verified with a PE parser, not a
+      # guess - was that every released installer had an empty certificate table, because the steps are gated
+      # on variables nobody had set. Get-AuthenticodeSignature is used rather than signtool because it is
+      # present on every Windows runner instead of living in a versioned SDK folder that may not be on PATH.
+      - name: Verify the signatures
+        if: ${{ vars.AZURE_SIGNING_ACCOUNT != '' }}
+        working-directory: installer/windows
+        shell: pwsh
+        run: |
+          "File | Authenticode | Signer" >> $env:GITHUB_STEP_SUMMARY
+          "| --- | --- | --- |" >> $env:GITHUB_STEP_SUMMARY
+          $targets = @()
+          $targets += (Resolve-Path "publish/*.exe" | Where-Object { $_.Path -notmatch 'createdump' } | ForEach-Object Path)
+          $targets += (Resolve-Path "Dispatch.msi").Path
+          $targets += (Resolve-Path "DispatchSetup.exe").Path
+          $bad = @()
+          foreach ($t in $targets) {
+            $sig = Get-AuthenticodeSignature -FilePath $t
+            $who = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject + " [sha1 " + $sig.SignerCertificate.Thumbprint + "]" } else { "(no certificate)" }
+            $name = [IO.Path]::GetFileName($t)
+            Write-Host "$name : $($sig.Status) - $who"
+            "| $name | $($sig.Status) | $who |" >> $env:GITHUB_STEP_SUMMARY
+            if ($sig.Status -ne "Valid") { $bad += "$name ($($sig.Status))" }
+          }
+          "" >> $env:GITHUB_STEP_SUMMARY
+          # A signature that validates against a certificate you did not expect is still someone else's
+          # identity on your binary, so record who signed, not just that "something" did.
+          if ($bad.Count -gt 0) { Write-Error "UNSIGNED OR INVALID: $($bad -join ', ') - refusing to publish"; exit 1 }
+          Write-Host "All $($targets.Count) Authenticode signatures validate."
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7

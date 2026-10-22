@@ -68,24 +68,69 @@ Subsequent releases reuse the same (now public) package - this step is only need
 
 ## Code signing (Azure Artifact Signing)
 
-Signing is **opt-in and dormant** until provisioned - until then releases publish unsigned (Windows
-SmartScreen will warn on first run). To enable it:
+Azure Artifact Signing - renamed from Trusted Signing in January 2026, same service, ~$9.99/month - signs
+Windows binaries through an OIDC-trusted identity, so **no certificate, PFX, or password is ever stored in
+GitHub**. The runner exchanges its GitHub-issued OIDC token for an Entra token and Azure performs the
+signature; the private key does not leave Azure. That is the only authentication mode this pipeline supports
+and it is deliberate: a long-lived signing secret in Actions secrets is the thing that gets leaked.
 
-1. Set up an **Azure Artifact Signing** account + certificate profile (renamed from Trusted Signing,
-   Jan 2026; ~$9.99/mo). Create a certificate profile and note the account name, profile name, and the
-   regional endpoint (e.g. `https://eus.codesigning.azure.net/`).
-2. Create a federated (OIDC) Azure service principal and grant it the **Artifact Signing Certificate
-   Profile Signer** role on the account.
-3. In the GitHub repo settings add:
-   - **Variables:** `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERT_PROFILE`
-   - **Secrets:** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+Until the variables below exist, every signing step is skipped. What changed is what happens on a version
+**tag**: the job now fails outright rather than publishing an unsigned installer, because for months
+`docs/RELEASING.md` asserted "the bundle and MSI are signed with Authenticode" while nothing checked, and a
+PE parse of the released `DispatchSetup.exe` showed an empty certificate table - no signature at all, ever,
+because the steps key off variables nobody had set. Rehearsal builds (`workflow_dispatch`) still skip signing
+and say so in a warning.
 
-The next tagged release then signs the MSI and the bundle automatically. The signing steps key off
-`AZURE_SIGNING_ACCOUNT`; if it's unset, they're skipped.
+What gets signed, in order, on every release:
 
-> Note: code signing currently uses Azure Artifact Signing (a paid service tied to your own identity).
-> As an Apache-2.0 open-source project, Dispatch may also qualify for a free OSS code-signing program
-> such as the **SignPath Foundation**.
+| Artifact | When | Why this order |
+|---|---|---|
+| `publish/*.exe` (the service, minus `createdump.exe`) | before the MSI is built | an MSI signature proves who packed it, not who wrote what it installs. Without this the binary that runs as SYSTEM lands on disk unsigned |
+| `Dispatch-<ver>-x64.msi` | after `wix build` | the package identity |
+| the Burn engine | detached, signed, reattached | WiX-recommended; an unsigned inner engine makes UAC flag the bundle |
+| `DispatchSetup-<ver>-x64.exe` | last | the file users actually run |
+
+`createdump.exe` is excluded on purpose - it is a Microsoft-signed crash-dump helper from the runtime pack,
+and replacing its signature with ours buys nothing.
+
+A **Verify the signatures** step then runs `Get-AuthenticodeSignature` over all of the above and fails the
+release if anything is not `Valid`, printing each file's status plus signer subject and SHA-1 thumbprint into
+the job summary. "We asked for a signature" and "the artifact carries one that validates" are different
+claims; only the second one is worth publishing.
+
+### Setting it up
+
+1. Create the **Artifact Signing account** and a **certificate profile** (the account name you type into
+   GitHub is the Azure *resource* name - lowercase with hyphens, from the account's Overview page - not the
+   display name). Note the account name, profile name, and the regional endpoint shown there, e.g.
+   `https://<region>.codesigning.azure.net/`.
+2. Grant the signing identity the **Artifact Signing Certificate Profile Signer** role on the account.
+3. Create an **Entra app registration** with no secret, and add a **federated credential** for GitHub. Scope
+   the conditions - this is the whole security value of OIDC, and a `*` here turns your signing certificate
+   into something any branch can use:
+
+   ```
+   repo:CinderHillsDev/dispatch-platform:ref:refs/tags/*      # tagged releases
+   repo:CinderHillsDev/dispatch-platform:ref:refs/heads/main  # dry runs from main
+   ```
+
+   Do not add `...:ref:refs/heads/*` or `...:*`: `release.yml` is `workflow_dispatch`-able from any branch,
+   so a permissive condition lets anyone with push access mint a valid Dispatch signature over code that was
+   never reviewed on main.
+4. In repo Settings → Secrets and variables → Actions, add them as **variables** (not secrets - the `if:`
+   gates read `vars.` and a secret there silently never matches):
+   - Variables: `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_CERT_PROFILE`
+   - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+5. Rehearse with a `workflow_dispatch` run on `main` - it takes the tag-free path but signs, because signing
+   is gated on configuration, not on ref. Confirm the verify step reports `Valid` for all four kinds of
+   artifact, then push a real tag.
+
+CI on ordinary pushes and PRs stays **unsigned** by design: `installers.yml` builds installers to test them,
+and a signature on an unreviewed build would be a signature on nothing.
+
+> SignPath Foundation: as an Apache-2.0 project Dispatch may qualify for their free OSS program, which is
+> also OIDC-based (it has no long-lived key either). It is not a reason to skip Artifact Signing if you have
+> already paid for it - the pipeline is written for Azure, and swapping later means changing four steps.
 
 ### macOS: not signed, not shipped
 
