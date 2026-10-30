@@ -21,6 +21,6 @@
       'Dependency monitoring'), so this pin is the guard; drop it once the parents require
       10.0.13+ on their own.
     -->
-    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
   </ItemGroup>
 </Project>
