@@ -14,7 +14,7 @@
 
   <ItemGroup>
     <!-- Required by the EF Core tools to scaffold migrations against this project. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.21">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.22">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
