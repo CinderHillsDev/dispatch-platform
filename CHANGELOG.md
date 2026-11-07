@@ -10,6 +10,26 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
 > database layer was rebuilt; it was never tagged or published. The public sequence goes **0.5 → 0.7**. A
 > 0.5 install upgrades directly to 0.7 - see the upgrade notes below.
 
+## [Unreleased]
+
+### Added
+
+- **Telnyx is now a relay provider.** Structured JSON sends to the Email API
+  (`POST https://api.telnyx.com/v2/email_messages`) with a Bearer API key, which means CC/BCC, attachments and
+  reply-to come from the message rather than a MIME blob. Settings: ApiKey, nothing else - their endpoint is
+  not region-selected, so there is no Region field to fill in.
+  - A send succeeds with **202 Accepted**: queued, not delivered. Delivery outcomes arrive through their
+    `email_*` webhooks, so a green Dispatch log entry is an acceptance record (same as every other structured
+    provider here).
+  - When *some* recipients are on Telnyx's suppression list the send is still accepted, and the dropped
+    addresses come back in a top-level `suppressed` array. That is a partial non-delivery, so Dispatch names
+    those addresses in the log detail instead of reporting a clean success. All-suppressed arrives as a 4xx and
+    fails permanently, as it should.
+  - The request carries an `Idempotency-Key` built from the spool id *and* a digest of the request body. Their
+    docs bind a replay to "the same request" but do not promise that a failed send releases the key, so the
+    digest is what keeps the two useful properties: an identical retry cannot double-deliver, and a corrected
+    message cannot be swallowed by a replayed failure.
+
 ## [0.7.3] - 2026-10-16
 
 ### Fixed
