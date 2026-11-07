@@ -44,7 +44,7 @@ Your apps / scripts  →  Dispatch API  (port 8025)      ─┘
 ## Features
 
 - **Two ways in** - SMTP (STARTTLS, optional AUTH) and a Mailgun-compatible HTTP/HTTPS API with per-key tokens.
-- **A dozen providers** - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Emailit, Bird, Azure Communication Services, generic SMTP - plus **Local** capture mode. CC/BCC, attachments, and custom headers everywhere.
+- **Thirteen providers** - Mailgun, SendGrid, Amazon SES, Postmark, Resend, SparkPost, SMTP2GO, Maileroo, Emailit, Telnyx, Bird, Azure Communication Services, generic SMTP - plus **Local** capture mode. CC/BCC, attachments, and custom headers everywhere.
 - **[Local Inbox](https://docs.dispatchrelay.app/sending/local-inbox/)** - a built-in mail trap: capture and inspect what your app sends, without delivering anything. Great for development and CI.
 - **Durable spool** - instant `250 OK`, auto-retry with back-off, retry-from-UI for failures.
 - **Smart routing** - send by sender/recipient domain to different relays, with a catch-all default and a simulate tool.

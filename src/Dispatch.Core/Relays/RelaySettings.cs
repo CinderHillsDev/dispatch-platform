@@ -79,6 +79,10 @@ public static class RelayProviderSchema
         [
             new("ApiKey", "emailit.api_key", Secret: true, Required: true),
         ],
+        RelayProviderType.Telnyx =>
+        [
+            new("ApiKey", "telnyx.api_key", Secret: true, Required: true),
+        ],
         _ => [],
     };
 }

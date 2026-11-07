@@ -22,4 +22,9 @@ public enum RelayProviderType
     Maileroo,
     Bird,
     Emailit,
+
+    /// <summary>Telnyx Email API (https://api.telnyx.com/v2/email_messages). Appended last on purpose: the
+    /// enum's numeric value is what a relay row stores, so inserting it among the existing members would
+    /// silently re-point every configured relay at a different provider.</summary>
+    Telnyx,
 }

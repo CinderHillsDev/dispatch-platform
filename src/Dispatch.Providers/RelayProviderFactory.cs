@@ -28,6 +28,7 @@ public sealed class RelayProviderFactory(
         RelayProviderType.Maileroo => new MailerooProvider(config, httpClientFactory.CreateClient("maileroo")),
         RelayProviderType.Bird => new BirdProvider(config, httpClientFactory.CreateClient("bird")),
         RelayProviderType.Emailit => new EmailitProvider(config, httpClientFactory.CreateClient("emailit")),
+        RelayProviderType.Telnyx => new TelnyxProvider(config, httpClientFactory.CreateClient("telnyx")),
         _ => throw new NotSupportedException($"Relay provider '{config.Provider}' is not supported."),
     };
 }
