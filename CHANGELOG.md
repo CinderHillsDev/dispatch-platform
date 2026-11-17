@@ -12,6 +12,14 @@ Download any release from the [Releases page](https://github.com/CinderHillsDev/
 
 ## [Unreleased]
 
+### Fixed
+
+- **Queued mail could drain at only one message per worker every five seconds after idle periods.**
+  Timed-out doorbell waits left channel reads pending, which consumed later wake-up signals. Workers now
+  cancel the underlying read on timeout and drain eligible queued mail before waiting for another signal.
+  The fallback poll still discovers missed file notifications and retries whose back-off has elapsed;
+  per-relay concurrency limits remain enforced.
+
 ### Added
 
 - **Telnyx is now a relay provider.** Structured JSON sends to the Email API

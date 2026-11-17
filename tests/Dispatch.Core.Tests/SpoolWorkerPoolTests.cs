@@ -3,6 +3,7 @@ using Dispatch.Core.Counters;
 using Dispatch.Core.Providers;
 using Dispatch.Core.Routing;
 using Dispatch.Core.Spool;
+using System.Collections.Concurrent;
 
 namespace Dispatch.Core.Tests;
 
@@ -203,6 +204,186 @@ public class SpoolWorkerPoolTests
                 () => counters.Get(1, CounterField.Delivered) == 1, timeoutMs: 12_000);
             Assert.True(delivered, "file was not drained by the timeout fallback");
             Assert.Equal(0, t.Count(t.Spool.IncomingDir));
+        }
+        finally
+        {
+            await pool.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Worker_wakes_on_one_signal_after_repeated_idle_timeouts()
+    {
+        using var t = new TempSpool();
+        var counters = new InMemoryCounterRepository();
+        using var pool = TestData.BuildPool(t.Spool, DelegateProvider.AlwaysSucceeds(),
+            new CapturingLogRepository(), counters, workerCount: 1);
+
+        // A warm-up delivery also confirms that the background service and watcher have started.
+        TestData.Seed(t.Spool.IncomingDir, t.Spool);
+        await pool.StartAsync(CancellationToken.None);
+        try
+        {
+            Assert.True(await TestData.WaitUntil(() =>
+                counters.Get(1, CounterField.Delivered) == 1 && t.Count(t.Spool.ProcessingDir) == 0));
+            pool.DisableWatcherForTests();
+
+            // Let two five-second fallback waits expire while there is no work. Timed-out reads
+            // must not remain in the channel and steal the next notification from the live worker.
+            await Task.Delay(TimeSpan.FromSeconds(11));
+            var (_, id) = TestData.Seed(t.Spool.IncomingDir, t.Spool);
+            t.Spool.Signal($"{id}.eml");
+
+            Assert.True(await TestData.WaitUntil(() =>
+                counters.Get(1, CounterField.Delivered) == 2 && t.Count(t.Spool.ProcessingDir) == 0,
+                timeoutMs: 2_000), "the single signal was lost after idle timeouts");
+            Assert.Equal(0, t.Count(t.Spool.IncomingDir));
+        }
+        finally
+        {
+            await pool.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Worker_drains_unsignalled_backlog_after_first_fallback_poll()
+    {
+        using var t = new TempSpool();
+        var counters = new InMemoryCounterRepository();
+        using var pool = TestData.BuildPool(t.Spool, DelegateProvider.AlwaysSucceeds(),
+            new CapturingLogRepository(), counters, workerCount: 1);
+
+        TestData.Seed(t.Spool.IncomingDir, t.Spool);
+        await pool.StartAsync(CancellationToken.None);
+        try
+        {
+            Assert.True(await TestData.WaitUntil(() =>
+                counters.Get(1, CounterField.Delivered) == 1 && t.Count(t.Spool.ProcessingDir) == 0));
+            pool.DisableWatcherForTests();
+
+            const int backlog = 16;
+            for (var i = 0; i < backlog; i++)
+                TestData.Seed(t.Spool.IncomingDir, t.Spool);
+
+            // Losing every watcher event may cost one poll interval, not one interval per email.
+            Assert.True(await TestData.WaitUntil(() =>
+                counters.Get(1, CounterField.Delivered) >= 2, timeoutMs: 12_000));
+            Assert.True(await TestData.WaitUntil(() =>
+                counters.Get(1, CounterField.Delivered) == backlog + 1 && t.Count(t.Spool.ProcessingDir) == 0,
+                timeoutMs: 2_000), "backlog processing waited for another doorbell timeout");
+            Assert.Equal(0, t.Count(t.Spool.IncomingDir));
+        }
+        finally
+        {
+            await pool.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Workers_drain_backlog_larger_than_doorbell_capacity_without_duplicates_or_exceeding_relay_limit()
+    {
+        using var t = new TempSpool();
+        const int backlog = 300; // The doorbell holds at most 256 notifications.
+        const int relayLimit = 2;
+        var sends = new ConcurrentDictionary<string, int>();
+        var concurrency = new ConcurrentBag<int>();
+        var active = 0;
+        var counters = new InMemoryCounterRepository();
+        var provider = new DelegateProvider("Slow", async (message, ct) =>
+        {
+            concurrency.Add(Interlocked.Increment(ref active));
+            try
+            {
+                Assert.NotNull(message.SpoolId);
+                sends.AddOrUpdate(message.SpoolId, 1, (_, count) => count + 1);
+                await Task.Delay(5, ct);
+                return RelayResult.Success(id: "ok");
+            }
+            finally
+            {
+                Interlocked.Decrement(ref active);
+            }
+        });
+        using var pool = TestData.BuildPool(t.Spool, provider, new CapturingLogRepository(), counters,
+            relay: new RelayConfig { Id = 1, MaxConcurrency = relayLimit }, workerCount: 4);
+        for (var i = 0; i < backlog; i++)
+            TestData.Seed(t.Spool.IncomingDir, t.Spool);
+
+        await pool.StartAsync(CancellationToken.None);
+        try
+        {
+            Assert.True(await TestData.WaitUntil(() =>
+                counters.Get(1, CounterField.Delivered) == backlog && t.Count(t.Spool.ProcessingDir) == 0,
+                timeoutMs: 15_000), "startup backlog was not drained");
+            Assert.Equal(backlog, sends.Count);
+            Assert.All(sends.Values, count => Assert.Equal(1, count));
+            Assert.All(concurrency, count => Assert.InRange(count, 1, relayLimit));
+            Assert.Equal(0, t.Count(t.Spool.IncomingDir));
+            Assert.Equal(0, t.Count(t.Spool.FailedDir));
+        }
+        finally
+        {
+            await pool.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Worker_retries_after_backoff_without_new_messages()
+    {
+        using var t = new TempSpool();
+        var counters = new InMemoryCounterRepository();
+        var attempts = 0;
+        var firstAttempt = DateTime.MinValue;
+        var secondAttempt = DateTime.MinValue;
+        var provider = new DelegateProvider("Retry", (_, _) =>
+        {
+            if (++attempts == 1)
+            {
+                firstAttempt = DateTime.UtcNow;
+                throw new TransientRelayException("temporarily unavailable");
+            }
+            secondAttempt = DateTime.UtcNow;
+            return Task.FromResult(RelayResult.Success(id: "ok"));
+        });
+        using var pool = TestData.BuildPool(t.Spool, provider, new CapturingLogRepository(), counters,
+            retry: new RetryOptions { MaxRetries = 1, DelaysSeconds = [1] }, workerCount: 1);
+        TestData.Seed(t.Spool.IncomingDir, t.Spool);
+
+        await pool.StartAsync(CancellationToken.None);
+        try
+        {
+            Assert.True(await TestData.WaitUntil(() =>
+                counters.Get(1, CounterField.Delivered) == 1 && t.Count(t.Spool.ProcessingDir) == 0,
+                timeoutMs: 12_000), "retry was not picked up after its back-off elapsed");
+            Assert.Equal(2, attempts);
+            Assert.True(secondAttempt - firstAttempt >= TimeSpan.FromSeconds(1), "retry ran before back-off elapsed");
+            Assert.Equal(1, counters.Get(1, CounterField.Received));
+            Assert.Equal(1, counters.Get(1, CounterField.Retried));
+            Assert.Equal(0, t.Count(t.Spool.IncomingDir));
+            Assert.Equal(0, t.Count(t.Spool.FailedDir));
+        }
+        finally
+        {
+            await pool.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Idle_worker_stops_without_waiting_for_poll_timeout()
+    {
+        using var t = new TempSpool();
+        var counters = new InMemoryCounterRepository();
+        using var pool = TestData.BuildPool(t.Spool, DelegateProvider.AlwaysSucceeds(),
+            new CapturingLogRepository(), counters, workerCount: 1);
+        TestData.Seed(t.Spool.IncomingDir, t.Spool);
+
+        await pool.StartAsync(CancellationToken.None);
+        try
+        {
+            Assert.True(await TestData.WaitUntil(() =>
+                counters.Get(1, CounterField.Delivered) == 1 && t.Count(t.Spool.ProcessingDir) == 0));
+            await pool.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(pool.ExecuteTask!.IsCompletedSuccessfully);
         }
         finally
         {
