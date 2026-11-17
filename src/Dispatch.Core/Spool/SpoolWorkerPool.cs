@@ -116,8 +116,8 @@ public sealed class SpoolWorkerPool : BackgroundService
 
     /// <summary>
     /// FileSystemWatcher-fallback poll interval (spec §14.1). The OS can drop watcher events under heavy
-    /// load, so the doorbell wait times out and the worker attempts a claim anyway - files are never
-    /// stranded by a missed signal. Not latency-sensitive: it only matters when events are lost.
+    /// load, so idle workers periodically re-scan even without a signal. A non-empty, eligible backlog
+    /// is drained without waiting for the doorbell between messages.
     /// </summary>
     private static readonly TimeSpan DoorbellTimeout = TimeSpan.FromSeconds(5);
 
@@ -125,21 +125,6 @@ public sealed class SpoolWorkerPool : BackgroundService
     {
         while (!ct.IsCancellationRequested)
         {
-            try
-            {
-                // Wait for a doorbell signal, but cap the wait so a dropped FileSystemWatcher event can't
-                // strand files: on timeout we fall through and still attempt a claim (fallback poll).
-                await _spool.WaitAsync(ct).AsTask().WaitAsync(DoorbellTimeout, ct);
-            }
-            catch (TimeoutException)
-            {
-                // No signal within the window - fall through to the fallback claim attempt below.
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-
             ClaimedFile? claimed;
             try
             {
@@ -150,7 +135,27 @@ public sealed class SpoolWorkerPool : BackgroundService
                 break;
             }
 
-            if (claimed is null) continue;
+            if (claimed is null)
+            {
+                // Only sleep when there is no eligible work (including back-off / relay capacity).
+                // Cancel the channel read itself on timeout. Task.WaitAsync(timeout) would leave
+                // abandoned reads queued up, consuming future signals instead of waking live workers.
+                using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                waitCts.CancelAfter(DoorbellTimeout);
+                try
+                {
+                    await _spool.WaitAsync(waitCts.Token);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // Fallback poll for missed watcher events and retries whose back-off has elapsed.
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                continue;
+            }
 
             var c = claimed.Value;
             _concurrency.Increment(c.Relay.Id);
